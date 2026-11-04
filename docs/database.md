@@ -58,12 +58,14 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | ۴ | `auth-security` | `users.failed_login_count/locked_until/password_changed_at`، ایندکس نشست‌ها |
 | ۵ | `performance-indexes` | `idx_alerts_status_created`، `idx_outages_ended_open`، `idx_daily_device_day` |
 | ۶–۹، ۱۱، ۱۴ | گام‌های بازنشسته | مربوط به ماژول حذف‌شدهٔ توپولوژی؛ فقط برای سازگاری شمارهٔ نسخهٔ پایگاه‌داده‌های موجود نگه داشته شده‌اند و کاری انجام نمی‌دهند |
-| ۱۰ | `management-extensions` | تاریخ نصب، تعارض IP، گروه چندگانه، قالب، MTTR و پیوست‌ها |
+| ۱۰ | `management-extensions` | تاریخ نصب، گروه چندگانه، قالب، MTTR و پیوست‌ها |
 | ۱۲ | `service-availability` | `devices.service_status`, `service_port`, `service_checked_at` |
 | ۱۳ | `attachment-limit-50mb` | بالا بردن سقف پیوست از ۵/۲۰ به ۵۰ مگابایت |
 | ۱۵ | `modular-diagrams` | حذف جدول‌های باقی‌ماندهٔ توپولوژی و ساخت جدول `diagrams` برای دیاگرام‌های درختی مستقل |
 | ۱۶ | `retired-network-discovery` | حذف جدول‌های `discovery_ranges`/`discovery_results` و کلیدهای تنظیمات ماژول حذف‌شدهٔ کشف شبکه |
 | ۱۷ | `diagram-attachments` | ساخت جدول `diagram_attachments` برای تصویر/لوگوی روی بوم دیاگرام |
+| ۱۸ | `device-identity-and-types` | `devices.mac_address/asset_tag` و جدول `device_types` |
+| ۱۹ | `device-credentials` | ستون‌های رمزنگاری‌شدهٔ `devices.access_username_enc/access_password_enc` برای اعتبارنامهٔ دسترسی تجهیز |
 
 قواعد:
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Database,
@@ -25,14 +25,47 @@ import {
 import { api } from '../lib/api';
 import { MODE_LABEL } from '../components/Layout';
 import { useApp, useAsync, useToast } from '../lib/store';
+import { useUrlParams } from '../lib/params';
 import { useAuth } from '../lib/auth';
 import { faDigits, fmtDateTime, fmtNumber, fmtRelative } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, Field, Modal, PageLoader, Toggle } from '../components/ui';
+import { ColorField } from '../components/ColorField';
 import { WidgetVisibilityRow, useWidgetLayout } from '../components/widgets';
 import { DETAIL_WIDGETS, DASHBOARD_WIDGETS } from '../lib/widgetdefs';
-import type { AppSettings, AuthRole, AuthUser } from '../lib/types';
+import type { AppSettings, AuthRole, AuthUser, DeviceType } from '../lib/types';
 
-type TabKey = 'general' | 'engine' | 'display' | 'groups' | 'tags' | 'layers' | 'widgets' | 'repair' | 'data' | 'users';
+type TabKey = 'general' | 'engine' | 'display' | 'groups' | 'tags' | 'types' | 'layers' | 'widgets' | 'repair' | 'data' | 'users';
+
+const SETTINGS_GROUPS: { label: string; tabs: TabKey[] }[] = [
+  { label: 'پایه', tabs: ['general', 'display'] },
+  { label: 'پایش و نگهداری', tabs: ['engine', 'repair'] },
+  { label: 'داده و دارایی', tabs: ['groups', 'tags', 'types', 'layers', 'widgets'] },
+  { label: 'سیستم', tabs: ['data', 'users'] },
+];
+
+/** کلیدهای هر بخش برای نشان‌دادن تغییرات ذخیره‌نشده و ذخیرهٔ بخشی. */
+const TAB_SETTING_KEYS: Record<TabKey, string[]> = {
+  general: ['site_name', 'calendar', 'timezone_offset_minutes', 'chart_default_range', 'notify_browser', 'engine_enabled'],
+  engine: [
+    'engine_mode', 'ping_interval', 'timeout_ms', 'retries', 'packet_count', 'max_workers', 'latency_threshold',
+    'loss_threshold', 'failures_for_offline', 'successes_for_online', 'tcp_port', 'probe_allowed_cidrs',
+  ],
+  display: ['map_default_center', 'map_default_zoom', 'map_show_labels'],
+  repair: ['repair_causes', 'repair_actions'],
+  data: [
+    'retention_enabled', 'retention_legal_hold', 'retention_run_time', 'retention_interval_minutes',
+    'retention_batch_size', 'retention_max_rows_per_run', 'samples_retention_days', 'daily_stats_retention_days',
+    'outages_retention_days', 'alerts_retention_days', 'audit_retention_days', 'engine_log_retention_days',
+    'retention_prune_backups', 'backup_daily_keep', 'backup_weekly_keep', 'backup_interval_hours',
+    'backup_enabled', 'backup_prune_enabled',
+  ],
+  groups: [],
+  tags: [],
+  types: [],
+  layers: [],
+  widgets: [],
+  users: [],
+};
 
 export default function Settings() {
   const { settings, saveSettings, refreshSettings, meta, refreshMeta, engine } = useApp();
@@ -40,12 +73,26 @@ export default function Settings() {
   const { can } = useAuth();
   const canWrite = can('settings:write');
   const canUsers = can('users:manage');
-  const [tab, setTab] = useState<TabKey>('general');
+  const { params, setParam } = useUrlParams();
+  const tabKeys: TabKey[] = [
+    ...(['general', 'engine', 'display', 'groups', 'tags', 'types', 'layers', 'widgets', 'repair', 'data'] as TabKey[]),
+    ...(canUsers ? (['users'] as TabKey[]) : []),
+  ];
+  const tabParam = params.get('tab') as TabKey | null;
+  const tab: TabKey = tabParam && tabKeys.includes(tabParam) ? tabParam : 'general';
+  const setTab = (key: TabKey) => setParam('tab', key === 'general' ? '' : key);
+  const [tabSearch, setTabSearch] = useState('');
   const [local, setLocal] = useState<AppSettings | null>(settings);
+  // متن خام فیلد محدودهٔ Probe؛ تا هنگام تایپ CIDR ناقص، مقدار آرایهٔ تنظیمات
+  // با هر کلید پاک نشود و متن تایپ‌شده حفظ بماند.
+  const [cidrText, setCidrText] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (settings) setLocal(settings);
+    if (settings) {
+      setLocal(settings);
+      setCidrText((settings.probe_allowed_cidrs ?? []).join(', '));
+    }
   }, [settings]);
 
   const { data: engineData, refresh: refreshEngine } = useAsync((signal) => api.engineStatus(signal), [], { interval: 15000 });
@@ -61,6 +108,13 @@ export default function Settings() {
     { interval: 30000 }
   );
 
+  const dirtyKeys = useMemo(() => {
+    if (!local || !settings) return [] as string[];
+    const current = local as unknown as Record<string, unknown>;
+    const saved = settings as unknown as Record<string, unknown>;
+    return Object.keys(current).filter((key) => JSON.stringify(current[key]) !== JSON.stringify(saved[key]));
+  }, [local, settings]);
+
   if (!local) return <PageLoader label="در حال دریافت تنظیمات…" />;
 
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) => setLocal((s) => (s ? { ...s, [k]: v } : s));
@@ -74,8 +128,14 @@ export default function Settings() {
     }
     setSaving(true);
     try {
-      await saveSettings(patch ?? local);
-      push('تنظیمات ذخیره شد', 'success');
+      const rejected = await saveSettings(patch ?? local);
+      if (rejected.length) {
+        // سرور مقدارهای نامعتبر را رد می‌کند و مقدار قبلی را نگه می‌دارد؛ بدون این
+        // پیام، کاربر فکر می‌کند مقدار ناقص ذخیره شده است.
+        push(`برخی مقدارها نامعتبر بودند و ذخیره نشدند: ${rejected.join('، ')}`, 'warning');
+      } else {
+        push('تنظیمات ذخیره شد', 'success');
+      }
       refreshEngine();
     } catch (e) {
       push((e as Error).message, 'error');
@@ -84,12 +144,24 @@ export default function Settings() {
     }
   };
 
+  const tabDirty = dirtyKeys.some((key) => (TAB_SETTING_KEYS[tab] ?? []).includes(key));
+  const persistCurrent = async () => {
+    const keys = (TAB_SETTING_KEYS[tab] ?? []).filter((key) => dirtyKeys.includes(key));
+    if (!keys.length) {
+      push('در این بخش تغییر ذخیره‌نشده‌ای وجود ندارد.', 'info');
+      return;
+    }
+    const patch = Object.fromEntries(keys.map((key) => [key, (local as unknown as Record<string, unknown>)[key]]));
+    await persist(patch as Partial<AppSettings>);
+  };
+
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'general', label: 'عمومی', icon: <Settings2 size={14} /> },
     { key: 'engine', label: 'موتور مانیتورینگ', icon: <Activity size={14} /> },
     { key: 'display', label: 'نمایش و نقشه', icon: <Palette size={14} /> },
     { key: 'groups', label: 'گروه‌ها', icon: <Layers size={14} /> },
     { key: 'tags', label: 'تگ‌ها', icon: <TagIcon size={14} /> },
+    { key: 'types', label: 'انواع تجهیزات', icon: <Server size={14} /> },
     { key: 'layers', label: 'لایه‌های نقشه', icon: <MapIcon size={14} /> },
     { key: 'widgets', label: 'چیدمان ویجت‌ها', icon: <LayoutGrid size={14} /> },
     { key: 'repair', label: 'علت‌ها و اقدامات', icon: <Wrench size={14} /> },
@@ -97,34 +169,66 @@ export default function Settings() {
     ...(canUsers ? [{ key: 'users' as TabKey, label: 'کاربران', icon: <Users size={14} /> }] : []),
   ];
 
+  const visibleTabs = tabs.filter((item) => !tabSearch.trim() || item.label.includes(tabSearch.trim()));
+
   return (
-    <div className="space-y-4">
-      <Card padded={false} className="p-2">
-        <div className="flex flex-wrap items-center gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`inline-flex items-center gap-1.5 rounded-soft px-3.5 py-2 text-[12.5px] font-medium transition ${
-                tab === t.key ? 'bg-brand-50 text-brand-700 border border-brand-100' : 'text-ink-500 hover:bg-ink-50'
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
+    <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)] xl:items-start">
+      <Card padded={false} className="xl:sticky xl:top-4">
+        <div className="border-b border-ink-100 p-3">
+          <p className="text-[13px] font-semibold text-ink-800">تنظیمات</p>
+          <input
+            className="field mt-2 !py-1.5 !text-[12px]"
+            placeholder="جست‌وجوی بخش تنظیمات…"
+            value={tabSearch}
+            onChange={(event) => setTabSearch(event.target.value)}
+            aria-label="جست‌وجوی بخش تنظیمات"
+          />
+        </div>
+        <nav className="max-h-[calc(100dvh-18rem)] space-y-3 overflow-y-auto p-2" aria-label="بخش‌های تنظیمات">
+          {SETTINGS_GROUPS.map((group) => {
+            const groupTabs = visibleTabs.filter((item) => group.tabs.includes(item.key));
+            if (!groupTabs.length) return null;
+            return (
+              <div key={group.label} className="space-y-1">
+                <p className="px-2 py-1 text-[12px] font-semibold text-ink-400">{group.label}</p>
+                {groupTabs.map((item) => {
+                  const dot = (TAB_SETTING_KEYS[item.key] ?? []).some((key) => dirtyKeys.includes(key));
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setTab(item.key)}
+                      aria-current={tab === item.key ? 'page' : undefined}
+                      className={`flex w-full items-center gap-2 rounded-soft px-2.5 py-2 text-right text-[12.5px] transition ${
+                        tab === item.key ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-50'
+                      }`}
+                    >
+                      {item.icon}
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {dot ? <span className="h-2 w-2 shrink-0 rounded-full bg-sun-500" title="تغییر ذخیره‌نشده" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </nav>
+        <div className="space-y-2 border-t border-ink-100 p-3">
+          <p className="text-[12px] text-ink-400">
+            {dirtyKeys.length ? `${faDigits(dirtyKeys.length)} تغییر ذخیره‌نشده` : 'همهٔ تغییرات ذخیره شده‌اند'}
+          </p>
           {canWrite ? (
-            <button type="button" className="btn-primary btn-xs ms-auto" onClick={() => persist()} disabled={saving}>
+            <button type="button" className="btn-primary btn-xs w-full" onClick={() => void persistCurrent()} disabled={saving || !tabDirty}>
               <Save size={14} />
-              {saving ? 'در حال ذخیره…' : 'ذخیره تنظیمات'}
+              {saving ? 'در حال ذخیره…' : `ذخیرهٔ ${tabs.find((item) => item.key === tab)?.label ?? 'بخش'}`}
             </button>
           ) : (
-            <span className="chip ms-auto border-ink-200 bg-ink-50 text-ink-500">دسترسی فقط‌خواندنی</span>
+            <span className="chip border-ink-200 bg-ink-50 text-ink-500">دسترسی فقط‌خواندنی</span>
           )}
         </div>
       </Card>
 
+      <div className="min-w-0 space-y-4">
       {!canWrite ? (
         <div className="rounded-card border border-sun-200 bg-sun-50/70 px-4 py-3 text-[11.5px] leading-relaxed text-sun-800" role="status">
           نقش شما اجازهٔ تغییر تنظیمات را ندارد؛ مقادیر فقط برای مشاهده نمایش داده می‌شوند. عملیات مدیریتی (پشتیبان‌گیری، Retention و بازنشانی) نیز در صورت نداشتن مجوز توسط سرور رد می‌شوند.
@@ -247,15 +351,33 @@ export default function Settings() {
               <Field label="آستانه مجاز افت بسته (٪)">
                 <input type="number" min={0} max={100} dir="ltr" className="field num" value={local.loss_threshold} onChange={(e) => set('loss_threshold', Number(e.target.value) || 10)} />
               </Field>
-              <Field label="شکست متوالی برای Offline">
+              <Field label="شکست متوالی برای وضعیت قطع">
                 <input type="number" min={1} dir="ltr" className="field num" value={local.failures_for_offline} onChange={(e) => set('failures_for_offline', Number(e.target.value) || 3)} />
               </Field>
-              <Field label="پاسخ موفق متوالی برای Recovery">
+              <Field label="پاسخ موفق متوالی برای بازگشت به وضعیت وصل">
                 <input type="number" min={1} dir="ltr" className="field num" value={local.successes_for_online} onChange={(e) => set('successes_for_online', Number(e.target.value) || 2)} />
               </Field>
               <Field label="پورت بررسی TCP">
                 <input type="number" min={1} max={65535} dir="ltr" className="field num" value={local.tcp_port} onChange={(e) => set('tcp_port', Number(e.target.value) || 80)} />
               </Field>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <Field
+                  label="محدودهٔ مقاصد مجاز Probe (CIDR)"
+                  hint="هر CIDR با ویرگول جدا شود؛ مثال: 10.0.0.0/8, 192.168.0.0/16. برای پذیرش همهٔ مقاصد (شامل اینترنت): 0.0.0.0/0, ::/0. آدرس‌های Link-Local و Cloud Metadata باز هم مسدود می‌مانند و تغییر بلافاصله اعمال می‌شود."
+                >
+                  <input
+                    dir="ltr"
+                    className="field"
+                    placeholder="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
+                    value={cidrText}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCidrText(v);
+                      set('probe_allowed_cidrs', v.split(',').map((s) => s.trim()).filter(Boolean));
+                    }}
+                  />
+                </Field>
+              </div>
             </div>
             <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
               بازه بررسی را می‌توان برای هر گروه یا هر تجهیز به‌صورت مستقل تعیین کرد (از صفحه ویرایش تجهیز یا ویرایش گروهی). مقدار تعریف‌شده در تجهیز، بر مقدار عمومی اولویت دارد.
@@ -301,6 +423,7 @@ export default function Settings() {
 
       {tab === 'groups' ? <GroupsTab /> : null}
       {tab === 'tags' ? <TagsTab /> : null}
+      {tab === 'types' ? <DeviceTypesTab /> : null}
       {tab === 'layers' ? <LayersTab /> : null}
       {tab === 'widgets' ? <WidgetLayoutTab /> : null}
       {tab === 'repair' ? <RepairTab local={local} set={set} persist={persist} saving={saving} /> : null}
@@ -521,7 +644,8 @@ export default function Settings() {
           <Server size={13} />
           {engine?.running ? 'موتور مانیتورینگ در حال اجرا است' : 'موتور مانیتورینگ متوقف است'}
         </span>
-        <span className="text-ink-400">آخرین بروزرسانی: {fmtRelative(engineData?.lastRunAt ?? null)}</span>
+        <span className="text-ink-400">آخرین به‌روزرسانی: {fmtRelative(engineData?.lastRunAt ?? null)}</span>
+      </div>
       </div>
     </div>
   );
@@ -633,7 +757,7 @@ function GroupsTab() {
               <input className="field" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </Field>
             <Field label="رنگ گروه">
-              <input type="color" className="field h-10 p-1" value={editing.color} onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
+              <ColorField value={editing.color} onChange={(color) => setEditing({ ...editing, color })} />
             </Field>
             <Field label="توضیحات" className="sm:col-span-2">
               <textarea className="field min-h-[70px]" value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
@@ -733,11 +857,136 @@ function TagsTab() {
               <input className="field" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </Field>
             <Field label="رنگ تگ">
-              <input type="color" className="field h-10 p-1" value={editing.color} onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
+              <ColorField value={editing.color} onChange={(color) => setEditing({ ...editing, color })} />
             </Field>
             <div className="sm:col-span-2">
               <Toggle checked={!!editing.show_on_map} onChange={(v) => setEditing({ ...editing, show_on_map: v ? 1 : 0 })} label="نمایش این تگ روی نقشه" hint="برچسب تگ کنار نشانگر تجهیز روی نقشه نمایش داده می‌شود" />
             </div>
+          </div>
+        ) : null}
+      </Modal>
+    </Card>
+  );
+}
+
+/* ---------------------------- انواع تجهیزات ---------------------------- */
+function DeviceTypesTab() {
+  const { push } = useToast();
+  const { refreshMeta } = useApp();
+  const { can } = useAuth();
+  const canWrite = can('inventory:write');
+  const { data, refresh } = useAsync((signal) => api.deviceTypes(signal), []);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<{ id: number; name: string; color: string } | null>(null);
+
+  const save = async () => {
+    if (!editing) return;
+    if (!editing.name.trim()) {
+      push('نام نوع تجهیز را وارد کنید', 'warning');
+      return;
+    }
+    try {
+      if (editing.id) await api.updateDeviceType(editing.id, { name: editing.name.trim(), color: editing.color });
+      else await api.createDeviceType({ name: editing.name.trim(), color: editing.color });
+      push('نوع تجهیز ذخیره شد', 'success');
+      setOpen(false);
+      setEditing(null);
+      refresh();
+      refreshMeta();
+    } catch (e) {
+      push((e as Error).message, 'error');
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="انواع تجهیزات"
+        subtitle="فهرست نوع‌هایی که در فیلد «نوع تجهیز» انتخاب می‌شوند؛ انواع ناشناخته در ورود گروهی هم خودکار افزوده می‌شوند"
+        icon={<Server size={18} />}
+        action={
+          canWrite ? (
+            <button
+              type="button"
+              className="btn-soft btn-xs"
+              onClick={() => {
+                setEditing({ id: 0, name: '', color: '#2563eb' });
+                setOpen(true);
+              }}
+            >
+              <Plus size={13} />
+              نوع جدید
+            </button>
+          ) : null
+        }
+      />
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(data?.items ?? []).map((t: DeviceType) => (
+          <div key={t.id} className="flex items-center gap-2 rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
+            <span className="text-[12.5px] font-medium text-ink-700">{t.name}</span>
+            <span className="num text-[10.5px] text-ink-400">{faDigits(t.device_count ?? 0)} تجهیز</span>
+            {canWrite ? (
+              <>
+                <button
+                  type="button"
+                  className="btn-ghost btn-xs"
+                  onClick={() => {
+                    setEditing({ id: t.id, name: t.name, color: t.color || '#2563eb' });
+                    setOpen(true);
+                  }}
+                >
+                  ویرایش
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger btn-xs"
+                  onClick={async () => {
+                    if (!window.confirm(`حذف نوع «${t.name}»؟`)) return;
+                    try {
+                      await api.deleteDeviceType(t.id);
+                      refresh();
+                      refreshMeta();
+                    } catch (e) {
+                      push((e as Error).message, 'error');
+                    }
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </>
+            ) : null}
+          </div>
+        ))}
+        {(data?.items ?? []).length === 0 ? <EmptyState title="نوع تجهیزی تعریف نشده است" /> : null}
+      </div>
+      <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+        تغییر نام یک نوع، نوع همهٔ تجهیزات همان نوع را هم به‌روزرسانی می‌کند. حذف نوعی که تجهیز دارد تا زمانی که نوع آن تجهیزات تغییر نکند ممکن نیست.
+      </p>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing?.id ? 'ویرایش نوع تجهیز' : 'افزودن نوع تجهیز'}
+        footer={
+          <>
+            <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
+              انصراف
+            </button>
+            <button type="button" className="btn-primary" onClick={save}>
+              ذخیره
+            </button>
+          </>
+        }
+      >
+        {editing ? (
+          <div className="grid gap-4">
+            <Field label="نام نوع" required hint="مثلاً «چاپگر شبکه» یا «دستگاه حضور و غیاب»">
+              <input className="field" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+            </Field>
+            <Field label="رنگ نوع">
+              <ColorField value={editing.color} onChange={(color) => setEditing({ ...editing, color })} />
+            </Field>
           </div>
         ) : null}
       </Modal>
@@ -759,7 +1008,7 @@ function LayersTab() {
         action={
           <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
             <RefreshCw size={13} />
-            بروزرسانی
+            به‌روزرسانی
           </button>
         }
       />
@@ -834,6 +1083,7 @@ function WidgetLayoutTab() {
                 onHeight={(h) => detail.setHeight(item.id, h)}
                 onUp={() => idx > 0 && detail.move(item.id, detail.layout[idx - 1].id)}
                 onDown={() => idx < detail.layout.length - 1 && detail.move(item.id, detail.layout[idx + 1].id)}
+                onMove={(sourceId) => detail.move(sourceId, item.id)}
               />
             );
           })}
@@ -866,6 +1116,7 @@ function WidgetLayoutTab() {
                 onHeight={(h) => dash.setHeight(item.id, h)}
                 onUp={() => idx > 0 && dash.move(item.id, dash.layout[idx - 1].id)}
                 onDown={() => idx < dash.layout.length - 1 && dash.move(item.id, dash.layout[idx + 1].id)}
+                onMove={(sourceId) => dash.move(sourceId, item.id)}
               />
             );
           })}
@@ -873,7 +1124,7 @@ function WidgetLayoutTab() {
       </Card>
 
       <p className="rounded-soft border border-ink-200 bg-white/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
-        تغییرات بلافاصله ذخیره می‌شوند. در صفحه داشبورد و جزئیات تجهیز می‌توانید با دکمهٔ «چیدمان» ویجت‌ها را روی خود صفحه هم جابه‌جا، تغییر عرض، حذف یا اضافه کنید؛ برای ارتفاع دلخواه، لبهٔ پایین ویجت را به بالا یا پایین بکشید.
+        تغییرات بلافاصله ذخیره می‌شوند. برای تغییر اولویت نمایش، نام یا دستگیرهٔ کنار هر ویجت را بگیرید و بالا یا پایین بکشید. در صفحه داشبورد و جزئیات تجهیز می‌توانید با دکمهٔ «شخصی‌سازی» ویجت‌ها را روی خود صفحه هم جابه‌جا، تغییر عرض، حذف یا اضافه کنید؛ برای ارتفاع دلخواه، لبهٔ پایین ویجت را به بالا یا پایین بکشید.
       </p>
     </div>
   );
@@ -957,11 +1208,17 @@ function RepairTab({
         </div>
       </Card>
 
-      <div className="xl:col-span-2">
-        <button type="button" className="btn-primary btn-xs" disabled={saving} onClick={() => persist()}>
+      <div className="xl:col-span-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="btn-primary btn-xs"
+          disabled={saving}
+          onClick={() => persist({ repair_causes: local.repair_causes, repair_actions: local.repair_actions })}
+        >
           <Save size={13} />
-          ذخیره فهرست‌ها
+          {saving ? 'در حال ذخیره…' : 'ذخیرهٔ علت‌ها و اقدامات'}
         </button>
+        <span className="text-[12px] text-ink-400">فقط همین دو فهرست ذخیره می‌شود.</span>
       </div>
     </div>
   );

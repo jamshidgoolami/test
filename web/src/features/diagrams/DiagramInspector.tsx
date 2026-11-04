@@ -2,13 +2,15 @@
  * پنل مشخصات — فقط یک انتخاب را نشان می‌دهد: تجهیز، شکل، یادداشت یا ارتباط.
  * در حالت نمایش فیلدها فقط‌خواندنی‌اند؛ در حالت ویرایش همان‌جا ویرایش می‌شوند.
  */
-import React from 'react';
-import { Activity, Circle, ExternalLink, Frame, Image as ImageIcon, RefreshCw, Square, StickyNote, Trash } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, ChevronDown, Circle, ExternalLink, Frame, Image as ImageIcon, MessageSquare, RefreshCw, Send, Square, StickyNote, Trash, Workflow } from 'lucide-react';
 import { Field } from '../../components/ui';
+import { ColorField } from '../../components/ColorField';
 import { faDigits, fmtDateTime, fmtMs, fmtPct, fmtRelative, statusMeta } from '../../lib/format';
-import { CONNECTION_TYPES, DEVICE_CATALOG, connectionType, deviceNodeNeedsSync, deviceType } from '../../lib/diagrams';
+import { CONNECTION_TYPES, DEVICE_CATALOG, connectionType, deviceNodeNeedsSync, deviceType, newId } from '../../lib/diagrams';
 import type { DiagramFlowEdge, DiagramFlowNode } from '../../lib/diagrams';
-import type { Device, DiagramDetail, DiagramEdgeData, DiagramNodeData, DiagramShape } from '../../lib/types';
+import { useAuth } from '../../lib/auth';
+import type { Device, DiagramComment, DiagramDetail, DiagramEdgeData, DiagramNodeData, DiagramShape } from '../../lib/types';
 import { DeviceGlyph } from './DeviceGlyph';
 
 export interface DiagramInspectorProps {
@@ -33,6 +35,10 @@ export interface DiagramInspectorProps {
   onPingDevice?: (deviceId: number) => void;
   /** جایگزینی تصویر جزء نوع image */
   onReplaceImage?: (nodeId: string) => void;
+  /** باز کردن دیاگرام مقصد یک جزء پیوند */
+  onOpenDiagram?: (diagramId: number) => void;
+  /** فهرست دیاگرام‌های قابل پیوند (برای تغییر مقصد) */
+  diagrams?: { id: number; name: string }[];
 }
 
 function ReadRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -50,6 +56,99 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-ink-400">{title}</p>
       <div className="space-y-2.5">{children}</div>
     </div>
+  );
+}
+
+/**
+ * کامنت‌های یک گره/لینک؛ در حالت نمایش فقط خوانده می‌شوند و در حالت ویرایش
+ * می‌توان کامنت تازه ثبت کرد یا کامنت‌های قبلی را حذف کرد.
+ */
+function CommentsSection({
+  comments = [],
+  editing,
+  onChange,
+}: {
+  comments?: DiagramComment[];
+  editing: boolean;
+  onChange: (comments: DiagramComment[]) => void;
+}) {
+  const { user } = useAuth();
+  const [text, setText] = useState('');
+  const safeComments = Array.isArray(comments) ? comments : [];
+  const ordered = [...safeComments].sort((a, b) => b.createdAt - a.createdAt);
+
+  const submit = () => {
+    const value = text.trim();
+    if (!value || !editing) return;
+    onChange([
+      ...safeComments,
+      {
+        id: newId(),
+        text: value.slice(0, 1000),
+        author: user?.displayName?.trim() || user?.username || 'کاربر',
+        createdAt: Date.now(),
+      },
+    ]);
+    setText('');
+  };
+
+  return (
+    <Section title={`کامنت‌ها${safeComments.length ? ` (${faDigits(safeComments.length)})` : ''}`}>
+      {ordered.length ? (
+        <ul className="space-y-1.5">
+          {ordered.map((comment) => (
+            <li key={comment.id} className="rounded-soft border border-ink-100 bg-ink-50/60 p-2">
+              <div className="flex items-center gap-1.5 text-[10px] text-ink-400">
+                <MessageSquare size={10} className="shrink-0" />
+                <span className="min-w-0 truncate font-medium text-ink-600">{comment.author || 'کاربر'}</span>
+                <span className="shrink-0">· {fmtRelative(comment.createdAt)}</span>
+                {editing ? (
+                  <button
+                    type="button"
+                    className="ms-auto shrink-0 rounded p-0.5 text-ink-400 transition hover:bg-white hover:text-red-600"
+                    onClick={() => onChange(safeComments.filter((item) => item.id !== comment.id))}
+                    title="حذف کامنت"
+                    aria-label="حذف کامنت"
+                  >
+                    <Trash size={10} />
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words text-[11.5px] leading-5 text-ink-700">{comment.text}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-soft border border-dashed border-ink-200 p-2 text-[10.5px] leading-5 text-ink-400">
+          هنوز کامنتی روی این مورد ثبت نشده است.
+        </p>
+      )}
+
+      {editing ? (
+        <div className="space-y-1.5">
+          <textarea
+            className="field min-h-16 resize-y"
+            value={text}
+            maxLength={1000}
+            placeholder="یادداشت، هشدار یا نکتهٔ اجرایی…"
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[9.5px] text-ink-400">{faDigits(text.length)}/۱۰۰۰ · Ctrl+Enter</span>
+            <button type="button" className="btn-primary btn-xs" onClick={submit} disabled={!text.trim()}>
+              <Send size={11} />
+              ثبت کامنت
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </Section>
   );
 }
 
@@ -111,6 +210,8 @@ export default function DiagramInspector({
   onOpenDevice,
   onPingDevice,
   onReplaceImage,
+  onOpenDiagram,
+  diagrams = [],
 }: DiagramInspectorProps) {
   if (edge) {
     const meta = connectionType(edge.data?.kind);
@@ -166,6 +267,12 @@ export default function DiagramInspector({
           </div>
         </Section>
 
+        <CommentsSection
+          comments={edge.data?.comments}
+          editing={editing}
+          onChange={(comments) => onPatchEdge(edge.id, { comments })}
+        />
+
         {editing ? (
           <button type="button" className="btn-danger btn-xs mt-4 w-full" onClick={() => onDeleteEdge(edge.id)}>
             <Trash size={13} />
@@ -183,6 +290,7 @@ export default function DiagramInspector({
     const isNote = node.type === 'note';
     const isGroup = node.type === 'group';
     const isImage = node.type === 'image';
+    const isDiagram = node.type === 'diagram';
     const statusInfo = data.deviceId ? statusMeta(device?.status) : null;
     const needsSync = !!(device && deviceNodeNeedsSync(data, device));
     const meta = isDevice ? deviceType(data.deviceType) : null;
@@ -205,13 +313,15 @@ export default function DiagramInspector({
               data.shape === 'circle' ? <Circle size={16} /> : <Square size={16} />
             ) : isImage ? (
               <ImageIcon size={16} />
+            ) : isDiagram ? (
+              <Workflow size={16} />
             ) : (
               <StickyNote size={16} />
             )}
           </span>
           <div className="min-w-0">
             <p className="truncate text-[13px] font-semibold text-ink-800">
-              {data.label || (isDevice ? 'تجهیز' : isGroup ? 'گروه' : isShape ? 'شکل' : isImage ? 'تصویر' : 'یادداشت')}
+              {data.label || (isDevice ? 'تجهیز' : isGroup ? 'گروه' : isShape ? 'شکل' : isImage ? 'تصویر' : isDiagram ? 'پیوند دیاگرام' : 'یادداشت')}
             </p>
             <p className="truncate text-[10.5px] text-ink-400">
               {isDevice
@@ -224,7 +334,9 @@ export default function DiagramInspector({
                       : 'مستطیل'
                     : isImage
                       ? 'تصویر پیوست‌شده'
-                      : 'یادداشت'}
+                      : isDiagram
+                        ? 'پیوند به دیاگرام دیگر'
+                        : 'یادداشت'}
             </p>
           </div>
         </div>
@@ -365,16 +477,11 @@ export default function DiagramInspector({
             </Section>
             <Section title="ظاهر و اندازه">
               <Field label="رنگ">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    className="h-8 w-12 cursor-pointer rounded-lg border border-ink-200 bg-white p-0.5"
-                    value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#2563eb'}
-                    disabled={!editing}
-                    onChange={(e) => onPatchData(node.id, { color: e.target.value })}
-                  />
-                  <span className="ltr text-[11px] text-ink-500">{color}</span>
-                </div>
+                <ColorField
+                  value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#2563eb'}
+                  onChange={(next) => onPatchData(node.id, { color: next })}
+                  disabled={!editing}
+                />
               </Field>
               <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
             </Section>
@@ -403,20 +510,25 @@ export default function DiagramInspector({
                 />
               </Field>
               <Field label="رنگ کادر">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    className="h-8 w-12 cursor-pointer rounded-lg border border-ink-200 bg-white p-0.5"
-                    value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#60a5fa'}
-                    disabled={!editing}
-                    onChange={(e) => onPatchData(node.id, { color: e.target.value })}
-                  />
-                  <span className="ltr text-[11px] text-ink-500">{color}</span>
-                </div>
+                <ColorField
+                  value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#60a5fa'}
+                  onChange={(next) => onPatchData(node.id, { color: next })}
+                  disabled={!editing}
+                />
               </Field>
               <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
+              <button
+                type="button"
+                className="btn-ghost btn-xs w-full"
+                onClick={() => onPatchData(node.id, { collapsed: !data.collapsed })}
+                disabled={!editing}
+              >
+                <ChevronDown size={12} className={data.collapsed ? 'rotate-180' : ''} />
+                {data.collapsed ? 'باز کردن گروه' : 'جمع کردن گروه'}
+              </button>
               <p className="text-[10.5px] leading-5 text-ink-400">
                 کادر گروه پشت همهٔ تجهیزات و ارتباط‌ها نمایش داده می‌شود؛ برای دسته‌بندی، اجزای هر بخش را داخل آن قرار دهید.
+                در حالت جمع‌شده، اجزای داخل کادر پنهان می‌شوند و با کلیک روی فلش گروه دوباره نمایش داده می‌شوند.
               </p>
             </Section>
           </>
@@ -455,16 +567,11 @@ export default function DiagramInspector({
                 />
               </Field>
               <Field label="رنگ">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    className="h-8 w-12 cursor-pointer rounded-lg border border-ink-200 bg-white p-0.5"
-                    value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#dbeafe'}
-                    disabled={!editing}
-                    onChange={(e) => onPatchData(node.id, { color: e.target.value })}
-                  />
-                  <span className="ltr text-[11px] text-ink-500">{color}</span>
-                </div>
+                <ColorField
+                  value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#dbeafe'}
+                  onChange={(next) => onPatchData(node.id, { color: next })}
+                  disabled={!editing}
+                />
               </Field>
               <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
             </Section>
@@ -492,16 +599,11 @@ export default function DiagramInspector({
                 />
               </Field>
               <Field label="رنگ کاغذ">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    className="h-8 w-12 cursor-pointer rounded-lg border border-ink-200 bg-white p-0.5"
-                    value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#fef08a'}
-                    disabled={!editing}
-                    onChange={(e) => onPatchData(node.id, { color: e.target.value })}
-                  />
-                  <span className="ltr text-[11px] text-ink-500">{color}</span>
-                </div>
+                <ColorField
+                  value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#fef08a'}
+                  onChange={(next) => onPatchData(node.id, { color: next })}
+                  disabled={!editing}
+                />
               </Field>
               <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
             </Section>
@@ -547,6 +649,76 @@ export default function DiagramInspector({
             </Section>
           </>
         ) : null}
+
+        {isDiagram ? (
+          <>
+            <Section title="پیوند دیاگرام">
+              <Field
+                label="دیاگرام مقصد"
+                hint={editing ? 'مقصد پیوند را می‌توانید عوض کنید؛ مدیریت کامل در «نقشهٔ ارتباط» است.' : undefined}
+              >
+                <select
+                  className="field"
+                  value={data.diagramId ? String(data.diagramId) : ''}
+                  disabled={!editing || diagrams.length === 0}
+                  onChange={(e) => onPatchData(node.id, { diagramId: Number(e.target.value) })}
+                >
+                  <option value="" disabled>
+                    انتخاب دیاگرام مقصد
+                  </option>
+                  {diagrams.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {data.diagramId && !diagrams.some((item) => item.id === Number(data.diagramId)) ? (
+                <p className="rounded-soft border border-sun-200 bg-sun-50 p-2 text-[10.5px] leading-5 text-sun-800">
+                  دیاگرام مقصد حذف شده است؛ این پیوند در «نقشهٔ ارتباط» به‌عنوان پیوند شکسته نشان داده می‌شود.
+                </p>
+              ) : null}
+              <Field label="نام نمایشی روی بوم">
+                <input
+                  className="field"
+                  value={String(data.label ?? '')}
+                  disabled={!editing}
+                  placeholder="مثلاً مرکز مخابرات اول"
+                  onChange={(e) => onPatchData(node.id, { label: e.target.value })}
+                />
+              </Field>
+              <Field label="توضیح (اختیاری)" hint="توضیح کوتاهی از محدوده یا نقش دیاگرام مقصد">
+                <textarea
+                  className="field min-h-16 resize-y"
+                  value={String(data.description ?? '')}
+                  disabled={!editing}
+                  onChange={(e) => onPatchData(node.id, { description: e.target.value })}
+                />
+              </Field>
+              {data.diagramId ? (
+                <button
+                  type="button"
+                  className="btn-ghost btn-xs"
+                  onClick={() => onOpenDiagram?.(Number(data.diagramId))}
+                  title="باز کردن دیاگرام مقصد"
+                >
+                  <ExternalLink size={12} />
+                  باز کردن دیاگرام مقصد
+                </button>
+              ) : null}
+              <p className="text-[10.5px] leading-5 text-ink-400">
+                این جزء روی بوم، فایل دیگری را نمایندگی می‌کند؛ ارتباط بین دیاگرام‌ها در «نقشهٔ ارتباط» دیده می‌شود و با دوبار کلیک روی همین جزء، دیاگرام مقصد باز می‌شود.
+              </p>
+              <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
+            </Section>
+          </>
+        ) : null}
+
+        <CommentsSection
+          comments={data.comments}
+          editing={editing}
+          onChange={(comments) => onPatchData(node.id, { comments })}
+        />
 
         {!editing ? (
           <div className="mt-4">

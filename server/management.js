@@ -1,12 +1,9 @@
 /**
- * NetWatch — منطق قالب تجهیز، گروه‌های چندعضویتی و تشخیص تعارض
+ * NetWatch — منطق قالب تجهیز و گروه‌های چندعضویتی
  * ----------------------------------------------------------------
- * این ماژول مستقل از HTTP است تا آزمون واحد بتواند قاعده‌های اصلی را
- * مستقیم بسنجد:
- *   • اعمال قالب هرگز بدون تأیید صریح (`overwrite: true`) مقدار اختصاصی
- *     تجهیز را بازنویسی نمی‌کند.
- *   • تعارض IP فقط به‌عنوان «مشکوک» با شواهد گزارش می‌شود؛ هیچ نتیجهٔ قطعی
- *     بدون شاهد ساخته نمی‌شود.
+ * این ماژول مستقل از HTTP است تا آزمون واحد بتواند قاعده‌های اصلی را مستقیم
+ * بسنجد: اعمال قالب هرگز بدون تأیید صریح (`overwrite: true`) مقدار اختصاصی
+ * تجهیز را بازنویسی نمی‌کند.
  */
 import { db, getSettings, transaction } from './db.js';
 import { sanitizeDeviceInput } from './store.js';
@@ -197,71 +194,6 @@ export function applyTemplate(templateId, { deviceIds = [], fields = null, overw
     },
     { label: 'management.applyTemplate' }
   );
-}
-
-/* ------------------------------------------------------------------ */
-/* تشخیص تعارض IP                                                     */
-/* ------------------------------------------------------------------ */
-
-function devicesBy(rows) {
-  return rows.map((d) => ({ id: d.id, name: d.name, ip: d.ip, status: d.status, hostname: d.hostname || '', serial: d.serial || '' }));
-}
-
-/**
- * موارد مشکوک تعارض. ماهیت روش:
- *   • IP هر تجهیز در پایگاه‌داده یکتاست (قید UNIQUE)؛ پس «تعارض IP» واقعی با
- *     دو تجهیز هم‌IP از این مسیر قابل مشاهده نیست و هرگز ادعا نمی‌شود.
- *   • شواهد قابل اتکا: یک شماره سریال روی چند IP، یک نام هاست روی چند IP، و
- *     IP ثبت‌شده‌ای که هم‌زمان در فهرست کشف دیده شده است. هر مورد با
- *     `definitive: false` و فهرست شواهد برگردانده می‌شود تا مدیر تأیید کند.
- */
-export function detectConflicts() {
-  const now = Date.now();
-  const items = [];
-  const devices = db.prepare('SELECT id, name, ip, status, hostname, serial FROM devices ORDER BY name').all();
-
-  const groupBy = (keyFn) => {
-    const map = new Map();
-    for (const d of devices) {
-      const key = keyFn(d);
-      if (!key) continue;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(d);
-    }
-    return [...map.entries()].filter(([, list]) => list.length > 1);
-  };
-
-  for (const [serial, list] of groupBy((d) => String(d.serial || '').trim().toLowerCase())) {
-    items.push({
-      id: `serial:${serial}`,
-      type: 'duplicate_serial',
-      severity: 'warning',
-      confidence: 'high',
-      definitive: false,
-      ip: null,
-      title: 'شماره سریال تکراری روی چند تجهیز',
-      detail: 'یک شماره سریال برای چند دستگاه ثبت شده است؛ ممکن است یکی از رکوردها تکراری یا جابه‌جا باشد.',
-      evidence: [`شماره سریال «${serial}» در ${list.length} تجهیز`, ...list.map((d) => `${d.name} → ${d.ip}`)],
-      devices: devicesBy(list),
-    });
-  }
-
-  for (const [hostname, list] of groupBy((d) => String(d.hostname || '').trim().toLowerCase())) {
-    items.push({
-      id: `hostname:${hostname}`,
-      type: 'duplicate_hostname',
-      severity: 'info',
-      confidence: 'medium',
-      definitive: false,
-      ip: null,
-      title: 'نام هاست تکراری روی چند IP',
-      detail: 'نام هاست یکسان با آدرس‌های متفاوت دیده می‌شود؛ احتمال تغییر IP یا ثبت دوباره وجود دارد.',
-      evidence: [`نام هاست «${hostname}» در ${list.length} تجهیز`, ...list.map((d) => `${d.name} → ${d.ip}`)],
-      devices: devicesBy(list),
-    });
-  }
-
-  return { items, checkedDevices: devices.length, generatedAt: now, note: 'هیچ موردی به‌عنوان تعارض قطعی ثبت نشده است؛ همه موارد نیازمند تأیید مدیر هستند.' };
 }
 
 /** تنظیمات پیش‌فرض مورد استفاده برای قالب‌سازی سریع */

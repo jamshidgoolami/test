@@ -400,33 +400,88 @@ export function LatencySpark({
   const aboveId = `spark-above-${uid}`;
   const th = threshold ?? 0;
   const peak = Math.max(th * 1.2, ...points.map((p) => p.rtt ?? 0), 1);
+  // نقاط قطعی به‌جای سقف نمودار، نزدیک کف رسم می‌شوند تا با تأخیر بالا
+  // اشتباه گرفته نشوند؛ دامنه از صفر شروع می‌شود و این نشانگر همیشه دیده می‌شود.
+  const outageFloor = Math.max(0.5, peak * 0.025);
+  const available = points.filter((p) => p.rtt != null).length;
+  const showDots = available <= 2;
   const data = points.map((p) => ({
     ...p,
     below: p.rtt == null ? null : p.rtt <= th ? p.rtt : null,
     above: p.rtt == null ? null : p.rtt > th ? p.rtt : null,
-    // بخش‌های بدون پاسخ (قطعی) با یک خط قرمز در بالای نمودار نشان داده می‌شوند
-    off: p.rtt == null ? peak : null,
+    off: p.rtt == null ? outageFloor : null,
   }));
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 6, right: 0, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 4, right: 2, left: 2, bottom: 1 }}>
         <defs>
           <linearGradient id={belowId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#16a34a" stopOpacity={0.3} />
+            <stop offset="0%" stopColor="#16a34a" stopOpacity={0.28} />
             <stop offset="100%" stopColor="#16a34a" stopOpacity={0.02} />
           </linearGradient>
           <linearGradient id={aboveId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.04} />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.32} />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.03} />
           </linearGradient>
         </defs>
-        {/* دامنهٔ ثابت با کمی فاصله از بالا تا خط قطعی (که روی سقف رسم می‌شود)
-            در لبهٔ نمودار بریده نشود و خط آستانه همیشه دیده شود */}
-        <YAxis hide domain={[0, Math.ceil(peak * 1.1)]} />
-        {threshold ? <ReferenceLine y={threshold} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1} /> : null}
-        <Area type="monotone" dataKey="off" stroke="#ef4444" strokeWidth={3} fill="none" dot={false} connectNulls={false} />
-        <Area type="monotone" dataKey="below" stroke="#16a34a" strokeWidth={2} fill={`url(#${belowId})`} dot={false} connectNulls={false} />
-        <Area type="monotone" dataKey="above" stroke="#f59e0b" strokeWidth={2} fill={`url(#${aboveId})`} dot={false} connectNulls={false} />
+        {/* محور زمانی عددی، فاصلهٔ واقعی نمونه‌ها را حفظ می‌کند (نه فاصلهٔ مساوی
+            دسته‌ای)؛ محورها مخفی‌اند چون این نمودار فقط یک اسپارک‌لاین است. */}
+        <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} hide />
+        <YAxis hide domain={[0, Math.ceil(peak * 1.12)]} />
+        <Tooltip
+          cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const point = payload[0].payload as { t: number; rtt: number | null; loss: number };
+            return (
+              <TooltipShell
+                title={fmtClock(point.t)}
+                rows={[
+                  {
+                    label: 'تأخیر',
+                    value: point.rtt == null ? 'بدون پاسخ' : fmtMs(point.rtt),
+                    color: point.rtt == null ? '#ef4444' : point.rtt > th ? '#f59e0b' : '#16a34a',
+                  },
+                  { label: 'افت بسته', value: fmtPct(point.loss, 1) },
+                ]}
+              />
+            );
+          }}
+        />
+        {threshold ? <ReferenceLine y={threshold} stroke="#f97316" strokeDasharray="4 3" strokeWidth={1} /> : null}
+        <Area
+          type="monotone"
+          dataKey="off"
+          stroke="#ef4444"
+          strokeWidth={2}
+          fill="none"
+          dot={{ r: 2, fill: '#ef4444', stroke: '#fff', strokeWidth: 0.5 }}
+          activeDot={false}
+          connectNulls={false}
+          isAnimationActive={false}
+        />
+        <Area
+          type="monotone"
+          dataKey="below"
+          stroke="#16a34a"
+          strokeWidth={2}
+          fill={`url(#${belowId})`}
+          dot={showDots ? { r: 2.4, fill: '#16a34a', stroke: '#fff', strokeWidth: 0.5 } : false}
+          activeDot={{ r: 3, strokeWidth: 1, stroke: '#fff' }}
+          connectNulls={false}
+          isAnimationActive={false}
+        />
+        <Area
+          type="monotone"
+          dataKey="above"
+          stroke="#f59e0b"
+          strokeWidth={2}
+          fill={`url(#${aboveId})`}
+          dot={showDots ? { r: 2.4, fill: '#f59e0b', stroke: '#fff', strokeWidth: 0.5 } : false}
+          activeDot={{ r: 3, strokeWidth: 1, stroke: '#fff' }}
+          connectNulls={false}
+          isAnimationActive={false}
+        />
       </AreaChart>
     </ResponsiveContainer>
   );

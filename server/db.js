@@ -42,7 +42,7 @@ const DB_EXISTED = (() => {
 })();
 
 /** نسخهٔ ساختار داده؛ با هر Migration افزایش می‌یابد (PRAGMA user_version) */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 19;
 
 /* ------------------------------------------------------------------ */
 /* سیاست دوام و WAL                                                  */
@@ -1244,7 +1244,61 @@ const MIGRATIONS = [
   { version: 15, name: 'modular-diagrams', up: applyDiagramsMigration },
   { version: 16, name: 'retired-network-discovery', up: applyDiscoveryRemovalMigration },
   { version: 17, name: 'diagram-attachments', up: applyDiagramAttachmentsMigration },
+  { version: 18, name: 'device-identity-and-types', up: applyDeviceIdentityMigration },
+  { version: 19, name: 'device-credentials', up: applyDeviceCredentialsMigration },
 ];
+
+/**
+ * گام ۱۹: اعتبارنامهٔ دسترسی تجهیز (نام کاربری و رمز عبور).
+ *
+ * هر دو مقدار با AES-256-GCM رمزنگاری می‌شوند و فقط رشتهٔ رمزشده در ستون‌ها
+ * می‌ماند. نمایش نام کاربری از مسیر سریالایز و رمز عبور فقط با درخواست صریح
+ * و مجوز `devices:write` رمزگشایی می‌شود.
+ */
+function applyDeviceCredentialsMigration() {
+  if (!hasColumn('devices', 'access_username_enc')) {
+    db.exec("ALTER TABLE devices ADD COLUMN access_username_enc TEXT NOT NULL DEFAULT ''");
+  }
+  if (!hasColumn('devices', 'access_password_enc')) {
+    db.exec("ALTER TABLE devices ADD COLUMN access_password_enc TEXT NOT NULL DEFAULT ''");
+  }
+}
+
+/**
+ * گام ۱۸: هویت فیزیکی تجهیز و فهرست انواع تجهیز.
+ *
+ * • `mac_address` و `asset_tag` (پلاک اموال) به مشخصات تجهیز اضافه می‌شوند؛
+ *   هر دو متنی و اختیاری‌اند و در جست‌وجو/خروجی هم می‌آیند.
+ * • `device_types` فهرست مرجع انواع تجهیز است تا مدیر بتواند نوع تازه بسازد؛
+ *   مقدار نوع روی خود تجهیز همچنان متن است تا دادهٔ قبلی دست‌نخورده بماند.
+ *   انواع موجود از همان ردیف‌های تجهیزات و فهرست پیش‌فرض پر می‌شوند.
+ */
+function applyDeviceIdentityMigration() {
+  if (!hasColumn('devices', 'mac_address')) {
+    db.exec("ALTER TABLE devices ADD COLUMN mac_address TEXT NOT NULL DEFAULT ''");
+  }
+  if (!hasColumn('devices', 'asset_tag')) {
+    db.exec("ALTER TABLE devices ADD COLUMN asset_tag TEXT NOT NULL DEFAULT ''");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS device_types (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      color      TEXT NOT NULL DEFAULT '#2563eb',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_devices_asset_tag ON devices(asset_tag);
+    CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac_address);
+  `);
+  const seed = db.prepare('INSERT OR IGNORE INTO device_types(name, color, created_at) VALUES (?,?,?)');
+  const now = Date.now();
+  for (const name of ['روتر', 'سوئیچ', 'فایروال', 'سرور', 'دوربین IP', 'اکسس‌پوینت', 'UPS شبکه', 'مودم', 'NVR', 'کنترلر', 'سایر']) {
+    seed.run(name, '#2563eb', now);
+  }
+  for (const row of db.prepare("SELECT DISTINCT TRIM(device_type) AS name FROM devices WHERE device_type IS NOT NULL AND TRIM(device_type) <> ''").all()) {
+    seed.run(row.name, '#2563eb', now);
+  }
+}
 
 /**
  * گام ۱۷: پیوست دیاگرام (لوگو، نقشهٔ طبقه، عکس رک).

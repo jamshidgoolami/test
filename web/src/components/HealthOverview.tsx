@@ -66,7 +66,7 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
   const overallTone: Tone = health.score >= 80 ? 'ok' : health.score >= 65 ? 'warn' : 'down';
 
   return (
-    <Card className="h-full" data-testid="network-health">
+    <Card className="flex min-h-full flex-col" data-testid="network-health">
       <CardHeader
         title="سلامت شبکه"
         subtitle="وضعیت تجهیزات، قطعی‌ها و کیفیت اتصال"
@@ -101,10 +101,10 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
           </span>
           <span className="text-ink-400">·</span>
           <span className="text-ink-500">
-            Online <span className="num font-semibold text-emerald-600">{fmtNumber(kpis.up)}</span>
+            وصل <span className="num font-semibold text-emerald-600">{fmtNumber(kpis.up)}</span>
           </span>
           <span className="text-ink-500">
-            Offline <span className="num font-semibold text-red-600">{fmtNumber(kpis.offline)}</span>
+            قطع <span className="num font-semibold text-red-600">{fmtNumber(kpis.offline)}</span>
           </span>
           <span className="text-ink-500">
             دسترس‌پذیری <span className="num font-semibold text-ink-700">{fmtPct(availability, 2)}</span>
@@ -120,14 +120,14 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
         <Metric label="کل تجهیزات" value={fmtNumber(kpis.total)} hint={`${faDigits(kpis.monitoring)} تحت پایش`} icon={<Server size={14} />} />
         <Metric
-          label="Online"
+          label="وصل"
           value={fmtNumber(kpis.up)}
           hint={`${faDigits(kpis.online)} سالم · ${faDigits(kpis.warning)} دارای اختلال`}
           tone="emerald"
           icon={<Wifi size={14} />}
         />
-        <Metric label="Offline" value={fmtNumber(kpis.offline)} hint="نیازمند بررسی" tone="red" icon={<WifiOff size={14} />} />
-        <Metric label="Degraded" value={fmtNumber(kpis.warning)} hint="از تجهیزات در دسترس" tone="sun" icon={<AlertTriangle size={14} />} />
+        <Metric label="قطع" value={fmtNumber(kpis.offline)} hint="نیازمند بررسی" tone="red" icon={<WifiOff size={14} />} />
+        <Metric label="دارای اختلال" value={fmtNumber(kpis.warning)} hint="از تجهیزات در دسترس" tone="sun" icon={<AlertTriangle size={14} />} />
         <Metric
           label="قطعی‌های فعال"
           value={fmtNumber(kpis.openOutages ?? 0)}
@@ -253,7 +253,7 @@ export function ApplicationHealthSection({
           : 'در حال اجرا';
 
   return (
-    <Card className="h-full" data-testid="app-health">
+    <Card className="flex min-h-full flex-col" data-testid="app-health">
       <CardHeader
         title="سلامت برنامه"
         subtitle="مستقل از سلامت شبکه — سرور، داده، موتور و زیرساخت اجرا"
@@ -266,7 +266,7 @@ export function ApplicationHealthSection({
             </span>
             <button type="button" className="btn-ghost btn-xs" onClick={onRefresh} aria-label="به‌روزرسانی سلامت برنامه">
               <RefreshCw size={13} />
-              بروزرسانی
+              به‌روزرسانی
             </button>
             <button
               type="button"
@@ -313,7 +313,7 @@ export function ApplicationHealthSection({
           label="API"
           tone={apiTone}
           value={error ? 'بی‌پاسخ' : status?.server.ok ? 'سالم' : '—'}
-          hint={status ? `Uptime ${fmtUptime(status.server.uptime)}` : undefined}
+          hint={status ? `دسترس‌پذیری ${fmtUptime(status.server.uptime)}` : undefined}
           icon={<Server size={12} />}
         />
         <HealthRow

@@ -160,8 +160,10 @@
   (`audit_retention_days`، حداقل ۳۶۵) و پاک‌سازی از مسیر Retention Engine انجام
   می‌شود. دسترسی: `GET /api/audit` فقط Administrator.
 - **Probe کنترل‌شده:** علاوه بر مجوز `probe:run`، مقصد Probe باید در محدودهٔ
-  CIDR مجاز باشد (`probe_allowed_cidrs` در تنظیمات یا
-  `NETWATCH_PROBE_ALLOWED_CIDRS` در محیط). پیش‌فرض فقط شبکه‌های خصوصی/loopback.
+  CIDR مجاز باشد (فیلد «محدودهٔ مقاصد مجاز Probe (CIDR)» در مسیر
+  **تنظیمات ← موتور مانیتورینگ**، معادل `probe_allowed_cidrs`، یا
+  `NETWATCH_PROBE_ALLOWED_CIDRS` در محیط که اولویت بالاتر دارد). پیش‌فرض فقط
+  شبکه‌های خصوصی/loopback؛ برای پذیرش همهٔ مقاصد `0.0.0.0/0, ::/0` بدهید.
   Link-Local و Cloud Metadata پیش‌فرض مسدودند و فقط با
   `NETWATCH_PROBE_ALLOW_LINK_LOCAL` / `NETWATCH_PROBE_ALLOW_METADATA` و CIDR
   صریح باز می‌شوند. IPv4-mapped/compatible، 6to4/Teredo/NAT64 و Zone ID

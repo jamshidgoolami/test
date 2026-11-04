@@ -197,6 +197,94 @@ router.get('/summary', (_req, res) => {
     )
     .all();
 
+  // ابعاد تازه برای ویجت‌های کاربردی: توزیع انواع تجهیز، بیشترین افت بسته و
+  // فهرست قطعی‌های باز (با مدت سپری‌شده تا همین لحظه).
+  const typeDistribution = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(d.device_type), ''), 'نامشخص') AS label,
+              COUNT(*) AS count,
+              SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS offline,
+              SUM(CASE WHEN d.status='warning' THEN 1 ELSE 0 END) AS warning
+       FROM devices d WHERE d.enabled = 1
+       GROUP BY label ORDER BY count DESC LIMIT 10`
+    )
+    .all();
+
+  // تفکیک تعداد و وضعیت اتصال برای ویجت‌های «نوع/گروه/سازنده/مدل/تگ».
+  // فقط تجهیزات فعال (enabled=1) شمرده می‌شوند؛ «وصل» همان online + warning
+  // است تا با کارت‌های KPI یکی باشد و «قطع» فقط offline باشد.
+  const simpleBreakdown = (labelSql) =>
+    db
+      .prepare(
+        `SELECT ${labelSql} AS label, COUNT(*) AS total,
+                SUM(CASE WHEN d.status IN ('online','warning') THEN 1 ELSE 0 END) AS up,
+                SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS down
+         FROM devices d WHERE d.enabled = 1
+         GROUP BY label ORDER BY total DESC, label COLLATE NOCASE LIMIT 8`
+      )
+      .all();
+
+  const groupMemberships = `(
+    SELECT device_id, group_id FROM device_group_members
+    UNION
+    SELECT id AS device_id, group_id FROM devices WHERE group_id IS NOT NULL
+  )`;
+  const groupBreakdown = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(g.name), ''), 'بدون گروه') AS label,
+              COUNT(DISTINCT d.id) AS total,
+              SUM(CASE WHEN d.status IN ('online','warning') THEN 1 ELSE 0 END) AS up,
+              SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS down
+       FROM devices d
+       LEFT JOIN ${groupMemberships} m ON m.device_id = d.id
+       LEFT JOIN groups g ON g.id = m.group_id
+       WHERE d.enabled = 1
+       GROUP BY label ORDER BY total DESC, label COLLATE NOCASE LIMIT 8`
+    )
+    .all();
+  const tagBreakdown = db
+    .prepare(
+      `SELECT t.name AS label, COUNT(*) AS total,
+              SUM(CASE WHEN d.status IN ('online','warning') THEN 1 ELSE 0 END) AS up,
+              SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS down
+       FROM tags t
+       JOIN device_tags dt ON dt.tag_id = t.id
+       JOIN devices d ON d.id = dt.device_id
+       WHERE d.enabled = 1
+       GROUP BY t.id ORDER BY total DESC, t.name COLLATE NOCASE LIMIT 8`
+    )
+    .all();
+  const breakdowns = {
+    type: simpleBreakdown("COALESCE(NULLIF(TRIM(d.device_type), ''), 'نامشخص')"),
+    group: groupBreakdown,
+    vendor: simpleBreakdown("COALESCE(NULLIF(TRIM(d.vendor), ''), 'بدون سازنده')"),
+    model: simpleBreakdown("COALESCE(NULLIF(TRIM(d.model), ''), 'بدون مدل')"),
+    tag: tagBreakdown,
+  };
+
+  const topLoss = db
+    .prepare(
+      `SELECT d.id, d.name, d.ip, d.status, d.loss_pct AS lossPct, d.avg_rtt_ms AS avgRtt,
+              g.name AS groupName, g.color AS groupColor
+       FROM devices d LEFT JOIN groups g ON g.id = d.group_id
+       WHERE d.enabled = 1 AND d.loss_pct > 0
+       ORDER BY d.loss_pct DESC, d.name LIMIT 10`
+    )
+    .all();
+
+  const openOutageList = db
+    .prepare(
+      `SELECT o.id, o.device_id AS deviceId, d.name AS deviceName, d.ip, d.status,
+              o.started_at AS startedAt,
+              CAST((? - o.started_at) / 1000 AS INTEGER) AS durationSec,
+              g.name AS groupName
+       FROM outages o JOIN devices d ON d.id = o.device_id
+       LEFT JOIN groups g ON g.id = d.group_id
+       WHERE o.ended_at IS NULL
+       ORDER BY o.started_at ASC LIMIT 12`
+    )
+    .all(now);
+
   summaryCache.at = Date.now();
   summaryCache.body = {
     kpis: {
@@ -250,6 +338,10 @@ router.get('/summary', (_req, res) => {
       status: a.status,
     })),
     degraded,
+    typeDistribution,
+    breakdowns,
+    topLoss,
+    openOutages: openOutageList,
     lastStatusChangeAt,
     engine: engine.getStatus(),
     settings: { siteName: s.site_name, latencyThreshold: s.latency_threshold, lossThreshold: s.loss_threshold, chartRange: s.chart_default_range, engineMode: s.engine_mode, calendar: s.calendar },

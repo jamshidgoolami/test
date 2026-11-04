@@ -1,13 +1,13 @@
 /**
  * آزمون یکپارچگی قابلیت‌های مدیریتی:
- * تاریخ نصب، گروه چندگانه، قالب، تعارض، پیوست، MTTR و گزارش نصب.
+ * تاریخ نصب، گروه چندگانه، قالب، اعتبارنامهٔ رمزنگاری‌شده، پیوست، MTTR و گزارش نصب.
  */
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { startServer, api, upload, sessionFor, useTempDataDir, cleanupDir } from '../helpers.mjs';
+import { startServer, api, upload, sessionFor, login, useTempDataDir, cleanupDir, TEST_ADMIN } from '../helpers.mjs';
 
 const dir = useTempDataDir('management-api');
 let server;
@@ -91,14 +91,62 @@ test('قالب تجهیز: ساخت، اعمال محافظه‌کارانه و 
   assert.equal(badTemplate.status, 400);
 });
 
-test('تشخیص تعارض فقط موارد مشکوک با شاهد را برمی‌گرداند', async () => {
-  await createDevice({ name: 'تعارض ۱', ip: '10.51.0.1', serial: 'SN-CONFLICT', hostname: 'edge-a' });
-  await createDevice({ name: 'تعارض ۲', ip: '10.51.0.2', serial: 'SN-CONFLICT', hostname: 'edge-a' });
-  const res = await api(server.base, 'GET', '/api/conflicts');
-  assert.equal(res.status, 200);
-  assert.ok(res.data.items.some((i) => i.type === 'duplicate_serial'));
-  assert.ok(res.data.items.every((i) => i.definitive === false));
-  assert.match(res.data.note, /تأیید/);
+test('اعتبارنامهٔ تجهیز رمزنگاری ذخیره می‌شود و رمز خام نشت نمی‌کند', async () => {
+  const d = await createDevice({
+    name: 'تجهیز اعتبارنامه',
+    ip: '10.51.0.1',
+    access_username: 'net-admin',
+    access_password: 'S3cret!Pass',
+  });
+  assert.equal(d.accessUsername, 'net-admin');
+  assert.equal(d.hasAccessPassword, true);
+  assert.equal(d.accessPassword, undefined, 'رمز خام در پاسخ ساخت نمی‌آید');
+  assert.equal(d.access_password_enc, undefined, 'ciphertext هم به کلاینت نمی‌رود');
+
+  const detail = await api(server.base, 'GET', `/api/devices/${d.id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.data.accessUsername, 'net-admin');
+  assert.equal(detail.data.accessPassword, undefined);
+  assert.equal(detail.data.access_password_enc, undefined);
+
+  const credentials = await api(server.base, 'GET', `/api/devices/${d.id}/credentials`);
+  assert.equal(credentials.status, 200, JSON.stringify(credentials.data));
+  assert.deepEqual(credentials.data, { username: 'net-admin', password: 'S3cret!Pass' });
+
+  const conn = new DatabaseSync(path.join(dir, 'netwatch.db'));
+  conn.exec('PRAGMA busy_timeout = 5000');
+  const row = conn.prepare('SELECT access_username_enc, access_password_enc FROM devices WHERE id = ?').get(d.id);
+  conn.close();
+  assert.notEqual(row.access_username_enc, 'net-admin');
+  assert.notEqual(row.access_password_enc, 'S3cret!Pass');
+  assert.ok(row.access_password_enc.startsWith('v1:'));
+  assert.ok(!row.access_password_enc.includes('S3cret'));
+
+  // رمز خالی یعنی «بدون تغییر»، و حذف صریح رمز باید کار کند.
+  const renamed = await api(server.base, 'PUT', `/api/devices/${d.id}`, { name: 'تجهیز اعتبارنامه ۲' });
+  assert.equal(renamed.status, 200);
+  const afterRename = await api(server.base, 'GET', `/api/devices/${d.id}/credentials`);
+  assert.equal(afterRename.data.password, 'S3cret!Pass');
+  await api(server.base, 'PUT', `/api/devices/${d.id}`, { clear_access_password: true });
+  const cleared = await api(server.base, 'GET', `/api/devices/${d.id}`);
+  assert.equal(cleared.data.hasAccessPassword, false);
+
+  // Viewer فقط می‌خواند و نباید رمز تجهیز را ببیند؛ مسیر credentials عمداً
+  // به مجوز نوشتن نیاز دارد، نه فقط devices:read.
+  const viewer = await api(server.base, 'POST', '/api/auth/users', {
+    username: 'cred-viewer',
+    password: 'ViewerPass!2345',
+    role: 'viewer',
+    displayName: 'بینندهٔ اعتبارنامه',
+  });
+  assert.equal(viewer.status, 201, JSON.stringify(viewer.data));
+  await login(server.base, 'cred-viewer', 'ViewerPass!2345');
+  try {
+    const denied = await api(server.base, 'GET', `/api/devices/${d.id}/credentials`);
+    assert.equal(denied.status, 403, 'viewer نباید رمز را بخواند');
+  } finally {
+    await login(server.base, TEST_ADMIN.username, TEST_ADMIN.password);
+  }
 });
 
 test('پیوست: بارگذاری تصویر، دانلود با نشست و رد فایل غیرمجاز', async () => {

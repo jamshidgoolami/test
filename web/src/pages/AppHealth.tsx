@@ -80,7 +80,7 @@ export default function AppHealth() {
           action={
             <button type="button" className="btn-ghost btn-xs" onClick={refresh} aria-label="به‌روزرسانی سنجه‌ها">
               <RefreshCw size={13} />
-              بروزرسانی
+              به‌روزرسانی
             </button>
           }
         />
@@ -149,7 +149,7 @@ export default function AppHealth() {
           </p>
         ) : null}
         <p className="mt-2 text-[10.5px] text-ink-400">
-          آخرین به‌روزرسانی {updatedAt ? fmtRelative(updatedAt) : '—'} · زمان سرور {fmtDateTime(data.generatedAt, tzOffset)} · Uptime{' '}
+          آخرین به‌روزرسانی {updatedAt ? fmtRelative(updatedAt) : '—'} · زمان سرور {fmtDateTime(data.generatedAt, tzOffset)} · دسترس‌پذیری{' '}
           {fmtDuration(p.uptimeSec)}
         </p>
       </Card>
@@ -319,7 +319,7 @@ export default function AppHealth() {
             </p>
           </div>
           <div className="rounded-soft border border-ink-100 bg-white p-3">
-            <p className="text-[11px] text-ink-500">آخرین Retention</p>
+            <p className="text-[11px] text-ink-500">آخرین نگهداشت داده</p>
             <p className="num mt-1 text-sm font-semibold text-ink-800">
               {data.retention?.lastFinishedAt ? fmtRelative(data.retention.lastFinishedAt) : data.retention?.lastStatus ?? '—'}
             </p>

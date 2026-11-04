@@ -24,6 +24,15 @@ export interface Group {
   uptime?: number | null;
 }
 
+/** نوع تجهیز از فهرست مرجع تنظیمات (قابل افزودن/تغییر نام) */
+export interface DeviceType {
+  id: number;
+  name: string;
+  color: string;
+  device_count?: number;
+  created_at?: number;
+}
+
 export interface Device {
   id: number;
   name: string;
@@ -48,6 +57,14 @@ export interface Device {
   model: string;
   serial: string;
   firmware: string;
+  /** آدرس MAC به قالب استاندارد AA:BB:CC:DD:EE:FF یا رشتهٔ خالی */
+  macAddress: string;
+  /** پلاک اموال / شماره دارایی سازمانی */
+  assetTag: string;
+  /** نام کاربری دسترسی؛ در پایگاه‌داده رمزنگاری‌شده ذخیره می‌شود. */
+  accessUsername: string;
+  /** آیا رمز عبوری ثبت شده است؛ خود رمز فقط از مسیر credentials خوانده می‌شود. */
+  hasAccessPassword: boolean;
   owner: string;
   notes: string;
   priority: Priority;
@@ -281,6 +298,9 @@ export interface AppSettings {
   map_show_labels: boolean;
   device_detail_widgets: WidgetConfig[];
   dashboard_widgets: WidgetConfig[];
+  // محدودهٔ مقاصد مجاز برای Probe/Ping دستی؛ خارج از این CIDRها، Probe رد می‌شود
+  // (خطای NOT_IN_ALLOWLIST). سیاست کامل در server/net-policy.js است.
+  probe_allowed_cidrs: string[];
 }
 
 export type WidgetSize = 'sm' | 'md' | 'lg' | 'full';
@@ -454,6 +474,14 @@ export interface EngineStatus {
   skipped: number;
 }
 
+/** یک ردیف آمار «تعداد و وضعیت اتصال» در ویجت‌های تفکیک داشبورد */
+export interface DeviceBreakdownRow {
+  label: string;
+  total: number;
+  up: number;
+  down: number;
+}
+
 export interface DashboardData {
   kpis: {
     total: number;
@@ -520,6 +548,34 @@ export interface DashboardData {
   avgRttTrend: { day: string; health?: number; avgRtt?: number | null }[];
   recentAlerts: Alert[];
   degraded: { id: number; name: string; ip: string; status: DeviceStatus; avgRtt: number | null; lossPct: number; uptime: number | null }[];
+  typeDistribution: { label: string; count: number; offline: number; warning: number }[];
+  breakdowns: {
+    type: DeviceBreakdownRow[];
+    group: DeviceBreakdownRow[];
+    vendor: DeviceBreakdownRow[];
+    model: DeviceBreakdownRow[];
+    tag: DeviceBreakdownRow[];
+  };
+  topLoss: {
+    id: number;
+    name: string;
+    ip: string;
+    status: DeviceStatus;
+    lossPct: number;
+    avgRtt: number | null;
+    groupName: string | null;
+    groupColor: string | null;
+  }[];
+  openOutages: {
+    id: number;
+    deviceId: number;
+    deviceName: string;
+    ip: string;
+    status: DeviceStatus;
+    startedAt: number;
+    durationSec: number;
+    groupName: string | null;
+  }[];
   lastStatusChangeAt: number | null;
   engine: EngineStatus;
   settings: { siteName: string; latencyThreshold: number; lossThreshold: number; chartRange: ChartRange; engineMode: string; calendar: string };
@@ -770,36 +826,6 @@ export interface TemplateField {
   label: string;
 }
 
-export interface ConflictDevice {
-  id: number;
-  name: string;
-  ip: string;
-  status: DeviceStatus;
-  hostname?: string;
-  serial?: string;
-}
-
-export interface ConflictItem {
-  id: string;
-  type: 'duplicate_serial' | 'duplicate_hostname';
-  severity: 'info' | 'warning' | 'critical';
-  confidence: 'low' | 'medium' | 'high';
-  definitive: false;
-  ip: string | null;
-  title: string;
-  detail: string;
-  evidence: string[];
-  devices: ConflictDevice[];
-}
-
-export interface ConflictReport {
-  items: ConflictItem[];
-  summary: { total: number; info: number; warning: number; critical: number };
-  checkedDevices: number;
-  generatedAt: number;
-  note: string;
-}
-
 export interface DeviceAttachment {
   id: number;
   deviceId: number;
@@ -832,13 +858,57 @@ export interface InstallationReport {
   byType: { label: string; count: number }[];
   byMonth: { label: string; count: number }[];
 }
+/** یک سبد از گزارش آماری تجهیزات (یک تگ، مدل، محل، ماه نصب و…) */
+export interface InventoryStatBucket {
+  label: string;
+  count: number;
+  share: number;
+  online: number;
+  warning: number;
+  offline: number;
+  other: number;
+  installed: number;
+}
+
+export type InventoryDimension =
+  | 'tags'
+  | 'models'
+  | 'vendors'
+  | 'types'
+  | 'locations'
+  | 'groups'
+  | 'statuses'
+  | 'priorities'
+  | 'installMonths'
+  | 'installYears';
+
+/** آمار تجهیزات بر اساس تگ/مدل/محل/نوع/تاریخ نصب و ابعاد دیگر */
+export interface InventoryStats {
+  total: number;
+  tagged: number;
+  withModel: number;
+  withLocation: number;
+  withInstalled: number;
+  generatedAt: number;
+  dimensions: Record<InventoryDimension, InventoryStatBucket[]>;
+}
+
 /* ------------------------------------------------------------------ */
 /* دیاگرام‌های ماژولار شبکه                                            */
 /* ------------------------------------------------------------------ */
 
-export type DiagramNodeType = 'device' | 'shape' | 'note' | 'group' | 'image';
-export type DiagramConnectionKind = 'fiber' | 'copper' | 'bandwidth' | 'radio' | 'modem';
+export type DiagramNodeType = 'device' | 'shape' | 'note' | 'group' | 'image' | 'diagram';
+export type DiagramConnectionKind = 'fiber' | 'otn' | 'copper' | 'bandwidth' | 'radio' | 'modem';
+export type DiagramLinkSide = 'top' | 'right' | 'bottom' | 'left';
 export type DiagramShape = 'rect' | 'circle';
+
+/** یک کامنت کوتاه روی گره یا لینک؛ همراه خود دیاگرام ذخیره می‌شود. */
+export interface DiagramComment {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: number;
+}
 
 /** دادهٔ مشترک همهٔ اجزای بوم؛ هر نوع فقط زیرمجموعه‌ای از آن را می‌نویسد. */
 export interface DiagramNodeData extends Record<string, unknown> {
@@ -864,6 +934,16 @@ export interface DiagramNodeData extends Record<string, unknown> {
   attachmentId?: number;
   /** توضیح زیر تصویر */
   caption?: string;
+  /** شناسهٔ دیاگرام مقصد (فقط برای جزء نوع diagram) */
+  diagramId?: number;
+  /** یادداشت‌های کاربر روی این جزء */
+  comments?: DiagramComment[];
+  /** فقط برای گروه: اجزای داخل کادر پنهان شده‌اند */
+  collapsed?: boolean;
+  /** فقط برای جزء پیوند: نوع و سمت‌های اتصال در نقشهٔ ارتباط */
+  linkKind?: DiagramConnectionKind;
+  fromSide?: DiagramLinkSide;
+  toSide?: DiagramLinkSide;
 }
 
 export interface DiagramNode {
@@ -878,6 +958,7 @@ export interface DiagramNode {
 export interface DiagramEdgeData extends Record<string, unknown> {
   kind: DiagramConnectionKind;
   label: string;
+  comments?: DiagramComment[];
 }
 
 export interface DiagramEdge {
@@ -888,6 +969,7 @@ export interface DiagramEdge {
   targetHandle: string;
   kind: DiagramConnectionKind;
   label: string;
+  comments?: DiagramComment[];
 }
 
 export interface DiagramSummary {
@@ -906,6 +988,63 @@ export interface DiagramSummary {
 export interface DiagramDetail extends DiagramSummary {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
+}
+
+/** پیوند دستی از یک دیاگرام به دیاگرام دیگر (جزء نوع diagram) */
+export interface DiagramGraphLink {
+  from: number;
+  to: number;
+  /** شناسهٔ جزء پیوند روی بوم دیاگرام مبدأ */
+  nodeId: string;
+  /** نام نمایشی همان جزء (برچسب یال) */
+  nodeLabel: string;
+  label: string;
+  /** نوع ارتباط و سمت‌های انتخاب‌شده؛ پیوندهای قدیمی مقدار ندارند. */
+  kind: DiagramConnectionKind;
+  fromSide?: DiagramLinkSide;
+  toSide?: DiagramLinkSide;
+}
+
+/** پیوندی که مقصدش حذف شده است؛ برای پاک کردن از بوم مبدأ */
+export interface DiagramGraphBrokenLink {
+  from: number;
+  fromName: string;
+  nodeId: string;
+  nodeLabel: string;
+  /** شناسهٔ دیاگرام حذف‌شده */
+  to: number;
+}
+
+export interface DiagramGraphItem {
+  id: number;
+  parentId: number | null;
+  name: string;
+  description: string;
+  nodeCount: number;
+  edgeCount: number;
+  revision?: number;
+  updatedAt: number;
+  inLinks: number;
+  outLinks: number;
+  childCount: number;
+  brokenLinks: number;
+}
+
+export interface DiagramGraphStats {
+  diagrams: number;
+  links: number;
+  children: number;
+  broken: number;
+  roots: number;
+  orphans: number;
+}
+
+/** نمایش کلی ارتباط بین فایل‌های دیاگرام */
+export interface DiagramGraph {
+  items: DiagramGraphItem[];
+  links: DiagramGraphLink[];
+  broken: DiagramGraphBrokenLink[];
+  stats: DiagramGraphStats;
 }
 
 /** تصویر/لوگوی پیوست‌شده به یک دیاگرام (برای جزء نوع image) */

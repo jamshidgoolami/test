@@ -4,6 +4,7 @@
 import { db, STATUS, getSettings, transaction } from './db.js';
 import { isValidIp } from './ping.js';
 import { parseDateInput } from './jalali.js';
+import { decryptSecret, encryptSecret, tryDecryptSecret } from './credential-crypto.js';
 
 export const DEVICE_SORTS = {
   name: 'd.name',
@@ -53,9 +54,11 @@ export function buildDeviceWhere(f, { forceEnabled = null } = {}) {
     params.push(Number(f.enabled) ? 1 : 0);
   }
   if (f.search) {
-    where.push('(d.name LIKE ? OR d.ip LIKE ? OR d.hostname LIKE ? OR d.location LIKE ? OR d.vendor LIKE ? OR d.model LIKE ? OR CAST(d.id AS TEXT) = ?)');
+    where.push(
+      '(d.name LIKE ? OR d.ip LIKE ? OR d.hostname LIKE ? OR d.location LIKE ? OR d.vendor LIKE ? OR d.model LIKE ? OR d.serial LIKE ? OR d.mac_address LIKE ? OR d.asset_tag LIKE ? OR CAST(d.id AS TEXT) = ?)'
+    );
     const s = `%${f.search}%`;
-    params.push(s, s, s, s, s, s, f.search);
+    params.push(s, s, s, s, s, s, s, s, s, f.search);
   }
   if (f.group) {
     // عضویت چندگروهی: هم ستون قدیمی group_id و هم جدول عضویت بررسی می‌شود تا
@@ -166,6 +169,12 @@ export function serializeDevice(row, tags = [], groupName = null, groups = []) {
     model: row.model || '',
     serial: row.serial || '',
     firmware: row.firmware || '',
+    macAddress: row.mac_address || '',
+    assetTag: row.asset_tag || '',
+    /** نام کاربری دسترسی؛ در پایگاه‌داده رمزنگاری‌شده است. */
+    accessUsername: tryDecryptSecret(row.access_username_enc),
+    /** رمز عبور هرگز در پاسخ فهرست/جزئیات برنمی‌گردد. */
+    hasAccessPassword: Boolean(row.access_password_enc),
     owner: row.owner || '',
     notes: row.notes || '',
     priority: row.priority,
@@ -206,6 +215,16 @@ export function serializeDevice(row, tags = [], groupName = null, groups = []) {
     outageCount: row.outage_count ?? undefined,
     tags,
   };
+}
+
+/**
+ * رمز عبور یک تجهیز فقط برای مسیر صریح credentials و پس از بررسی مجوز.
+ * @returns {string|null} null یعنی تجهیز وجود ندارد؛ رشتهٔ خالی یعنی رمزی ثبت نشده.
+ */
+export function getDeviceAccessPassword(id) {
+  const row = db.prepare('SELECT access_password_enc FROM devices WHERE id = ?').get(Number(id));
+  if (!row) return null;
+  return row.access_password_enc ? decryptSecret(row.access_password_enc) : '';
 }
 
 export function listDevices(filters, { withCounts = true } = {}) {
@@ -334,10 +353,14 @@ export function setDeviceTags(deviceId, tagIds = []) {
 
 const INSERT_FIELDS = [
   'name', 'ip', 'hostname', 'device_type', 'group_id', 'location', 'building', 'rack', 'latitude', 'longitude',
-  'map_layer_id', 'vendor', 'model', 'serial', 'firmware', 'owner', 'notes', 'priority', 'enabled',
+  'map_layer_id', 'vendor', 'model', 'serial', 'firmware', 'mac_address', 'asset_tag', 'owner', 'notes', 'priority', 'enabled',
   'monitoring_enabled', 'ping_interval', 'timeout_ms', 'packet_count', 'retries', 'latency_threshold', 'loss_threshold',
-  'installed_at',
+  'installed_at', 'access_username_enc', 'access_password_enc',
 ];
+// فقط ورودی خام اعتبارنامه پذیرفته می‌شود؛ ستون‌های *_enc نباید از بدنهٔ درخواست
+// قابل نوشتن باشند تا کسی ciphertext دلخواه را جایگزین نکند.
+const CREDENTIAL_COLUMNS = new Set(['access_username_enc', 'access_password_enc']);
+const CREDENTIAL_INPUT = new Set(['access_username', 'access_password', 'clear_access_password']);
 
 /* ------------------------------------------------------------------ */
 /* اعتبارسنجی ورودی تجهیز                                              */
@@ -354,6 +377,8 @@ const STRING_LIMITS = {
   ip: 45,
   hostname: 255,
   device_type: 60,
+  mac_address: 32,
+  asset_tag: 60,
   group: 120,
   location: 120,
   building: 120,
@@ -380,8 +405,40 @@ const NUM_LIMITS = {
 const INT_FIELDS = new Set(['packet_count', 'retries']);
 const PRIORITIES = ['low', 'normal', 'high', 'critical'];
 const STATUSES = [STATUS.ONLINE, STATUS.OFFLINE, STATUS.WARNING, STATUS.UNKNOWN, STATUS.MAINTENANCE];
-const PASSTHROUGH = new Set(['tags', 'tagNames', 'group', 'group_ids', 'groupIds']);
-const ALLOWED_INPUT = new Set([...INSERT_FIELDS, ...PASSTHROUGH, 'status']);
+const PASSTHROUGH = new Set(['tags', 'tagNames', 'group', 'group_ids', 'groupIds', 'mac', 'macAddress']);
+const ALLOWED_INPUT = new Set([
+  ...INSERT_FIELDS.filter((f) => !CREDENTIAL_COLUMNS.has(f)),
+  ...PASSTHROUGH,
+  ...CREDENTIAL_INPUT,
+  'mac',
+  'macAddress',
+  'status',
+]);
+
+/**
+ * آدرس MAC را به قالب استاندارد `AA:BB:CC:DD:EE:FF` نرمال می‌کند.
+ * جداکننده‌های رایج (`:` `-` `.` و فاصله) پذیرفته می‌شوند؛ مقدار ناشناخته
+ * به‌جای ذخیرهٔ بی‌صدا، خطای کاربر برمی‌گرداند (مثل اعتبارسنجی IP).
+ */
+export function normalizeMac(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const hex = raw.replace(/[\s:.-]/g, '').toLowerCase();
+  if (!/^[0-9a-f]{12}$/.test(hex)) throw new Error(`آدرس MAC نامعتبر است: ${raw}`);
+  return hex.toUpperCase().match(/.{2}/g).join(':');
+}
+
+/**
+ * نوع تجهیز را در فهرست مرجع انواع ثبت می‌کند (بدون خطا اگر از قبل باشد).
+ * ورود گروهی و ساخت دستی هر دو از همین مسیر رد می‌شوند تا نوع تازه در
+ * تنظیمات هم دیده شود.
+ */
+export function ensureDeviceType(name) {
+  const n = String(name ?? '').trim().slice(0, 60);
+  if (!n) return null;
+  db.prepare('INSERT OR IGNORE INTO device_types(name, color, created_at) VALUES (?,?,?)').run(n, '#2563eb', Date.now());
+  return n;
+}
 
 /**
  * ورودی تجهیز را نرمال و مرزگذاری می‌کند.
@@ -391,8 +448,28 @@ const ALLOWED_INPUT = new Set([...INSERT_FIELDS, ...PASSTHROUGH, 'status']);
  */
 export function sanitizeDeviceInput(input = {}, { partial = false } = {}) {
   const out = {};
-  for (const [key, raw] of Object.entries(input ?? {})) {
-    if (!ALLOWED_INPUT.has(key)) continue;
+  const body = input ?? {};
+  // اعتبارنامه پیش از حلقه پردازش می‌شود تا نام فیلدهای رمزشده هرگز از ورودی
+  // پذیرفته نشوند و رمز خام فقط تا لحظهٔ رمزنگاری در حافظه بماند.
+  if (Object.prototype.hasOwnProperty.call(body, 'access_username')) {
+    const username = body.access_username == null ? '' : String(body.access_username).trim().slice(0, 255);
+    out.access_username_enc = username ? encryptSecret(username) : '';
+  }
+  if (body.clear_access_password === true || body.clear_access_password === 1 || body.clear_access_password === '1') {
+    out.access_password_enc = '';
+  } else if (Object.prototype.hasOwnProperty.call(body, 'access_password') && body.access_password != null && String(body.access_password) !== '') {
+    out.access_password_enc = encryptSecret(String(body.access_password).slice(0, 1024));
+  }
+  for (const [key, raw] of Object.entries(body)) {
+    if (!ALLOWED_INPUT.has(key) || CREDENTIAL_INPUT.has(key)) continue;
+    if (key === 'mac_address' || key === 'mac') {
+      out.mac_address = normalizeMac(raw);
+      continue;
+    }
+    if (key === 'asset_tag') {
+      out.asset_tag = String(raw ?? '').trim().slice(0, STRING_LIMITS.asset_tag);
+      continue;
+    }
     if (key in STRING_LIMITS) {
       out[key] = raw == null ? '' : String(raw).trim().slice(0, STRING_LIMITS[key]);
       continue;
@@ -483,6 +560,7 @@ export function createDevice(input, { source = 'manual' } = {}) {
       else if (payload.group_id) setDeviceGroups(id, [payload.group_id]);
       if (Array.isArray(payload.tags)) attachTags(id, payload.tags, { replace: true });
       if (Array.isArray(payload.tagNames)) attachTags(id, payload.tagNames, { replace: true });
+      ensureDeviceType(payload.device_type);
       db.prepare('INSERT INTO engine_log(ts, level, message) VALUES (?,?,?)').run(now, 'info', `تجهیز «${payload.name}» (${payload.ip}) افزوده شد — منبع: ${source}`);
       return getDevice(id);
     },
@@ -555,6 +633,7 @@ export function updateDevice(id, input) {
       }
       if (Array.isArray(patch.tags)) setDeviceTags(deviceId, patch.tags.filter((t) => /^\d+$/.test(String(t))));
       if (Array.isArray(patch.tagNames)) attachTags(deviceId, patch.tagNames, { replace: true });
+      ensureDeviceType(patch.device_type);
       if (patch.enabled === 0 || patch.monitoring_enabled === 0) closeDeviceMonitoringState(deviceId);
       return getDevice(deviceId);
     },

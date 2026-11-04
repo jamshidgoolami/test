@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ArrowUpDown,
+  Columns3,
   Download,
   Edit3,
+  ExternalLink,
   Eye,
   Filter,
   Grid2X2,
@@ -45,6 +47,71 @@ import ImportDialog from '../features/ImportDialog';
 import type { Device, Paged, Priority } from '../lib/types';
 
 type ViewMode = 'cards' | 'table';
+
+type DeviceTableColumn = {
+  key: string;
+  label: string;
+  sortable?: boolean;
+  className?: string;
+};
+
+const DEVICE_TABLE_COLUMNS: DeviceTableColumn[] = [
+  { key: 'name', label: 'نام تجهیز', sortable: true },
+  { key: 'ip', label: 'آدرس IP', sortable: true, className: 'num' },
+  { key: 'type', label: 'نوع' },
+  { key: 'group', label: 'گروه', sortable: true },
+  { key: 'installed', label: 'تاریخ نصب', sortable: true, className: 'num text-[11px] text-ink-500' },
+  { key: 'status', label: 'وضعیت', sortable: true },
+  { key: 'latency', label: 'تأخیر', sortable: true, className: 'num' },
+  { key: 'loss', label: 'افت بسته', sortable: true, className: 'num' },
+  { key: 'uptime', label: 'دسترس‌پذیری', sortable: true, className: 'num' },
+  { key: 'last_check', label: 'آخرین بررسی', sortable: true, className: 'text-[11px] text-ink-500' },
+  { key: 'outages', label: 'قطعی', sortable: true, className: 'num' },
+  { key: 'actions', label: 'عملیات', className: 'text-center' },
+];
+
+const TABLE_COLUMN_KEYS = DEVICE_TABLE_COLUMNS.map((column) => column.key);
+
+/**
+ * آدرس وب تجهیز را از IP می‌سازد؛ IPv6 در براکت قرار می‌گیرد. فقط http/https
+ * پذیرفته می‌شود و پنجرهٔ تازه بدون دسترسی به opener باز می‌شود.
+ */
+function openDeviceAddress(device: Device) {
+  const host = String(device.ip || '').trim();
+  if (!host) return;
+  const bracketed = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  try {
+    const url = new URL(`http://${bracketed}`);
+    if (url.protocol !== 'http:' || !url.hostname) return;
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  } catch {
+    /* آدرس نامعتبر نباید پنجرهٔ خالی باز کند */
+  }
+}
+
+/** ستون‌های انتخابی نمای جدول؛ برخلاف فیلترها، فقط ترجیح نمایش همین مرورگر است. */
+function readTableColumnsPreference(): string[] {
+  try {
+    const raw = localStorage.getItem('nw.tableColumns');
+    if (!raw) return [...TABLE_COLUMN_KEYS];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...TABLE_COLUMN_KEYS];
+    const unique = [
+      ...new Set(parsed.filter((key): key is string => typeof key === 'string' && TABLE_COLUMN_KEYS.includes(key))),
+    ];
+    return unique.length ? unique : [...TABLE_COLUMN_KEYS];
+  } catch {
+    return [...TABLE_COLUMN_KEYS];
+  }
+}
+
+function saveTableColumnsPreference(keys: string[]) {
+  try {
+    localStorage.setItem('nw.tableColumns', JSON.stringify(keys));
+  } catch {
+    /* ذخیره‌سازی مرورگر در دسترس نیست */
+  }
+}
 
 // فیلتر وضعیت به‌صورت سه بخش کنار هم: وصل / قطع / همه
 const STATUS_SEGMENTS = [
@@ -134,6 +201,33 @@ function saveCardTagPreference(tags: string[]) {
   }
 }
 
+/** نشان‌های ثابت کارت (اولویت و موقعیت) مستقل از تگ‌های سفارشی‌اند. */
+interface CardBadgePreference {
+  priority: boolean;
+  geo: boolean;
+}
+
+function readCardBadgePreference(): CardBadgePreference {
+  try {
+    const raw = localStorage.getItem('nw.cardBadges');
+    const parsed = raw ? (JSON.parse(raw) as Partial<CardBadgePreference>) : null;
+    return {
+      priority: parsed?.priority !== false,
+      geo: parsed?.geo !== false,
+    };
+  } catch {
+    return { priority: true, geo: true };
+  }
+}
+
+function saveCardBadgePreference(preference: CardBadgePreference) {
+  try {
+    localStorage.setItem('nw.cardBadges', JSON.stringify(preference));
+  } catch {
+    /* ذخیره‌سازی مرورگر در دسترس نیست */
+  }
+}
+
 export default function Devices() {
   const { params, setParam, resetParams } = useUrlParams();
   const { meta, refreshMeta, settings } = useApp();
@@ -147,6 +241,8 @@ export default function Devices() {
 
   const [view, setView] = useState<ViewMode>(readViewPreference);
   const [cols, setCols] = useState<number>(readColsPreference);
+  const [tableColumns, setTableColumns] = useState<string[]>(readTableColumnsPreference);
+  const [columnsOpen, setColumnsOpen] = useState(false);
   // در موبایل/تبلت منوی گروه‌ها بسته شروع می‌شود تا فهرست تجهیزات زیر چند
   // صفحه گروه پنهان نشود؛ در دسکتاپ باز است.
   const [groupsOpen, setGroupsOpen] = useState<boolean>(() => {
@@ -159,6 +255,7 @@ export default function Devices() {
   const [exportOpen, setExportOpen] = useState(false);
   const [tagDisplayOpen, setTagDisplayOpen] = useState(false);
   const [cardTags, setCardTags] = useState<string[]>(readCardTagPreference);
+  const [cardBadges, setCardBadges] = useState<CardBadgePreference>(readCardBadgePreference);
   const [selected, setSelected] = useState<number[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Device | null>(null);
@@ -193,6 +290,16 @@ export default function Devices() {
 
   const devices = data?.items ?? [];
 
+  // Command Palette و لینک‌های عملیاتی می‌توانند فرم افزودن را مستقیم باز کنند.
+  useEffect(() => {
+    if (params.get('new') !== '1') return;
+    if (canWrite) {
+      setEditing(null);
+      setFormOpen(true);
+    }
+    setParam('new', '');
+  }, [params, setParam, canWrite]);
+
   // اتصال مجدد SSE → Snapshot تازه فهرست، تا وضعیت‌های ازدست‌رفته با داده قبلی
   // اشتباه گرفته نشوند.
   const syncToken = live.syncToken;
@@ -216,8 +323,20 @@ export default function Devices() {
   }, [cols]);
 
   useEffect(() => {
+    saveTableColumnsPreference(tableColumns);
+  }, [tableColumns]);
+
+  useEffect(() => {
+    if (view !== 'table') setColumnsOpen(false);
+  }, [view]);
+
+  useEffect(() => {
     saveCardTagPreference(cardTags);
   }, [cardTags]);
+
+  useEffect(() => {
+    saveCardBadgePreference(cardBadges);
+  }, [cardBadges]);
 
   useEffect(() => {
     setSelected([]);
@@ -320,13 +439,13 @@ export default function Devices() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* نوار ابزار — دقیقاً دو ردیف: جست‌وجو/فیلترها، سپس نحوهٔ نمایش و وضعیت */}
-      <Card padded={false} className="relative z-40 p-4">
-        <div className="flex flex-col gap-3">
-          {/* ردیف ۱: جست‌وجو و فیلترها */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-[224px] max-w-full shrink-0">
+    <div className="space-y-3">
+      {/* نوار ابزار — یک ردیف فیلتر همیشه‌نمایان، سپس نحوهٔ نمایش و وضعیت */}
+      <Card padded={false} className="relative z-40 p-2.5">
+        <div className="flex flex-col gap-2">
+          {/* ردیف ۱: جست‌وجو و همهٔ فیلترها، همیشه در یک ردیف */}
+          <div className="-mb-1 flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="relative w-[210px] shrink-0">
               <Search size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <input
                 className="field !rounded-pill pr-9"
@@ -337,7 +456,12 @@ export default function Devices() {
               />
             </div>
 
-            <select className="field !w-auto !rounded-pill" value={query.tag} onChange={(e) => setParam('tag', e.target.value)}>
+            <select
+              className="field !w-auto shrink-0 !rounded-pill !py-1.5 !text-[12px]"
+              value={query.tag}
+              onChange={(e) => setParam('tag', e.target.value)}
+              aria-label="فیلتر تگ"
+            >
               <option value="">همه تگ‌ها</option>
               {(meta?.tags ?? []).map((t) => (
                 <option key={t.id} value={t.name}>
@@ -346,7 +470,12 @@ export default function Devices() {
               ))}
             </select>
 
-            <select className="field !w-auto !rounded-pill" value={query.type} onChange={(e) => setParam('type', e.target.value)}>
+            <select
+              className="field !w-auto shrink-0 !rounded-pill !py-1.5 !text-[12px]"
+              value={query.type}
+              onChange={(e) => setParam('type', e.target.value)}
+              aria-label="فیلتر نوع تجهیز"
+            >
               <option value="">همه انواع</option>
               {(meta?.types ?? []).map((t) => (
                 <option key={t.value} value={t.value}>
@@ -355,7 +484,12 @@ export default function Devices() {
               ))}
             </select>
 
-            <select className="field !w-auto !rounded-pill" value={query.priority} onChange={(e) => setParam('priority', e.target.value)}>
+            <select
+              className="field !w-auto shrink-0 !rounded-pill !py-1.5 !text-[12px]"
+              value={query.priority}
+              onChange={(e) => setParam('priority', e.target.value)}
+              aria-label="فیلتر اولویت"
+            >
               <option value="">همه اولویت‌ها</option>
               {Object.entries(PRIORITY_META).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -364,7 +498,12 @@ export default function Devices() {
               ))}
             </select>
 
-            <select className="field !w-auto !rounded-pill" value={query.sort} onChange={(e) => setParam('sort', e.target.value)}>
+            <select
+              className="field !w-auto shrink-0 !rounded-pill !py-1.5 !text-[12px]"
+              value={query.sort}
+              onChange={(e) => setParam('sort', e.target.value)}
+              aria-label="ترتیب فهرست"
+            >
               {SORT_OPTIONS.map((s) => (
                 <option key={s.value} value={s.value}>
                   مرتب‌سازی: {s.label}
@@ -372,24 +511,28 @@ export default function Devices() {
               ))}
             </select>
 
-            <button type="button" className="btn-ghost btn-xs" onClick={() => setParam('order', query.order === 'asc' ? 'desc' : 'asc')}>
+            <button
+              type="button"
+              className="btn-ghost btn-xs shrink-0"
+              onClick={() => setParam('order', query.order === 'asc' ? 'desc' : 'asc')}
+            >
               <ArrowUpDown size={14} />
               {query.order === 'asc' ? 'صعودی' : 'نزولی'}
             </button>
 
             {activeFilters.map((f) => (
-              <button key={f.key} type="button" className="chip border-brand-200 bg-brand-50 text-brand-700" onClick={() => setParam(f.key, '')}>
+              <button key={f.key} type="button" className="chip shrink-0 border-brand-200 bg-brand-50 text-brand-700" onClick={() => setParam(f.key, '')}>
                 {f.label}
                 <X size={11} />
               </button>
             ))}
             {activeFilters.length ? (
-              <button type="button" className="text-[11px] text-ink-400 underline hover:text-red-500" onClick={() => resetParams()}>
+              <button type="button" className="shrink-0 text-[11px] text-ink-400 underline hover:text-red-500" onClick={() => resetParams()}>
                 پاک کردن همه
               </button>
             ) : null}
 
-            <span className="ms-auto text-[11px] text-ink-400">
+            <span className="ms-auto shrink-0 text-[11px] text-ink-400">
               <Filter size={12} className="inline" /> {faDigits(data?.total ?? 0)} تجهیز یافت شد
               {updatedAt ? ` · آخرین به‌روزرسانی ${fmtRelative(updatedAt)}` : ''}
               {refreshing ? ' · در حال به‌روزرسانی…' : ''}
@@ -397,7 +540,7 @@ export default function Devices() {
           </div>
 
           {/* ردیف ۲: نحوهٔ نمایش و حالت وصل/قطع/همه */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 pt-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2">
             <div className="inline-flex items-center rounded-pill border border-ink-200 bg-white/70 p-0.5">
               {STATUS_SEGMENTS.map((s) => (
                 <button
@@ -447,7 +590,11 @@ export default function Devices() {
                 >
                   <TagIcon size={14} />
                   تگ روی کارت
-                  {cardTags.length ? <span className="num chip border-brand-200 bg-brand-50 px-1.5 py-0 text-[10px] text-brand-700">{faDigits(cardTags.length)}</span> : null}
+                  {cardTags.length || cardBadges.priority || cardBadges.geo ? (
+                    <span className="num chip border-brand-200 bg-brand-50 px-1.5 py-0 text-[10px] text-brand-700">
+                      {faDigits(cardTags.length + (cardBadges.priority ? 1 : 0) + (cardBadges.geo ? 1 : 0))}
+                    </span>
+                  ) : null}
                 </button>
                 {tagDisplayOpen ? <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label="بستن انتخاب تگ" onClick={() => setTagDisplayOpen(false)} /> : null}
                 {tagDisplayOpen ? (
@@ -473,6 +620,29 @@ export default function Devices() {
                           </label>
                         ))
                       )}
+                    </div>
+                    <div className="mt-1 border-t border-ink-100 pt-1">
+                      <p className="px-1 pb-1 text-[10px] font-medium text-ink-400">نشان‌های ثابت کارت</p>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-ink-600 hover:bg-brand-50/60">
+                        <input
+                          type="checkbox"
+                          className="accent-brand-600"
+                          checked={cardBadges.priority}
+                          onChange={(e) => setCardBadges((prev) => ({ ...prev, priority: e.target.checked }))}
+                        />
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-hidden />
+                        <span className="min-w-0 flex-1">نوع اولویت</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-ink-600 hover:bg-brand-50/60">
+                        <input
+                          type="checkbox"
+                          className="accent-brand-600"
+                          checked={cardBadges.geo}
+                          onChange={(e) => setCardBadges((prev) => ({ ...prev, geo: e.target.checked }))}
+                        />
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-sky-500" aria-hidden />
+                        <span className="min-w-0 flex-1">دارای موقعیت</span>
+                      </label>
                     </div>
                     <div className="mt-1 flex items-center justify-between border-t border-ink-100 pt-1">
                       <button type="button" className="btn-ghost btn-xs" onClick={() => setCardTags([])}>
@@ -526,6 +696,84 @@ export default function Devices() {
                   جدول
                 </button>
               </div>
+
+              {view === 'table' ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="btn-ghost btn-xs"
+                    onClick={() => setColumnsOpen((value) => !value)}
+                    aria-expanded={columnsOpen}
+                    aria-haspopup="dialog"
+                    title="انتخاب ستون‌های نمایش‌داده‌شده در جدول"
+                  >
+                    <Columns3 size={14} />
+                    ستون‌ها
+                    <span className="num chip border-ink-200 bg-ink-50 px-1.5 py-0 text-[10px] text-ink-600">
+                      {faDigits(tableColumns.length)}/{faDigits(DEVICE_TABLE_COLUMNS.length)}
+                    </span>
+                  </button>
+                  {columnsOpen ? (
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-20 cursor-default"
+                      aria-label="بستن انتخاب ستون‌ها"
+                      onClick={() => setColumnsOpen(false)}
+                    />
+                  ) : null}
+                  {columnsOpen ? (
+                    <div
+                      className="absolute left-0 z-30 mt-1 w-60 rounded-soft border border-ink-200 bg-white p-2 shadow-pop"
+                      role="dialog"
+                      aria-label="ستون‌های نمای جدول"
+                    >
+                      <p className="px-1 pb-1 text-[10.5px] text-ink-400">ستون‌هایی که در نمای جدول دیده شوند.</p>
+                      <div className="max-h-64 space-y-0.5 overflow-auto">
+                        {DEVICE_TABLE_COLUMNS.map((column) => {
+                          const checked = tableColumns.includes(column.key);
+                          const lastVisible = checked && tableColumns.length === 1;
+                          return (
+                            <label
+                              key={column.key}
+                              className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] ${
+                                lastVisible
+                                  ? 'cursor-not-allowed text-ink-400'
+                                  : 'cursor-pointer text-ink-600 hover:bg-brand-50/60'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="accent-brand-600"
+                                checked={checked}
+                                disabled={lastVisible}
+                                onChange={(event) => {
+                                  setTableColumns((previous) => {
+                                    if (event.target.checked) return [...new Set([...previous, column.key])];
+                                    return previous.length > 1 ? previous.filter((key) => key !== column.key) : previous;
+                                  });
+                                }}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{column.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between border-t border-ink-100 pt-1">
+                        <button
+                          type="button"
+                          className="btn-ghost btn-xs"
+                          onClick={() => setTableColumns([...TABLE_COLUMN_KEYS])}
+                        >
+                          همهٔ ستون‌ها
+                        </button>
+                        <button type="button" className="btn-soft btn-xs" onClick={() => setColumnsOpen(false)}>
+                          بستن
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {canWrite ? (
                 <button type="button" className="btn-ghost btn-xs" onClick={() => setImportOpen(true)}>
@@ -653,37 +901,23 @@ export default function Devices() {
         </div>
       ) : null}
 
-      {/* چیدمان: محتوا (راست) · منوی گروه‌ها (چپ) — دکمهٔ باز/بسته بالای خود گروه‌ها */}
+      {/* چیدمان: محتوا (راست) · منوی گروه‌ها (چپ) — دکمهٔ باز/بسته در سرصفحهٔ خود فهرست */}
       <div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-start">
         <div className={`shrink-0 ${groupsOpen ? 'xl:w-[250px]' : 'xl:w-auto'}`}>
-          <div className="mb-2 flex items-center gap-2">
-            <button
-              type="button"
-              className="btn-ghost btn-xs"
-              onClick={() => setGroupsOpen((v) => !v)}
-              aria-expanded={groupsOpen}
-              aria-controls="device-groups"
-              title={groupsOpen ? 'بستن منوی گروه‌ها' : 'نمایش منوی گروه‌ها'}
-              aria-label={groupsOpen ? 'بستن منوی گروه‌ها' : 'نمایش منوی گروه‌ها'}
-            >
-              {groupsOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-              {groupsOpen ? 'بستن گروه‌ها' : 'گروه‌ها'}
-            </button>
-          </div>
-          {groupsOpen ? (
-            <GroupSidebar
-              groups={groups.map((g) => ({
-                id: g.id,
-                name: g.name,
-                color: g.color,
-                total: g.device_count ?? 0,
-                online: g.online ?? 0,
-                offline: g.offline ?? 0,
-              }))}
-              selected={query.group}
-              onSelect={(name) => setParam('group', name)}
-            />
-          ) : null}
+          <GroupSidebar
+            open={groupsOpen}
+            onToggle={() => setGroupsOpen((v) => !v)}
+            groups={groups.map((g) => ({
+              id: g.id,
+              name: g.name,
+              color: g.color,
+              total: g.device_count ?? 0,
+              online: g.online ?? 0,
+              offline: g.offline ?? 0,
+            }))}
+            selected={query.group}
+            onSelect={(name) => setParam('group', name)}
+          />
         </div>
         <div className="min-w-0 flex-1 space-y-4">
       {/* محتوا */}
@@ -720,6 +954,8 @@ export default function Devices() {
               device={d}
               spark={sparks[d.id] ?? []}
               visibleTags={cardTags}
+              showPriority={cardBadges.priority}
+              showGeo={cardBadges.geo}
               threshold={d.latencyThreshold ?? settings?.latency_threshold ?? 150}
               selected={selected.includes(d.id)}
               selectable={canWrite}
@@ -752,6 +988,7 @@ export default function Devices() {
             setFormOpen(true);
           }}
           onDelete={removeDevice}
+          visibleColumns={tableColumns}
           sort={query.sort}
           order={query.order}
           onSort={(key) => setParam('sort', key)}
@@ -772,7 +1009,7 @@ export default function Devices() {
         </select>
         <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
           <RefreshCw size={13} />
-          بروزرسانی فهرست
+          به‌روزرسانی فهرست
         </button>
       </div>
 
@@ -803,10 +1040,14 @@ export default function Devices() {
 
 /* ------------------------------ منوی کناری گروه‌ها ------------------------------ */
 function GroupSidebar({
+  open,
+  onToggle,
   groups,
   selected,
   onSelect,
 }: {
+  open: boolean;
+  onToggle: () => void;
   groups: { id: number; name: string; color: string; total: number; online: number; offline: number }[];
   selected: string;
   onSelect: (name: string) => void;
@@ -816,12 +1057,27 @@ function GroupSidebar({
     { total: 0, online: 0, offline: 0 }
   );
   return (
-    <Card id="device-groups">
-      <div className="flex items-center gap-2">
-        <Layers size={16} className="text-brand-500" />
-        <h3 className="text-[14px] font-semibold text-ink-800">گروه‌های تجهیزات</h3>
+    <Card id="device-groups" className={open ? '' : '!w-fit !p-1.5'}>
+      <div className={`flex items-center gap-2 ${open ? '' : 'justify-center'}`}>
+        {open ? (
+          <>
+            <Layers size={16} className="text-brand-500" />
+            <h3 className="text-[14px] font-semibold text-ink-800">گروه‌های تجهیزات</h3>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className={`btn-ghost btn-xs ${open ? 'ms-auto' : ''}`}
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls="device-group-list"
+          title={open ? 'بستن گروه‌ها' : 'بازکردن گروه‌ها'}
+          aria-label={open ? 'بستن گروه‌ها' : 'بازکردن گروه‌ها'}
+        >
+          {open ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+        </button>
       </div>
-      <div className="mt-3 space-y-1.5">
+      <div id="device-group-list" hidden={!open} className="mt-3 space-y-1.5">
         <GroupRow
           name="همه گروه‌ها"
           color="#2563eb"
@@ -902,6 +1158,8 @@ function DeviceCard({
   spark,
   threshold,
   visibleTags,
+  showPriority,
+  showGeo,
   selected,
   selectable,
   canProbe,
@@ -917,6 +1175,9 @@ function DeviceCard({
   threshold: number;
   /** اگر خالی باشد دو تگ اول نمایش داده می‌شود؛ در غیر این صورت فقط تگ‌های انتخابی */
   visibleTags: string[];
+  /** نمایش/پنهان‌کردن نشان‌های اولویت و موقعیت از منوی «تگ روی کارت» */
+  showPriority: boolean;
+  showGeo: boolean;
   selected: boolean;
   selectable: boolean;
   canProbe: boolean;
@@ -930,22 +1191,21 @@ function DeviceCard({
   const liveSample = useDeviceLive(device.id);
   const livePing = useLivePing();
   const status = liveSample?.status ?? device.status;
-  const rtt = liveSample?.rtt ?? device.lastRtt;
-  const loss = liveSample?.lossPct ?? device.lossPct;
   const meta = statusMeta(status);
   const navigate = useNavigate();
 
   const points = useMemo(() => {
-    if (!spark.length) return [];
-    const withLive = [...spark];
-    if (liveSample?.rtt != null) withLive.push({ t: liveSample.ts, rtt: liveSample.rtt, loss: liveSample.lossPct });
-    return withLive;
+    const byTime = new Map<number, { t: number; rtt: number | null; loss: number }>();
+    for (const point of spark) byTime.set(point.t, point);
+    // نمونهٔ زنده حتی وقتی پاسخ نداده هم اضافه می‌شود تا قطعی جاری در نمودار دیده شود.
+    if (liveSample) byTime.set(liveSample.ts, { t: liveSample.ts, rtt: liveSample.rtt, loss: liveSample.lossPct });
+    return [...byTime.values()].sort((a, b) => a.t - b.t);
   }, [spark, liveSample]);
 
   return (
     <div
       style={{ animationDelay: `${delay}ms` }}
-      className={`card device-card group relative animate-fade-up p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-pop ${
+      className={`card device-card group relative animate-fade-up p-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-pop ${
         selected ? 'ring-2 ring-brand-400/70' : ''
       } ${!device.enabled ? 'opacity-70' : ''}`}
     >
@@ -980,7 +1240,7 @@ function DeviceCard({
         </span>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {device.groupName ? (
           <span
             className="chip max-w-full border-ink-200 bg-ink-50 text-ink-600"
@@ -990,9 +1250,11 @@ function DeviceCard({
             <span className="truncate">{device.groupName}</span>
           </span>
         ) : null}
-        <Badge className={PRIORITY_META[device.priority]?.className}>{PRIORITY_META[device.priority]?.label}</Badge>
+        {showPriority ? (
+          <Badge className={PRIORITY_META[device.priority]?.className}>{PRIORITY_META[device.priority]?.label}</Badge>
+        ) : null}
         {!device.monitoringEnabled ? <Badge tone="ink">پایش غیرفعال</Badge> : null}
-        {device.latitude != null ? (
+        {showGeo && device.latitude != null ? (
           <Badge tone="brand">
             <MapPin size={11} /> دارای موقعیت
           </Badge>
@@ -1005,28 +1267,34 @@ function DeviceCard({
         ))}
       </div>
 
-      <div className="mt-3 rounded-soft bg-gradient-to-b from-ink-50/70 to-white p-2">
+      <div className="mt-2 rounded-soft bg-gradient-to-b from-ink-50/70 to-white px-1.5 py-1">
         {points.length ? (
           <LatencySpark points={points} threshold={threshold} height={52} />
         ) : (
           <div className="flex h-[52px] items-center justify-center px-1 text-center text-[11px] leading-tight text-ink-400">داده‌ای در یک ساعت گذشته ثبت نشده</div>
         )}
-        <div className="device-card__legend mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] text-ink-400">
-          <span className="device-card__chart-caption">نمودار تأخیر — یک ساعت گذشته</span>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <span className="inline-flex h-0.5 w-4 rounded" style={{ background: '#f97316' }} />
-            آستانه <span className="num">{faDigits(threshold)} ms</span>
+        <div className="device-card__legend mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[9.5px] text-ink-400">
+          <span className="device-card__chart-caption">
+            تأخیر ۱ ساعت · آستانه <span className="num">{faDigits(threshold)} ms</span>
+          </span>
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              سالم
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-sun-500" />
+              بالا
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              قطع
+            </span>
           </span>
         </div>
       </div>
 
-      <div className="device-card__metrics mt-3 grid grid-cols-3 gap-2">
-        <Metric label="تأخیر" value={fmtMs(rtt)} tone={rtt != null && rtt > (device.latencyThreshold ?? 150) ? 'text-sun-600' : 'text-ink-700'} />
-        <Metric label="افت بسته" value={fmtPct(loss)} tone={loss > 5 ? 'text-sun-600' : 'text-ink-700'} />
-        <Metric label="دسترس‌پذیری" value={fmtPct(device.uptimePct, 2)} tone={(device.uptimePct ?? 100) < 98 ? 'text-red-600' : 'text-emerald-600'} />
-      </div>
-
-      <div className="device-card__footer mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-3">
+      <div className="device-card__footer mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2">
         <span className="device-card__time text-[10.5px] text-ink-400">آخرین بررسی: {fmtRelative(liveSample?.ts ?? device.lastCheckAt)}</span>
         <div className="device-card__actions flex flex-wrap items-center justify-end gap-1.5">
           {canProbe ? (
@@ -1054,23 +1322,21 @@ function DeviceCard({
               </button>
             </>
           ) : null}
+          <button
+            type="button"
+            className="btn-ghost btn-xs"
+            onClick={() => openDeviceAddress(device)}
+            title={`بازکردن ${device.ip} در تب جدید`}
+            aria-label={`بازکردن آدرس ${device.ip} در تب جدید`}
+          >
+            <ExternalLink size={13} />
+          </button>
           <Link to={`/devices/${device.id}`} className="btn-soft btn-xs" title="جزئیات تجهیز">
             <Eye size={13} />
             <span className="device-card__details-label">جزئیات</span>
           </Link>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <div className="device-card__metric min-w-0 rounded-soft bg-ink-50/70 px-2 py-1.5 text-center">
-      <p className="text-[10px] text-ink-400">{label}</p>
-      <p className={`num mt-0.5 truncate text-[12px] font-semibold ${tone}`} title={value}>
-        {value}
-      </p>
     </div>
   );
 }
@@ -1091,6 +1357,7 @@ function DeviceTable({
   sort,
   order,
   onSort,
+  visibleColumns,
 }: {
   devices: Device[];
   selected: number[];
@@ -1106,24 +1373,13 @@ function DeviceTable({
   sort: string;
   order: string;
   onSort: (key: string) => void;
+  visibleColumns: string[];
 }) {
   const navigate = useNavigate();
   const livePing = useLivePing();
   const { tzOffset } = useApp();
-  const columns: { key: string; label: string; sortable?: boolean; className?: string }[] = [
-    { key: 'name', label: 'نام تجهیز', sortable: true },
-    { key: 'ip', label: 'آدرس IP', sortable: true },
-    { key: 'type', label: 'نوع' },
-    { key: 'group', label: 'گروه', sortable: true },
-    { key: 'installed', label: 'تاریخ نصب', sortable: true },
-    { key: 'status', label: 'وضعیت', sortable: true },
-    { key: 'latency', label: 'تأخیر', sortable: true },
-    { key: 'loss', label: 'افت بسته', sortable: true },
-    { key: 'uptime', label: 'دسترس‌پذیری', sortable: true },
-    { key: 'last_check', label: 'آخرین بررسی', sortable: true },
-    { key: 'outages', label: 'قطعی', sortable: true },
-    { key: 'actions', label: 'عملیات', className: 'text-center' },
-  ];
+  const visible = new Set(visibleColumns);
+  const columns = DEVICE_TABLE_COLUMNS.filter((column) => visible.has(column.key));
   return (
     <div className="table-wrap">
       <table className="table">
@@ -1157,65 +1413,86 @@ function DeviceTable({
                   <input type="checkbox" checked={selected.includes(d.id)} onChange={() => onToggle(d.id)} className="accent-brand-600" />
                 </td>
               ) : null}
-              <td>
-                <span className="block font-medium text-ink-800">{d.name}</span>
-                {d.location ? <span className="block text-[10.5px] text-ink-400">{d.location}</span> : null}
-              </td>
-              <td className="num">{d.ip}</td>
-              <td>{d.deviceType}</td>
-              <td>
-                {d.groupName ? (
-                  <span className="chip" style={{ borderColor: `${d.groupColor}44`, background: `${d.groupColor}12`, color: d.groupColor ?? undefined }}>
-                    {d.groupName}
-                    {d.groups && d.groups.length > 1 ? <span className="num text-[9.5px]">+{faDigits(d.groups.length - 1)}</span> : null}
-                  </span>
-                ) : (
-                  '—'
-                )}
-              </td>
-              <td className="num text-[11px] text-ink-500">{d.installedAt ? fmtDate(d.installedAt, tzOffset) : '—'}</td>
-              <td>
-                <StatusPill status={d.status} size="sm" />
-                {d.statusReason && d.status !== 'online' ? (
-                  <span className="mt-0.5 block max-w-[220px] truncate text-[10px] text-ink-400" title={d.statusReason}>
-                    {d.statusReason}
-                  </span>
-                ) : null}
-              </td>
-              <td className="num">{fmtMs(d.lastRtt)}</td>
-              <td className="num">{fmtPct(d.lossPct)}</td>
-              <td className="num">{fmtPct(d.uptimePct, 2)}</td>
-              <td className="text-[11px] text-ink-500">{fmtRelative(d.lastCheckAt)}</td>
-              <td className="num">{fmtNumber(d.outageCount ?? 0)}</td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-center gap-1">
-                  {canProbe ? (
-                    <>
-                      <button
-                        type="button"
-                        className={`btn-xs ${livePing.has(d.id) ? 'btn-soft' : 'btn-ghost'}`}
-                        title="پینگ زنده (هر ثانیه)"
-                        onClick={() => livePing.toggle({ id: d.id, name: d.name, ip: d.ip, status: d.status })}
-                      >
-                        <Activity size={13} />
-                      </button>
-                      <button type="button" className="btn-ghost btn-xs" title="Ping" onClick={() => onPing(d)}>
-                        <Wifi size={13} />
-                      </button>
-                    </>
+              {visible.has('name') ? (
+                <td>
+                  <span className="block font-medium text-ink-800">{d.name}</span>
+                  {d.location ? <span className="block text-[10.5px] text-ink-400">{d.location}</span> : null}
+                </td>
+              ) : null}
+              {visible.has('ip') ? <td className="num">{d.ip}</td> : null}
+              {visible.has('type') ? <td>{d.deviceType}</td> : null}
+              {visible.has('group') ? (
+                <td>
+                  {d.groupName ? (
+                    <span className="chip" style={{ borderColor: `${d.groupColor}44`, background: `${d.groupColor}12`, color: d.groupColor ?? undefined }}>
+                      {d.groupName}
+                      {d.groups && d.groups.length > 1 ? <span className="num text-[9.5px]">+{faDigits(d.groups.length - 1)}</span> : null}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              ) : null}
+              {visible.has('installed') ? (
+                <td className="num text-[11px] text-ink-500">{d.installedAt ? fmtDate(d.installedAt, tzOffset) : '—'}</td>
+              ) : null}
+              {visible.has('status') ? (
+                <td>
+                  <StatusPill status={d.status} size="sm" />
+                  {d.statusReason && d.status !== 'online' ? (
+                    <span className="mt-0.5 block max-w-[220px] truncate text-[10px] text-ink-400" title={d.statusReason}>
+                      {d.statusReason}
+                    </span>
                   ) : null}
-                  {canWrite ? (
-                    <>
-                      <button type="button" className="btn-ghost btn-xs" title="ویرایش" onClick={() => onEdit(d)}>
-                        <Edit3 size={13} />
-                      </button>
-                      <button type="button" className="btn-ghost btn-xs" title="حذف" onClick={() => onDelete(d)}>
-                        <Trash2 size={13} />
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              </td>
+                </td>
+              ) : null}
+              {visible.has('latency') ? <td className="num">{fmtMs(d.lastRtt)}</td> : null}
+              {visible.has('loss') ? <td className="num">{fmtPct(d.lossPct)}</td> : null}
+              {visible.has('uptime') ? <td className="num">{fmtPct(d.uptimePct, 2)}</td> : null}
+              {visible.has('last_check') ? (
+                <td className="text-[11px] text-ink-500">{fmtRelative(d.lastCheckAt)}</td>
+              ) : null}
+              {visible.has('outages') ? <td className="num">{fmtNumber(d.outageCount ?? 0)}</td> : null}
+              {visible.has('actions') ? (
+                <td onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-center gap-1">
+                    {canProbe ? (
+                      <>
+                        <button
+                          type="button"
+                          className={`btn-xs ${livePing.has(d.id) ? 'btn-soft' : 'btn-ghost'}`}
+                          title="پینگ زنده (هر ثانیه)"
+                          onClick={() => livePing.toggle({ id: d.id, name: d.name, ip: d.ip, status: d.status })}
+                        >
+                          <Activity size={13} />
+                        </button>
+                        <button type="button" className="btn-ghost btn-xs" title="Ping" onClick={() => onPing(d)}>
+                          <Wifi size={13} />
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn-ghost btn-xs"
+                      title={`بازکردن ${d.ip} در تب جدید`}
+                      aria-label={`بازکردن آدرس ${d.ip} در تب جدید`}
+                      onClick={() => openDeviceAddress(d)}
+                    >
+                      <ExternalLink size={13} />
+                    </button>
+                    {canWrite ? (
+                      <>
+                        <button type="button" className="btn-ghost btn-xs" title="ویرایش" onClick={() => onEdit(d)}>
+                          <Edit3 size={13} />
+                        </button>
+                        <button type="button" className="btn-ghost btn-xs" title="حذف" onClick={() => onDelete(d)}>
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

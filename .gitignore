@@ -11,6 +11,9 @@ data/
 *.tar.gz
 *.zip
 
+# بستهٔ نصب آفلاین (خروجی npm run offline:prepare)
+.offline/
+
 # خروجی آزمون رابط کاربری (Playwright)
 test-results/
 playwright-report/

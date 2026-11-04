@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useAsync, useLiveState, useToast } from '../lib/store';
+import { useUrlParams } from '../lib/params';
 import { useAuth } from '../lib/auth';
 import { ALERT_KIND_LABEL, faDigits, fmtDateTime, fmtDuration, fmtNumber, fmtRelative, SEVERITY_META, statusMeta } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Field, Modal, PageLoader, Pagination, StatCard, Tabs, Toggle } from '../components/ui';
@@ -50,15 +51,24 @@ export default function Alerts() {
   const { push } = useToast();
   const live = useLiveState();
   const groups = meta?.groups ?? [];
+  const { params, setParam } = useUrlParams();
 
-  const [section, setSection] = useState<Section>('alerts');
-  const [hours, setHours] = useState(24);
-
-  const [status, setStatus] = useState('active');
-  const [severity, setSeverity] = useState('all');
-  const [kind, setKind] = useState('all');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const sectionValues: Section[] = ['alerts', 'flaps', 'simultaneous', 'timeline', 'top'];
+  const sectionParam = params.get('view') as Section | null;
+  const section: Section = sectionParam && sectionValues.includes(sectionParam) ? sectionParam : 'alerts';
+  const hours = Math.max(1, Number(params.get('hours') ?? 24) || 24);
+  const status = params.get('status') ?? 'active';
+  const severity = params.get('severity') ?? 'all';
+  const kind = params.get('kind') ?? 'all';
+  const search = params.get('search') ?? '';
+  const page = Math.max(1, Number(params.get('page') ?? 1) || 1);
+  const setSection = (value: Section) => setParam('view', value === 'alerts' ? '' : value);
+  const setHours = (value: number) => setParam('hours', String(value));
+  const setStatus = (value: string) => setParam('status', value === 'active' ? '' : value);
+  const setSeverity = (value: string) => setParam('severity', value === 'all' ? '' : value);
+  const setKind = (value: string) => setParam('kind', value === 'all' ? '' : value);
+  const setSearch = (value: string) => setParam('search', value);
+  const setPage = (value: number) => setParam('page', value <= 1 ? '' : String(value));
   const [selected, setSelected] = useState<number[]>([]);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [ruleEditing, setRuleEditing] = useState<AlertRule | null>(null);
@@ -87,10 +97,12 @@ export default function Alerts() {
   }, [live.syncToken, refresh]);
 
   const { data: rulesData, refresh: refreshRules } = useAsync((signal) => api.alertRules(signal), []);
-  const { data: flaps, loading: flapsLoading } = useAsync((signal) => api.flaps({ hours }, signal), [hours, section], { enabled: section === 'flaps', interval: 30000 });
-  const { data: sim } = useAsync((signal) => api.simultaneous({ hours }, signal), [hours, section], { enabled: section === 'simultaneous', interval: 30000 });
-  const { data: timeline } = useAsync((signal) => api.outageTimeline({ hours }, signal), [hours, section], { enabled: section === 'timeline', interval: 60000 });
-  const { data: top } = useAsync((signal) => api.topOutageDevices({ days: 7 }, signal), [section], { enabled: section === 'top', interval: 60000 });
+  const { data: flaps, loading: flapsLoading } = useAsync((signal) => api.flaps({ hours }, signal), [hours], { enabled: section === 'flaps', interval: 30000 });
+  // کارت‌های خلاصه باید از همان ورود اول مقدار درست داشته باشند؛ این دو منبع
+  // مستقل از تب فعال هستند تا با باز شدن صفحه، صفر گمراه‌کننده نمایش داده نشود.
+  const { data: sim } = useAsync((signal) => api.simultaneous({ hours }, signal), [hours], { interval: 30000 });
+  const { data: timeline } = useAsync((signal) => api.outageTimeline({ hours }, signal), [hours], { enabled: section === 'timeline', interval: 60000 });
+  const { data: top } = useAsync((signal) => api.topOutageDevices({ days: 7 }, signal), [], { interval: 60000 });
 
   const stats = data?.stats;
 
@@ -131,10 +143,10 @@ export default function Alerts() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="هشدارهای فعال" value={fmtNumber(stats?.active ?? 0)} hint="نیازمند بررسی" tone="red" icon={<Bell size={20} />} />
-        <StatCard label="بحرانی" value={fmtNumber(stats?.bySeverity?.critical ?? 0)} hint="اولویت بالا" tone="violet" icon={<TriangleAlert size={20} />} />
-        <StatCard label="قطع‌های هم‌زمان" value={fmtNumber(sim?.overlapping ?? 0)} hint="بازه‌هایی با بیش از یک تجهیز قطع" tone="sun" icon={<Layers size={20} />} />
-        <StatCard label="تجهیزات پرقطعی" value={fmtNumber(top?.items?.length ?? 0)} hint="دارای قطعی در ۷ روز گذشته" tone="brand" icon={<TrendingDown size={20} />} />
+        <StatCard label="هشدارهای فعال" value={stats ? fmtNumber(stats.active) : '—'} hint="نیازمند بررسی" tone="red" icon={<Bell size={20} />} />
+        <StatCard label="بحرانی" value={stats ? fmtNumber(stats.bySeverity?.critical ?? 0) : '—'} hint="اولویت بالا" tone="violet" icon={<TriangleAlert size={20} />} />
+        <StatCard label="قطع‌های هم‌زمان" value={sim ? fmtNumber(sim.overlapping) : '—'} hint="بازه‌هایی با بیش از یک تجهیز قطع" tone="sun" icon={<Layers size={20} />} />
+        <StatCard label="تجهیزات پرقطعی" value={top ? fmtNumber(top.items?.length ?? 0) : '—'} hint="دارای قطعی در ۷ روز گذشته" tone="brand" icon={<TrendingDown size={20} />} />
       </div>
 
       <Card padded={false} className="p-2">
@@ -168,10 +180,7 @@ export default function Alerts() {
             <div className="flex flex-wrap items-center gap-3">
               <Tabs
                 value={status}
-                onChange={(v) => {
-                  setStatus(v);
-                  setPage(1);
-                }}
+                onChange={setStatus}
                 tabs={STATUS_TABS.map((t) => ({
                   ...t,
                   count:
@@ -198,13 +207,13 @@ export default function Alerts() {
                   }}
                 />
               </div>
-              <select className="field !w-auto !rounded-pill" value={severity} onChange={(e) => setSeverity(e.target.value)}>
+              <select className="field !w-auto !rounded-pill" value={severity} onChange={(e) => setSeverity(e.target.value)} aria-label="فیلتر سطح اهمیت">
                 <option value="all">همه سطوح اهمیت</option>
                 <option value="critical">بحرانی</option>
                 <option value="warning">هشدار</option>
                 <option value="info">اطلاع</option>
               </select>
-              <select className="field !w-auto !rounded-pill" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <select className="field !w-auto !rounded-pill" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="فیلتر نوع هشدار">
                 <option value="all">همه انواع</option>
                 {Object.entries(ALERT_KIND_LABEL).map(([k, v]) => (
                   <option key={k} value={k}>

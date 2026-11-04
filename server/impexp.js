@@ -64,11 +64,32 @@ const COLUMN_MAP = {
   'فعال': 'enabled',
   monitoring: 'monitoring_enabled',
   'مانیتورینگ': 'monitoring_enabled',
+  'مانیتورینگ فعال': 'monitoring_enabled',
+  'برچسب': 'tags',
+  'برچسب‌ها': 'tags',
+  'برچسب ها': 'tags',
+  'تگ های تجهیز': 'tags',
+  serial_number: 'serial',
+  'شماره سریال': 'serial',
+  'mac address': 'mac_address',
+  mac: 'mac_address',
+  'mac_address': 'mac_address',
+  'آدرس mac': 'mac_address',
+  'آدرس مک': 'mac_address',
+  'مک آدرس': 'mac_address',
+  'asset tag': 'asset_tag',
+  'asset_tag': 'asset_tag',
+  asset: 'asset_tag',
+  'پلاک': 'asset_tag',
+  'پلاک اموال': 'asset_tag',
+  'شماره اموال': 'asset_tag',
+  'کد اموال': 'asset_tag',
   ping_interval: 'ping_interval',
   'بازه ping': 'ping_interval',
   'بازه بررسی': 'ping_interval',
   timeout_ms: 'timeout_ms',
   'زمان انتظار': 'timeout_ms',
+  'زمان انتظار پاسخ': 'timeout_ms',
 };
 
 export const EXPORT_HEADERS = [
@@ -85,6 +106,8 @@ export const EXPORT_HEADERS = [
   ['vendor', 'سازنده'],
   ['model', 'مدل'],
   ['serial', 'سریال'],
+  ['mac_address', 'آدرس MAC'],
+  ['asset_tag', 'پلاک اموال'],
   ['owner', 'مسئول'],
   ['priority', 'اولویت'],
   ['ping_interval', 'بازه بررسی (ثانیه)'],
@@ -108,9 +131,28 @@ function foldKey(key) {
     .toLowerCase();
 }
 
+/**
+ * کلید مقایسه‌ای سرستون؛ چیزهایی که نویسندهٔ فایل ممکن است متفاوت بنویسد
+ * یکسان می‌شوند تا سرستون‌های خودِ خروجی/قالب هم دوباره قابل ورود باشند:
+ *   • نیم‌فاصله (ZWNJ) که foldKey به فاصله تبدیل می‌کند
+ *   • یکای داخل پرانتز در انتها: «بازه بررسی (ثانیه)» ≡ «بازه بررسی»
+ *   • فاصله، زیرخط، نقطه و خط تیره: «MAC Address» ≡ «mac_address»
+ * پیش‌تر کلیدهای COLUMN_MAP نرمال نمی‌شدند و سرستون «تگ‌ها» (که خروجی خود
+ * برنامه است) به `تگ_ها` تبدیل می‌شد؛ نتیجه این بود که تگ‌های فایل Excel در
+ * ورود گروهی نادیده گرفته می‌شدند.
+ */
+function lookupKey(key) {
+  return foldKey(key)
+    .replace(/\s*[([{][^)\]}]*[)\]}]?\s*$/g, '')
+    .replace(/[\s_.-]+/g, '');
+}
+
+const COLUMN_LOOKUP = new Map(Object.entries(COLUMN_MAP).map(([k, v]) => [lookupKey(k), v]));
+
+/** نگاشت سرستون به فیلد داخلی؛ کلیدهای ناشناخته به snake_case تبدیل می‌شوند. */
 export function normalizeKey(key) {
-  const k = foldKey(key);
-  return COLUMN_MAP[k] || k.replace(/\s+/g, '_');
+  const k = lookupKey(key);
+  return COLUMN_LOOKUP.get(k) || foldKey(key).replace(/\s+/g, '_');
 }
 
 /** نگاشت سرستون‌های فایل علامت‌های نقشه (نام، نوع، مختصات) */
@@ -145,9 +187,11 @@ const MARKER_COLUMN_MAP = {
   'آیکون': 'icon',
 };
 
+const MARKER_LOOKUP = new Map(Object.entries(MARKER_COLUMN_MAP).map(([k, v]) => [lookupKey(k), v]));
+
 export function normalizeMarkerKey(key) {
-  const k = foldKey(key);
-  return MARKER_COLUMN_MAP[k] || k.replace(/\s+/g, '_');
+  const k = lookupKey(key);
+  return MARKER_LOOKUP.get(k) || foldKey(key).replace(/\s+/g, '_');
 }
 
 export const MARKER_EXPORT_HEADERS = [
@@ -246,6 +290,12 @@ export function toBool(v, fallback = 1) {
 const PRIORITIES = ['low', 'normal', 'high', 'critical'];
 const PRIORITY_FA = { 'کم': 'low', 'عادی': 'normal', 'متوسط': 'normal', 'بالا': 'high', 'بحرانی': 'critical', 'حیاتی': 'critical' };
 
+/** آدرس MAC را به قالب `AA:BB:CC:DD:EE:FF` تبدیل می‌کند (مقدار نامعتبر خالی می‌شود). */
+function normalizeMacValue(value) {
+  const hex = String(value ?? '').replace(/[\s:.-]/g, '').toLowerCase();
+  return /^[0-9a-f]{12}$/.test(hex) ? hex.toUpperCase().match(/.{2}/g).join(':') : '';
+}
+
 export function normalizePriority(v) {
   if (v == null || v === '') return 'normal';
   const s = String(v).trim().toLowerCase();
@@ -278,6 +328,10 @@ export function validateRows(rows, existing = []) {
     const lng = r.longitude === '' || r.longitude == null ? null : Number(r.longitude);
     if (lat != null && (Number.isNaN(lat) || lat < -90 || lat > 90)) issues.push('عرض جغرافیایی نامعتبر');
     if (lng != null && (Number.isNaN(lng) || lng < -180 || lng > 180)) issues.push('طول جغرافیایی نامعتبر');
+    const rawMac = String(r.mac_address ?? '').trim();
+    if (rawMac && !/^[0-9a-f]{12}$/.test(rawMac.replace(/[\s:.-]/g, '').toLowerCase())) {
+      issues.push(`آدرس MAC نامعتبر: ${rawMac}`);
+    }
 
     const record = {
       row: r.__row,
@@ -294,6 +348,8 @@ export function validateRows(rows, existing = []) {
       vendor: String(r.vendor ?? '').trim(),
       model: String(r.model ?? '').trim(),
       serial: String(r.serial ?? '').trim(),
+      mac_address: normalizeMacValue(r.mac_address),
+      asset_tag: String(r.asset_tag ?? '').trim(),
       owner: String(r.owner ?? '').trim(),
       priority: normalizePriority(r.priority),
       notes: String(r.notes ?? '').trim(),
@@ -434,6 +490,9 @@ export function templateRows() {
       latitude: 35.7289,
       longitude: 51.3896,
       vendor: 'Cisco',
+      serial: 'FOC2145X0AB',
+      mac_address: '00:1A:2B:3C:4D:5E',
+      asset_tag: 'AST-10045',
       owner: 'تیم شبکه',
       priority: 'normal',
       tags: 'حیاتی, نقطه لبه',

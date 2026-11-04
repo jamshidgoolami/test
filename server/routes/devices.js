@@ -10,6 +10,7 @@ import {
   updateDevice,
   deleteDevices,
   closeDeviceMonitoringState,
+  getDeviceAccessPassword,
   parseListQuery,
   attachTags,
   groupByName,
@@ -213,6 +214,13 @@ router.get('/meta', (_req, res) => {
       .all(),
     tags: db.prepare('SELECT t.*, (SELECT COUNT(*) FROM device_tags dt WHERE dt.tag_id = t.id) AS device_count FROM tags t ORDER BY t.name').all(),
     types: db.prepare('SELECT device_type AS value, COUNT(*) AS count FROM devices GROUP BY device_type ORDER BY count DESC').all(),
+    // فهرست مرجع انواع تجهیز (قابل مدیریت در تنظیمات) — حتی نوع بدون تجهیز.
+    deviceTypes: db
+      .prepare(
+        `SELECT t.id, t.name, t.color, (SELECT COUNT(*) FROM devices d WHERE d.device_type = t.name) AS device_count
+         FROM device_types t ORDER BY t.name`
+      )
+      .all(),
     locations: db.prepare("SELECT location AS value, COUNT(*) AS count FROM devices WHERE location != '' GROUP BY location ORDER BY count DESC").all(),
     vendors: db.prepare("SELECT vendor AS value, COUNT(*) AS count FROM devices WHERE vendor != '' GROUP BY vendor ORDER BY count DESC").all(),
     priorities: db.prepare('SELECT priority AS value, COUNT(*) AS count FROM devices GROUP BY priority').all(),
@@ -232,8 +240,11 @@ router.get('/export', async (req, res) => {
     filters.pageSize = 5000;
     rows = listDevices(filters).items;
   }
-  const data = rows.map((d) => ({
-    ...d,
+  const data = rows.map((d) => {
+    // خروجی فایل نباید اعتبارنامهٔ دسترسی را به یک فایل بدون رمز منتقل کند.
+    const { accessUsername: _accessUsername, hasAccessPassword: _hasAccessPassword, ...row } = d;
+    return {
+    ...row,
     priority: d.priority,
     tags: (d.tags || []).map((t) => t.name).join(', '),
     enabled: d.enabled ? 1 : 0,
@@ -241,6 +252,8 @@ router.get('/export', async (req, res) => {
     location: d.location,
     group: d.groupName,
     device_type: d.deviceType,
+    mac_address: d.macAddress,
+    asset_tag: d.assetTag,
     latitude: d.latitude,
     longitude: d.longitude,
     last_rtt_ms: d.lastRtt,
@@ -248,7 +261,8 @@ router.get('/export', async (req, res) => {
     loss_pct: d.lossPct,
     status: d.status,
     installed_at: d.installedAt ? jalaliLabelFromMs(d.installedAt, getSettings().timezone_offset_minutes) : '',
-  }));
+    };
+  });
   // ساخت Excel/CSV در Worker انجام می‌شود تا رشتهٔ اصلی سرور در طول پردازش
   // فایل بزرگ (هزاران ردیف) قفل نشود.
   const result = await runJob('export', { rows: data, headers: EXPORT_HEADERS, format }, { timeoutMs: 120000 });
@@ -655,10 +669,14 @@ function parseBbox(raw) {
  *     فشار حافظه پاسخ داده شوند.
  */
 router.get('/map', (req, res) => {
-  const filters = parseListQuery({ ...req.query, geo: 'with' });
-  const withGeoWhere = buildDeviceWhere(filters);
+  // فهرست تجهیزات نقشه می‌تواند تجهیزات بدون مختصات را هم برگرداند
+  // (`includeMissing=1`) تا کاربر از همان فهرست تجهیز را بکشد/انتخاب کند و
+  // موقعیتش را ثبت کند؛ نشانگرها فقط برای تجهیزات دارای مختصات ساخته می‌شوند.
+  const includeMissing = String(req.query.includeMissing || '') === '1';
+  const withGeoFilters = parseListQuery({ ...req.query, geo: 'with' });
+  const withGeoWhere = buildDeviceWhere(withGeoFilters);
   // تعداد کل مستقل از وجود مختصات است
-  const totalWhere = buildDeviceWhere({ ...filters, geo: '' });
+  const totalWhere = buildDeviceWhere({ ...withGeoFilters, geo: '' });
   const join = 'FROM devices d LEFT JOIN groups g ON g.id = d.group_id';
   const total = db.prepare(`SELECT COUNT(*) AS c ${join} ${totalWhere.clause}`).get(...totalWhere.params).c;
   const withGeo = db.prepare(`SELECT COUNT(*) AS c ${join} ${withGeoWhere.clause}`).get(...withGeoWhere.params).c;
@@ -670,8 +688,10 @@ router.get('/map', (req, res) => {
     stats[row.status] = row.c;
   }
 
-  const bbox = parseBbox(req.query.bbox);
-  const params = [...withGeoWhere.params];
+  // با includeMissing فهرست باید کامل باشد؛ فیلتر bbox فقط برای نشانگرهای
+  // دارای مختصات معنا دارد و اعمالش تجهیزات بدون موقعیت را حذف می‌کرد.
+  const bbox = includeMissing ? null : parseBbox(req.query.bbox);
+  const params = [...(includeMissing ? totalWhere.params : withGeoWhere.params)];
   let bboxSql = '';
   if (bbox) {
     if (bbox.wrap) {
@@ -693,7 +713,7 @@ router.get('/map', (req, res) => {
       `SELECT d.id, d.name, d.ip, d.status, d.latitude, d.longitude, d.location,
               d.device_type, d.last_rtt_ms, d.priority, d.map_layer_id, g.name AS group_name
        ${join}
-       ${withGeoWhere.clause}${bboxSql}
+       ${includeMissing ? totalWhere.clause : withGeoWhere.clause}${bboxSql}
        ORDER BY CASE d.status WHEN 'offline' THEN 0 WHEN 'warning' THEN 1 WHEN 'maintenance' THEN 2 ELSE 3 END, d.name
        LIMIT ?`
     )
@@ -730,6 +750,24 @@ router.get('/map', (req, res) => {
 });
 
 /* --------------------------- CRUD --------------------------- */
+
+/**
+ * دریافت صریح اعتبارنامه برای کپی در صفحهٔ جزئیات. برخلاف سایر خواندن‌ها،
+ * این مسیر به `devices:write` نیاز دارد تا Viewer رمز تجهیزات را نبیند.
+ * هیچ پاسخی کش نمی‌شود و رمز در فهرست/جزئیات عادی برنمی‌گردد.
+ */
+router.get('/:id/credentials', requirePermission('devices:write'), (req, res) => {
+  const device = getDevice(req.params.id, { withTags: false });
+  if (!device) return res.status(404).json({ error: 'تجهیز یافت نشد' });
+  try {
+    const password = getDeviceAccessPassword(device.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.json({ username: device.accessUsername || '', password: password ?? '' });
+  } catch {
+    res.status(500).json({ error: 'خواندن اعتبارنامه ممکن نشد؛ کلید رمزنگاری را بررسی کنید.' });
+  }
+});
 
 router.get('/:id', (req, res) => {
   const d = getDevice(req.params.id);

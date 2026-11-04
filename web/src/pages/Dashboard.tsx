@@ -1,15 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
   Bell,
+  Box,
+  Building2,
   CircleSlash,
   Clock,
   Gauge,
+  Layers,
   RefreshCw,
+  Search,
   Server,
   ShieldCheck,
+  Tag as TagIcon,
   Timer,
   TrendingDown,
   Wifi,
@@ -45,7 +50,7 @@ import { LayoutToolbar, WidgetShell, useDragRef, useWidgetLayout, type WidgetDef
 import { ApplicationHealthSection, NetworkHealthSection } from '../components/HealthOverview';
 import { DataFreshness } from '../components/Freshness';
 import { DASHBOARD_WIDGETS } from '../lib/widgetdefs';
-import type { DashboardData } from '../lib/types';
+import type { DashboardData, DeviceBreakdownRow } from '../lib/types';
 
 export default function Dashboard() {
   const { settings, tzOffset, status, statusError, refreshStatus } = useApp();
@@ -82,7 +87,22 @@ export default function Dashboard() {
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
   if (!data) return null;
 
-  const { kpis, health, statusDistribution, offlineTrend, outagesPerDay, topLatency, topDowntime, groupStatus, healthTrend, recentAlerts, degraded } = data;
+  const {
+    kpis,
+    health,
+    statusDistribution,
+    offlineTrend,
+    outagesPerDay,
+    topLatency,
+    topDowntime,
+    topLoss,
+    openOutages,
+    breakdowns,
+    groupStatus,
+    healthTrend,
+    recentAlerts,
+    degraded,
+  } = data;
   const tone = healthTone(health.score);
   const availability = health.availability;
   const defById = Object.fromEntries(DASHBOARD_WIDGETS.map((d) => [d.id, d])) as Record<string, WidgetDef>;
@@ -154,6 +174,12 @@ export default function Dashboard() {
             />
           </div>
         );
+
+      case 'network-health':
+        return <NetworkHealthSection data={data} tzOffset={tzOffset} />;
+
+      case 'app-health':
+        return <ApplicationHealthSection status={status} error={statusError} onRefresh={() => void refreshStatus()} />;
 
       case 'health':
         return (
@@ -295,58 +321,104 @@ export default function Dashboard() {
 
       case 'top-latency':
         return (
-          <Card className="flex flex-1 flex-col">
-            <CardHeader title="۱۰ تجهیز با بیشترین تأخیر" subtitle="میانگین ۲۴ ساعت گذشته" icon={<Timer size={18} />} />
-            <div className="mt-3 min-h-0 flex-1 overflow-auto pe-1">
-              <TopBarList items={topLatency as unknown as Record<string, unknown>[]} valueKey="avgRtt" formatter={(v) => fmtMs(v)} color="#2563eb" onSelect={(item) => navigate(`/devices/${item.id}`)} />
-            </div>
-          </Card>
+          <RankedListCard
+            title="۱۰ تجهیز با بیشترین تأخیر"
+            subtitle="میانگین ۲۴ ساعت گذشته"
+            icon={<Timer size={18} />}
+            items={topLatency as unknown as Record<string, unknown>[]}
+            valueKey="avgRtt"
+            formatter={(v) => fmtMs(v)}
+            color="#2563eb"
+            onSelect={(item) => navigate(`/devices/${item.id}`)}
+          />
         );
 
       case 'top-downtime':
         return (
+          <RankedListCard
+            title="۱۰ تجهیز با بیشترین قطعی"
+            subtitle="مجموع مدت قطعی در ۷ روز گذشته"
+            icon={<Clock size={18} />}
+            items={topDowntime as unknown as Record<string, unknown>[]}
+            valueKey="downtimeSec"
+            formatter={(v) => fmtDuration(v)}
+            color="#dc2626"
+            onSelect={(item) => navigate(`/devices/${item.id}`)}
+          />
+        );
+
+      case 'top-loss':
+        return (
+          <RankedListCard
+            title="۱۰ تجهیز با بیشترین افت بسته"
+            subtitle="درصد بسته‌های از دست رفته در آخرین نمونه‌ها"
+            icon={<TrendingDown size={18} />}
+            items={topLoss as unknown as Record<string, unknown>[]}
+            valueKey="lossPct"
+            formatter={(v) => fmtPct(v, 1)}
+            color="#dc2626"
+            onSelect={(item) => navigate(`/devices/${item.id}`)}
+          />
+        );
+
+      case 'type-distribution':
+        return <BreakdownCard dimension="type" rows={breakdowns?.type ?? []} />;
+
+      case 'group-breakdown':
+        return <BreakdownCard dimension="group" rows={breakdowns?.group ?? []} />;
+
+      case 'vendor-breakdown':
+        return <BreakdownCard dimension="vendor" rows={breakdowns?.vendor ?? []} />;
+
+      case 'model-breakdown':
+        return <BreakdownCard dimension="model" rows={breakdowns?.model ?? []} />;
+
+      case 'tag-breakdown':
+        return <BreakdownCard dimension="tag" rows={breakdowns?.tag ?? []} />;
+
+      case 'open-outages':
+        return (
           <Card className="flex flex-1 flex-col">
-            <CardHeader title="۱۰ تجهیز با بیشترین قطعی" subtitle="مجموع مدت قطعی در ۷ روز گذشته" icon={<Clock size={18} />} />
-            <div className="mt-3 min-h-0 flex-1 overflow-auto pe-1">
-              <TopBarList items={topDowntime as unknown as Record<string, unknown>[]} valueKey="downtimeSec" formatter={(v) => fmtDuration(v)} color="#dc2626" onSelect={(item) => navigate(`/devices/${item.id}`)} />
+            <CardHeader
+              title="قطعی‌های باز"
+              subtitle="تجهیزات خارج از دسترس در همین لحظه"
+              icon={<WifiOff size={18} />}
+              action={
+                <Link to="/alerts" className="btn-ghost btn-xs">
+                  هشدارها
+                </Link>
+              }
+            />
+            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-auto pe-1">
+              {openOutages.length === 0 ? (
+                <p className="py-8 text-center text-xs text-ink-400">همهٔ تجهیزات در دسترس هستند</p>
+              ) : (
+                openOutages.map((o) => (
+                  <Link
+                    key={o.id}
+                    to={`/devices/${o.deviceId}`}
+                    className="flex items-center justify-between gap-2 rounded-soft border border-red-100 bg-red-50/40 px-3 py-2 transition hover:border-red-200"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12.5px] font-medium text-ink-700">{o.deviceName}</span>
+                      <span className="num block text-[10.5px] text-ink-400">
+                        {o.ip}
+                        {o.groupName ? ` · ${o.groupName}` : ''}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-left">
+                      <span className="num block text-[11.5px] font-semibold text-red-600">{fmtDuration(o.durationSec)}</span>
+                      <span className="block text-[10px] text-ink-400">از {fmtRelative(o.startedAt)}</span>
+                    </span>
+                  </Link>
+                ))
+              )}
             </div>
           </Card>
         );
 
       case 'recent-alerts':
-        return (
-          <Card className="flex flex-1 flex-col">
-            <CardHeader
-              title="آخرین هشدارها"
-              subtitle="رویدادهای ثبت‌شده توسط سیستم هشدار"
-              icon={<Bell size={18} />}
-              action={
-                <Link to="/alerts" className="btn-ghost btn-xs">
-                  همه هشدارها
-                </Link>
-              }
-            />
-            <div className="mt-3 min-h-0 flex-1 divide-y divide-ink-100 overflow-auto pe-1">
-              {recentAlerts.length === 0 ? (
-                <p className="py-8 text-center text-xs text-ink-400">هشداری ثبت نشده است</p>
-              ) : (
-                recentAlerts.map((a) => {
-                  const sev = SEVERITY_META[a.severity] ?? SEVERITY_META.info;
-                  return (
-                    <Link key={a.id} to={a.deviceId ? `/devices/${a.deviceId}` : '/alerts'} className="flex items-start gap-3 py-2.5 transition hover:bg-brand-50/30">
-                      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12.5px] font-medium text-ink-700">{a.title}</span>
-                        <span className="mt-0.5 line-clamp-1 block text-[11px] text-ink-500">{a.message}</span>
-                      </span>
-                      <span className="shrink-0 text-[10.5px] text-ink-400">{fmtRelative(a.createdAt)}</span>
-                    </Link>
-                  );
-                })
-              )}
-            </div>
-          </Card>
-        );
+        return <AlertsCard alerts={recentAlerts} />;
 
       case 'avg-rtt':
         return (
@@ -420,7 +492,7 @@ export default function Dashboard() {
           />
           <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
             <RefreshCw size={14} />
-            بروزرسانی
+            به‌روزرسانی
           </button>
           <Link to="/reports" className="btn-soft btn-xs">
             <Gauge size={14} />
@@ -431,20 +503,9 @@ export default function Dashboard() {
 
       <DataFreshness updatedAt={updatedAt ?? data.generatedAt} intervalMs={25000} onRefresh={refresh} />
 
-      {/* دو بخش مستقل: سلامت شبکه و سلامت برنامه */}
-      <section aria-label="سلامت شبکه" className="grid gap-5 xl:grid-cols-2">
-        <NetworkHealthSection data={data} tzOffset={tzOffset} />
-        <ApplicationHealthSection status={status} error={statusError} onRefresh={() => void refreshStatus()} />
-      </section>
-
-      <div className="flex items-center gap-3 pt-1">
-        <h3 className="text-[13px] font-semibold text-ink-600">جزئیات و تحلیل شبکه</h3>
-        <span className="h-px flex-1 bg-ink-200/70" aria-hidden />
-      </div>
-
       {editMode ? (
         <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-brand-800">
-          حالت چیدمان فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا جابه‌جا شوند، اندازه انتخاب کنید یا حذف/افزوده کنید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
+          حالت شخصی‌سازی فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا جابه‌جا شوند، اندازه انتخاب کنید یا حذف/افزوده کنید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
         </div>
       ) : null}
 
@@ -480,6 +541,252 @@ export default function Dashboard() {
           ))}
       </div>
     </div>
+  );
+}
+
+type BreakdownDimension = 'type' | 'group' | 'vendor' | 'model' | 'tag';
+
+const BREAKDOWN_META: Record<
+  BreakdownDimension,
+  {
+    title: string;
+    subtitle: string;
+    icon: React.ComponentType<{ size?: number | string; className?: string }>;
+    /** برچسب ردیف‌هایی که فیلتر مستقیم در صفحهٔ تجهیزات ندارند */
+    placeholder?: string;
+    /** پارامترهای آدرس صفحهٔ تجهیزات برای دیدن همان دسته */
+    filter: (label: string) => string;
+  }
+> = {
+  type: {
+    title: 'نوع تجهیز',
+    subtitle: 'تعداد و وضعیت اتصال هر نوع',
+    icon: Server,
+    placeholder: 'نامشخص',
+    filter: (label) => `type=${encodeURIComponent(label)}`,
+  },
+  group: {
+    title: 'گروه تجهیزات',
+    subtitle: 'توزیع و وضعیت تجهیزات در گروه‌ها',
+    icon: Layers,
+    placeholder: 'بدون گروه',
+    filter: (label) => `group=${encodeURIComponent(label)}`,
+  },
+  vendor: {
+    title: 'سازنده',
+    subtitle: 'تعداد تجهیزات هر سازنده',
+    icon: Building2,
+    placeholder: 'بدون سازنده',
+    filter: (label) => `search=${encodeURIComponent(label)}`,
+  },
+  model: {
+    title: 'مدل',
+    subtitle: 'تعداد تجهیزات هر مدل',
+    icon: Box,
+    placeholder: 'بدون مدل',
+    filter: (label) => `search=${encodeURIComponent(label)}`,
+  },
+  tag: {
+    title: 'تگ‌ها',
+    subtitle: 'تعداد و وضعیت تجهیزات هر تگ',
+    icon: TagIcon,
+    filter: (label) => `tag=${encodeURIComponent(label)}`,
+  },
+};
+
+/**
+ * ویجت مشترک تفکیک تجهیزات: برای هر دسته، تعداد کل را درشت و تعداد وصل/قطع
+ * را با یک نوار باریک نشان می‌دهد؛ کلیک روی هر ردیف فهرست تجهیزات همان دسته
+ * را باز می‌کند.
+ */
+function BreakdownCard({ dimension, rows }: { dimension: BreakdownDimension; rows: DeviceBreakdownRow[] }) {
+  const navigate = useNavigate();
+  const meta = BREAKDOWN_META[dimension];
+  const Icon = meta.icon;
+
+  return (
+    <Card className="flex min-h-0 flex-1 flex-col">
+      <CardHeader title={meta.title} subtitle={meta.subtitle} icon={<Icon size={18} />} />
+      {rows.length === 0 ? (
+        <p className="py-8 text-center text-xs text-ink-400">داده‌ای برای نمایش نیست</p>
+      ) : (
+        <>
+          <div className="mt-2.5 flex items-center gap-3 text-[10px] text-ink-400">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              وصل
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              قطع
+            </span>
+          </div>
+          <div className="mt-1 min-h-0 flex-1 space-y-0.5 overflow-auto pe-1">
+            {rows.map((row) => {
+              const upShare = row.total > 0 ? (row.up / row.total) * 100 : 0;
+              const downShare = row.total > 0 ? (row.down / row.total) * 100 : 0;
+              const placeholder = meta.placeholder != null && row.label === meta.placeholder;
+              return (
+                <button
+                  key={row.label}
+                  type="button"
+                  disabled={placeholder}
+                  onClick={() => navigate(`/devices?${meta.filter(row.label)}`)}
+                  title={placeholder ? 'این مورد فیلتر مستقیم ندارد' : `نمایش تجهیزات «${row.label}»`}
+                  className="group flex w-full flex-col gap-1 rounded-soft border border-transparent px-2 py-1.5 text-right transition hover:border-ink-100 hover:bg-ink-50/60 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
+                >
+                  <span className="flex w-full items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink-700">{row.label}</span>
+                    <span className="num shrink-0 text-lg font-bold leading-none text-ink-800">{fmtNumber(row.total)}</span>
+                  </span>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-pill bg-ink-100" aria-hidden>
+                      <span className="h-full bg-emerald-500" style={{ width: `${upShare}%` }} />
+                      <span className="h-full bg-red-500" style={{ width: `${downShare}%` }} />
+                    </span>
+                    <span className="num shrink-0 text-[10px] font-semibold text-emerald-600">{fmtNumber(row.up)} وصل</span>
+                    <span className="num shrink-0 text-[10px] font-semibold text-red-500">{fmtNumber(row.down)} قطع</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** فهرست رتبه‌بندی‌شده با جست‌وجوی سریع — برای ویجت‌های «بیشترین …» */
+function RankedListCard({
+  title,
+  subtitle,
+  icon,
+  items,
+  valueKey,
+  nameKey = 'name',
+  formatter,
+  color,
+  searchHint,
+  onSelect,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  items: Record<string, unknown>[];
+  valueKey: string;
+  nameKey?: string;
+  formatter?: (v: number) => string;
+  color: string;
+  searchHint?: string;
+  onSelect?: (item: Record<string, unknown>) => void;
+}) {
+  const [q, setQ] = useState('');
+  const needle = q.trim();
+  const filtered = useMemo(() => {
+    if (!needle) return items;
+    return items.filter((item) =>
+      [item[nameKey], item.name, item.ip, item.groupName]
+        .filter((v) => v != null)
+        .some((v) => String(v).includes(needle))
+    );
+  }, [items, nameKey, needle]);
+
+  return (
+    <Card className="flex flex-1 flex-col">
+      <CardHeader title={title} subtitle={subtitle} icon={icon} />
+      <div className="relative mt-2">
+        <Search size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+        <input
+          className="field !rounded-pill !py-1 pr-7 text-[11px]"
+          placeholder={searchHint ?? 'جست‌وجو در این فهرست…'}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label={`جست‌وجو در ${title}`}
+        />
+      </div>
+      <div className="mt-2 min-h-0 flex-1 overflow-auto pe-1">
+        {filtered.length === 0 ? (
+          <p className="py-6 text-center text-[11px] text-ink-400">موردی با این عبارت یافت نشد</p>
+        ) : (
+          <TopBarList items={filtered} valueKey={valueKey} nameKey={nameKey} formatter={formatter} color={color} onSelect={onSelect} />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+const ALERT_FILTERS = [
+  { key: 'all', label: 'همه' },
+  { key: 'critical', label: 'بحرانی' },
+  { key: 'warning', label: 'هشدار' },
+  { key: 'info', label: 'اطلاع' },
+] as const;
+
+/** آخرین هشدارها با فیلتر شدت — تا در یک نگاه فقط موارد مهم دیده شوند */
+function AlertsCard({ alerts }: { alerts: DashboardData['recentAlerts'] }) {
+  const [severity, setSeverity] = useState<(typeof ALERT_FILTERS)[number]['key']>('all');
+  const counts = useMemo(() => {
+    const map: Record<string, number> = { all: alerts.length };
+    for (const a of alerts) map[a.severity] = (map[a.severity] ?? 0) + 1;
+    return map;
+  }, [alerts]);
+  const list = severity === 'all' ? alerts : alerts.filter((a) => a.severity === severity);
+
+  return (
+    <Card className="flex flex-1 flex-col">
+      <CardHeader
+        title="آخرین هشدارها"
+        subtitle="رویدادهای ثبت‌شده توسط سیستم هشدار"
+        icon={<Bell size={18} />}
+        action={
+          <Link to="/alerts" className="btn-ghost btn-xs">
+            همه هشدارها
+          </Link>
+        }
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        {ALERT_FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            onClick={() => setSeverity(filter.key)}
+            aria-pressed={severity === filter.key}
+            className={`rounded-pill border px-2 py-0.5 text-[10.5px] transition ${
+              severity === filter.key
+                ? 'border-brand-300 bg-brand-50 text-brand-700'
+                : 'border-ink-200 bg-white/70 text-ink-500 hover:text-ink-700'
+            }`}
+          >
+            {filter.label}
+            <span className="num ms-1 text-[9.5px] text-ink-400">{faDigits(counts[filter.key] ?? 0)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 min-h-0 flex-1 divide-y divide-ink-100 overflow-auto pe-1">
+        {list.length === 0 ? (
+          <p className="py-8 text-center text-xs text-ink-400">هشداری با این شدت ثبت نشده است</p>
+        ) : (
+          list.map((a) => {
+            const sev = SEVERITY_META[a.severity] ?? SEVERITY_META.info;
+            return (
+              <Link
+                key={a.id}
+                to={a.deviceId ? `/devices/${a.deviceId}` : '/alerts'}
+                className="flex items-start gap-3 py-2.5 transition hover:bg-brand-50/30"
+              >
+                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${sev.dot}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-ink-700">{a.title}</span>
+                  <span className="mt-0.5 line-clamp-1 block text-[11px] text-ink-500">{a.message}</span>
+                </span>
+                <span className="shrink-0 text-[10.5px] text-ink-400">{fmtRelative(a.createdAt)}</span>
+              </Link>
+            );
+          })
+        )}
+      </div>
+    </Card>
   );
 }
 

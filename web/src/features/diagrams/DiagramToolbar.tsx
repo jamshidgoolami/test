@@ -30,18 +30,21 @@ import {
   StickyNote,
   Trash,
   Undo2,
+  Workflow,
 } from 'lucide-react';
 import { CONNECTION_TYPES, DEVICE_CATALOG, connectionType } from '../../lib/diagrams';
 import type { AlignMode } from '../../lib/diagrams';
-import type { DiagramConnectionKind, DiagramShape } from '../../lib/types';
+import type { DiagramConnectionKind, DiagramShape, DiagramSummary } from '../../lib/types';
 import { faDigits } from '../../lib/format';
 import { DeviceGlyph } from './DeviceGlyph';
+import { ColorPickerPopover } from '../../components/ColorField';
 
 export type CanvasTool = 'select' | 'connect';
 export type PendingTool =
   | { kind: 'device'; deviceKey: string; deviceId?: number; label?: string; model?: string }
   | { kind: 'shape'; shape: DiagramShape }
   | { kind: 'image'; src: string; attachmentId: number }
+  | { kind: 'diagram'; diagramId: number; label: string; description?: string }
   | { kind: 'note' }
   | { kind: 'group' }
   | null;
@@ -64,6 +67,9 @@ export interface DiagramToolbarProps {
   onPickNote: () => void;
   onPickGroup: () => void;
   onPickImage: () => void;
+  /** فهرست دیاگرام‌ها برای ساخت پیوند بین فایل‌ها */
+  diagrams?: DiagramSummary[];
+  onPickDiagram?: (diagram: { id: number; name: string; description?: string }) => void;
   onConnectionKind: (kind: DiagramConnectionKind) => void;
   onColor: (color: string) => void;
   onGroupColor: (color: string) => void;
@@ -100,12 +106,13 @@ function ToolButton({
       type="button"
       onClick={onClick}
       title={title}
+      aria-label={label}
       aria-pressed={!!active}
       disabled={disabled}
       className={`btn-ghost btn-xs ${active ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
     >
       {icon}
-      <span className="hidden md:inline">{label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </button>
   );
 }
@@ -179,7 +186,7 @@ function ConnectionKindPicker({
         title={`نوع ارتباط: ${active.label} — تغییر نوع، حالت رسم را فعال نگه می‌دارد`}
       >
         <LineSample kind={kind} />
-        <span className="hidden md:inline">{active.label}</span>
+        <span className="whitespace-nowrap">{active.label}</span>
         <ChevronDown size={11} />
       </button>
       {open ? (
@@ -250,6 +257,8 @@ export default function DiagramToolbar({
   onPickNote,
   onPickGroup,
   onPickImage,
+  diagrams = [],
+  onPickDiagram,
   onConnectionKind,
   onColor,
   onGroupColor,
@@ -266,12 +275,15 @@ export default function DiagramToolbar({
   syncing,
 }: DiagramToolbarProps) {
   const [deviceMenu, setDeviceMenu] = useState(false);
+  const [diagramMenu, setDiagramMenu] = useState(false);
   const activeDevice = pending?.kind === 'device' ? pending.deviceKey : null;
   const multi = selectedCount >= 2;
 
   return (
     <div
-      className="relative z-30 flex flex-wrap items-center gap-1 rounded-xl border border-ink-200/70 bg-white/90 px-1.5 py-1 shadow-soft backdrop-blur"
+      role="toolbar"
+      aria-label="ابزارهای دیاگرام"
+      className="relative z-30 flex flex-wrap items-center gap-1 rounded-xl border border-ink-200/70 bg-white px-1.5 py-1 shadow-soft"
       dir="rtl"
     >
       <IconButton onClick={onUndo} icon={<Undo2 size={14} />} title="واگرد (Ctrl+Z)" disabled={!canUndo} />
@@ -296,7 +308,7 @@ export default function DiagramToolbar({
           aria-expanded={deviceMenu}
         >
           <Plus size={13} />
-          <span className="hidden md:inline">
+          <span className="whitespace-nowrap">
             {activeDevice
               ? pending?.kind === 'device' && pending.label
                 ? pending.label
@@ -373,6 +385,60 @@ export default function DiagramToolbar({
         title="افزودن تصویر/لوگو (از پیوست‌های همین دیاگرام)"
       />
 
+      {/* پیوند بین فایل‌های دیاگرام: یک جزء روی بوم که مقصدش دیاگرام دیگری است */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setDiagramMenu((v) => !v)}
+          title="افزودن پیوند به دیاگرام دیگر (برای نقشهٔ ارتباط)"
+          aria-expanded={diagramMenu}
+          className={`btn-ghost btn-xs ${pending?.kind === 'diagram' ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
+          disabled={!onPickDiagram || diagrams.length === 0}
+        >
+          <Workflow size={13} />
+          <span className="whitespace-nowrap">پیوند دیاگرام</span>
+          <ChevronDown size={11} />
+        </button>
+        {diagramMenu ? (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 cursor-default"
+              aria-label="بستن فهرست دیاگرام‌ها"
+              onClick={() => setDiagramMenu(false)}
+            />
+            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-60 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-pop">
+              <p className="px-2 py-1 text-[10px] font-semibold text-ink-400">
+                دیاگرام مقصد را انتخاب کنید، سپس روی بوم کلیک کنید
+              </p>
+              {diagrams.length === 0 ? (
+                <p className="px-2 py-3 text-center text-[11px] text-ink-400">دیاگرام دیگری وجود ندارد</p>
+              ) : (
+                diagrams.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      onPickDiagram?.({ id: d.id, name: d.name, description: d.description });
+                      setDiagramMenu(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11.5px] text-ink-600 transition hover:bg-ink-50"
+                  >
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand-50 text-brand-600">
+                      <Workflow size={13} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{d.name}</span>
+                      <span className="num block text-[9.5px] text-ink-400">{faDigits(d.nodeCount)} جزء</span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+
       <span className="mx-0.5 h-5 w-px bg-ink-200" aria-hidden />
 
       <ConnectionKindPicker kind={connectionKind} onChange={onConnectionKind} />
@@ -394,32 +460,20 @@ export default function DiagramToolbar({
         title="چسبیدن اجزا به شبکهٔ ۱۰ پیکسلی"
       />
 
-      <label
-        className={`inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-white/70 px-1.5 py-1 text-[11px] text-ink-500 ${
-          selectedColor ? '' : 'opacity-40'
-        }`}
-        title="تغییر رنگ انتخاب"
-      >
-        <span className="hidden md:inline">رنگ</span>
-        <input
-          type="color"
-          className="h-5 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-          value={selectedColor ?? '#2563eb'}
-          disabled={!selectedColor}
-          onChange={(e) => onColor(e.target.value)}
-          aria-label="رنگ انتخاب"
-        />
-      </label>
+      <ColorPickerPopover value={selectedColor ?? '#2563eb'} onChange={onColor} disabled={!selectedColor} title="تغییر رنگ انتخاب">
+        <span className="whitespace-nowrap">رنگ</span>
+      </ColorPickerPopover>
 
       <button
         type="button"
         className="btn-ghost btn-xs"
         onClick={onSyncDevices}
         disabled={syncing}
+        aria-label="همگام‌سازی تجهیزات بوم"
         title="همگام‌سازی نام/نوع/مدل/IP همهٔ تجهیزات بوم با رکورد مانیتورینگ"
       >
         <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-        <span className="hidden md:inline">همگام‌سازی</span>
+        <span className="whitespace-nowrap">همگام‌سازی</span>
       </button>
 
       <button
@@ -427,10 +481,11 @@ export default function DiagramToolbar({
         className="btn-ghost btn-xs hover:!border-red-200 hover:!text-red-600"
         onClick={onDelete}
         disabled={!hasSelection}
+        aria-label="حذف انتخاب"
         title="حذف انتخاب (Delete)"
       >
         <Trash size={13} />
-        <span className="hidden md:inline">حذف</span>
+        <span className="whitespace-nowrap">حذف</span>
       </button>
 
       {/* ردیف دوم: فقط با انتخاب چندگانه */}
@@ -450,8 +505,7 @@ export default function DiagramToolbar({
             title="توزیع یکنواخت افقی"
             disabled={selectedCount < 3}
           >
-            <span className="hidden md:inline">توزیع افقی</span>
-            <span className="md:hidden">↔</span>
+            <span className="whitespace-nowrap">توزیع افقی</span>
           </button>
           <button
             type="button"
@@ -460,27 +514,19 @@ export default function DiagramToolbar({
             title="توزیع یکنواخت عمودی"
             disabled={selectedCount < 3}
           >
-            <span className="hidden md:inline">توزیع عمودی</span>
-            <span className="md:hidden">↕</span>
+            <span className="whitespace-nowrap">توزیع عمودی</span>
           </button>
           <span className="mx-0.5 h-4 w-px bg-ink-200" aria-hidden />
-          <label className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-white/70 px-1.5 py-1 text-[11px] text-ink-500" title="رنگ همهٔ انتخاب‌ها">
+          <ColorPickerPopover value="#2563eb" onChange={onGroupColor} title="رنگ همهٔ انتخاب‌ها">
             رنگ گروهی
-            <input
-              type="color"
-              className="h-5 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-              value="#2563eb"
-              onChange={(e) => onGroupColor(e.target.value)}
-              aria-label="رنگ گروهی"
-            />
-          </label>
+          </ColorPickerPopover>
           <button type="button" className="btn-ghost btn-xs" onClick={onCopy} title="کپی (Ctrl+C)">
             <Copy size={13} />
-            <span className="hidden md:inline">کپی</span>
+            <span className="whitespace-nowrap">کپی</span>
           </button>
           <button type="button" className="btn-ghost btn-xs" onClick={onDuplicate} title="تکثیر (Ctrl+D)">
             <Plus size={13} />
-            <span className="hidden md:inline">تکثیر</span>
+            <span className="whitespace-nowrap">تکثیر</span>
           </button>
           <button
             type="button"
@@ -489,7 +535,7 @@ export default function DiagramToolbar({
             disabled={!clipboardCount}
             title="چسباندن (Ctrl+V)"
           >
-            <ClipboardIcon /> <span className="hidden md:inline">چسباندن</span>
+            <ClipboardIcon /> <span className="whitespace-nowrap">چسباندن</span>
           </button>
         </div>
       ) : null}

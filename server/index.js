@@ -59,7 +59,6 @@ import { sweepOrphanFiles as sweepMbtilesOrphans } from './mbtiles.js';
 import devicesRouter from './routes/devices.js';
 import attachmentsRouter from './routes/attachments.js';
 import templatesRouter from './routes/templates.js';
-import conflictsRouter from './routes/conflicts.js';
 import dashboardRouter from './routes/dashboard.js';
 import reportsRouter from './routes/reports.js';
 import opsRouter from './routes/ops.js';
@@ -652,7 +651,6 @@ app.get('/api/status', (_req, res) => {
 app.use('/api/devices', attachmentsRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/templates', templatesRouter);
-app.use('/api/conflicts', conflictsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api', opsRouter);

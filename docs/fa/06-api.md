@@ -265,7 +265,7 @@ data: {"id":91,"severity":"critical","title":"قطع ارتباط"}
 | GET | `/api/devices/bulk/probe/:jobId` | وضعیت/نتیجهٔ Job گروهی Probe (فقط مالک یا admin) |
 | POST | `/api/devices/positions` | ذخیرهٔ مختصات چند تجهیز |
 | GET | `/api/devices/sparklines` | دادهٔ فشردهٔ نمودار فهرست |
-| GET | `/api/devices/map` | تجهیزات برای نقشه |
+| GET | `/api/devices/map` | تجهیزات برای نقشه؛ با `includeMissing=1` تجهیزات بدون مختصات هم برمی‌گردند |
 
 ### پارامترهای فهرست
 
@@ -492,6 +492,8 @@ curl -b cookies.txt -X PUT http://localhost:8787/api/settings \
 | GET/POST | `/api/tags` | فهرست/ایجاد تگ |
 | PUT/DELETE | `/api/tags/:id` | ویرایش/حذف |
 | POST | `/api/tags/:tagId/devices` | افزودن/حذف تجهیز از تگ |
+| GET/POST | `/api/device-types` | فهرست/افزودن نوع تجهیز (فهرست مرجع فیلد «نوع تجهیز») |
+| PUT/DELETE | `/api/device-types/:id` | تغییر نام/حذف نوع؛ تغییر نام نوع همهٔ تجهیزات همان نوع را هم به‌روز می‌کند |
 | GET/POST | `/api/layers` | فهرست/ایجاد لایهٔ MBTiles |
 | PUT/DELETE | `/api/layers/:id` | ویرایش/حذف لایه |
 | POST | `/api/layers/upload` | آپلود فایل MBTiles (`multipart/form-data`) |
@@ -524,8 +526,9 @@ curl -b cookies.txt -X DELETE 'http://localhost:8787/api/groups/4?moveTo=1' \
 | DELETE | `/api/markers/bulk` | حذف گروهی |
 | GET | `/api/markers/export` | خروجی |
 | GET | `/api/markers/template` | قالب ورود |
-| POST | `/api/markers/import/preview` | پیش‌نمایش ورود |
-| POST | `/api/markers/import` | اعمال ورود |
+| POST | `/api/markers/import/preview` | پیش‌نمایش ورود Excel/CSV |
+| POST | `/api/markers/import` | اعمال ورود Excel/CSV |
+| POST | `/api/markers/import/kml` | ورود علامت‌ها از `KML`/`KMZ` (بدنهٔ multipart: `file` و اختیاری `typeId`/`type`/`mode`) |
 
 ---
 

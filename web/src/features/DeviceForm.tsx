@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, MapPin, Save, Server, SlidersHorizontal, Tag as TagIcon } from 'lucide-react';
+import { Check, KeyRound, MapPin, Save, Server, SlidersHorizontal, Tag as TagIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useToast } from '../lib/store';
 import { DEVICE_TYPES, PRIORITY_META, faDigits, fmtIsoDate } from '../lib/format';
 import JalaliDateInput from '../components/JalaliDateInput';
-import { Field, Modal, Toggle } from '../components/ui';
+import { Field, Modal, Tabs, Toggle } from '../components/ui';
 import type { Device, Priority } from '../lib/types';
 
 interface FormState {
@@ -20,6 +20,11 @@ interface FormState {
   vendor: string;
   model: string;
   serial: string;
+  mac_address: string;
+  asset_tag: string;
+  access_username: string;
+  access_password: string;
+  clear_access_password: boolean;
   owner: string;
   notes: string;
   installedAt: string;
@@ -49,6 +54,11 @@ const empty: FormState = {
   vendor: '',
   model: '',
   serial: '',
+  mac_address: '',
+  asset_tag: '',
+  access_username: '',
+  access_password: '',
+  clear_access_password: false,
   owner: '',
   notes: '',
   installedAt: '',
@@ -81,7 +91,7 @@ export default function DeviceForm({
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'general' | 'monitoring' | 'geo'>('general');
+  const [tab, setTab] = useState<'general' | 'access' | 'monitoring' | 'geo'>('general');
 
   useEffect(() => {
     if (!open) return;
@@ -101,6 +111,12 @@ export default function DeviceForm({
         vendor: device.vendor,
         model: device.model,
         serial: device.serial,
+        mac_address: device.macAddress ?? '',
+        asset_tag: device.assetTag ?? '',
+        access_username: device.accessUsername ?? '',
+        // رمز موجود هرگز به فرم برنمی‌گردد؛ خالی ماندن یعنی «بدون تغییر».
+        access_password: '',
+        clear_access_password: false,
         owner: device.owner,
         notes: device.notes,
         installedAt: device.installedAt ? fmtIsoDate(device.installedAt, settings?.timezone_offset_minutes ?? 210) : '',
@@ -122,6 +138,14 @@ export default function DeviceForm({
   }, [open, device, meta?.groups, settings?.timezone_offset_minutes]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  // فهرست انواع تجهیز از تنظیمات می‌آید؛ مقدار فعلی همیشه در فهرست می‌ماند تا
+  // تجهیزی که نوعش بعداً از فهرست حذف شده، نوع خود را از دست ندهد.
+  const deviceTypeNames = useMemo(() => {
+    const names = (meta?.deviceTypes ?? []).map((t) => t.name);
+    if (!names.length) return DEVICE_TYPES;
+    return names.includes(form.device_type) ? names : [form.device_type, ...names];
+  }, [meta?.deviceTypes, form.device_type]);
 
   const ipValid = useMemo(() => {
     if (!form.ip.trim()) return false;
@@ -148,6 +172,9 @@ export default function DeviceForm({
       vendor: form.vendor.trim(),
       model: form.model.trim(),
       serial: form.serial.trim(),
+      mac_address: form.mac_address.trim(),
+      asset_tag: form.asset_tag.trim(),
+      access_username: form.access_username.trim(),
       owner: form.owner.trim(),
       notes: form.notes.trim(),
       installed_at: form.installedAt || null,
@@ -164,6 +191,13 @@ export default function DeviceForm({
       loss_threshold: num(form.loss_threshold),
       tagNames: form.tags,
     };
+    // رمز خالی یعنی «رمز فعلی را نگه دار»؛ برای حذف، گزینهٔ صریح حذف ارسال می‌شود.
+    if (form.access_password) payload.access_password = form.access_password;
+    if (form.clear_access_password) payload.clear_access_password = true;
+    // MAC اختیاری است؛ اگر وارد شد باید ۱۲ رقم هگز باشد (با یا بدون جداکننده).
+    if (form.mac_address.trim() && !/^[0-9a-f]{12}$/i.test(form.mac_address.replace(/[\s:.-]/g, ''))) {
+      return setError('آدرس MAC نامعتبر است (مثال: 00:1A:2B:3C:4D:5E)');
+    }
     if (payload.latitude != null && (Number.isNaN(payload.latitude) || Math.abs(Number(payload.latitude)) > 90)) return setError('عرض جغرافیایی نامعتبر است');
     if (payload.longitude != null && (Number.isNaN(payload.longitude) || Math.abs(Number(payload.longitude)) > 180)) return setError('طول جغرافیایی نامعتبر است');
 
@@ -183,6 +217,7 @@ export default function DeviceForm({
 
   const tabs = [
     { key: 'general' as const, label: 'اطلاعات عمومی', icon: <Server size={14} /> },
+    { key: 'access' as const, label: 'دسترسی تجهیز', icon: <KeyRound size={14} /> },
     { key: 'monitoring' as const, label: 'تنظیمات پایش', icon: <SlidersHorizontal size={14} /> },
     { key: 'geo' as const, label: 'موقعیت و تگ', icon: <MapPin size={14} /> },
   ];
@@ -207,24 +242,17 @@ export default function DeviceForm({
         </>
       }
     >
-      <div className="mb-4 flex flex-wrap gap-1 rounded-soft bg-ink-100/70 p-1">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12.5px] font-medium transition ${
-              tab === t.key ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500 hover:text-ink-700'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={tabs.map((item) => ({ value: item.key, label: item.label, icon: item.icon }))}
+        value={tab}
+        onChange={setTab}
+        size="sm"
+        className="mb-4 w-full"
+      />
 
       {tab === 'general' ? (
         <div className="grid gap-4 sm:grid-cols-2">
+          <p className="sm:col-span-2 text-[12px] font-semibold text-ink-500">هویت و اتصال</p>
           <Field label="نام تجهیز" required>
             <input className="field" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="مثلاً سوئیچ دسترسی طبقه ۳" />
           </Field>
@@ -234,9 +262,9 @@ export default function DeviceForm({
           <Field label="نام هاست">
             <input dir="ltr" className="field num" value={form.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="sw-floor3.local" />
           </Field>
-          <Field label="نوع تجهیز">
+          <Field label="نوع تجهیز" hint="فهرست از تنظیمات ← انواع تجهیزات مدیریت می‌شود">
             <select className="field" value={form.device_type} onChange={(e) => set('device_type', e.target.value)}>
-              {DEVICE_TYPES.map((t) => (
+              {deviceTypeNames.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
@@ -271,6 +299,7 @@ export default function DeviceForm({
               ))}
             </div>
           </Field>
+          <p className="sm:col-span-2 mt-1 text-[12px] font-semibold text-ink-500">موقعیت و نگهداری</p>
           <Field label="تاریخ نصب" hint="شمسی — در پایگاه‌داده به‌صورت استاندارد ذخیره می‌شود">
             <JalaliDateInput value={form.installedAt} onChange={(iso) => set('installedAt', iso)} />
           </Field>
@@ -283,31 +312,45 @@ export default function DeviceForm({
           <Field label="رک / موقعیت فیزیکی">
             <input className="field" value={form.rack} onChange={(e) => set('rack', e.target.value)} placeholder="R12-U4" />
           </Field>
-          <Field label="سازنده">
-            <input className="field" value={form.vendor} onChange={(e) => set('vendor', e.target.value)} placeholder="Cisco" />
-          </Field>
-          <Field label="مدل">
-            <input className="field" value={form.model} onChange={(e) => set('model', e.target.value)} />
-          </Field>
-          <Field label="شماره سریال">
-            <input dir="ltr" className="field num" value={form.serial} onChange={(e) => set('serial', e.target.value)} />
-          </Field>
-          <Field label="مسئول / تیم">
-            <input className="field" value={form.owner} onChange={(e) => set('owner', e.target.value)} placeholder="تیم شبکه" />
-          </Field>
-          <Field label="اولویت پایش">
-            <select className="field" value={form.priority} onChange={(e) => set('priority', e.target.value as Priority)}>
-              {(Object.keys(PRIORITY_META) as Priority[]).map((p) => (
-                <option key={p} value={p}>
-                  {PRIORITY_META[p].label}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <details className="sm:col-span-2 rounded-soft border border-ink-100 bg-ink-50/40 p-3">
+            <summary className="cursor-pointer text-[12.5px] font-medium text-ink-600">
+              مشخصات فنی و دارایی (اختیاری)
+            </summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="سازنده">
+                <input className="field" value={form.vendor} onChange={(e) => set('vendor', e.target.value)} placeholder="Cisco" />
+              </Field>
+              <Field label="مدل">
+                <input className="field" value={form.model} onChange={(e) => set('model', e.target.value)} />
+              </Field>
+              <Field label="شماره سریال">
+                <input dir="ltr" className="field num" value={form.serial} onChange={(e) => set('serial', e.target.value)} />
+              </Field>
+              <Field label="آدرس MAC" hint="مثال: 00:1A:2B:3C:4D:5E">
+                <input dir="ltr" className="field num" value={form.mac_address} onChange={(e) => set('mac_address', e.target.value)} placeholder="00:1A:2B:3C:4D:5E" />
+              </Field>
+              <Field label="پلاک اموال" hint="شناسهٔ ثبتی دارایی در انبار/اموال">
+                <input dir="ltr" className="field num" value={form.asset_tag} onChange={(e) => set('asset_tag', e.target.value)} placeholder="AST-10045" />
+              </Field>
+              <Field label="مسئول / تیم">
+                <input className="field" value={form.owner} onChange={(e) => set('owner', e.target.value)} placeholder="تیم شبکه" />
+              </Field>
+              <Field label="اولویت پایش">
+                <select className="field" value={form.priority} onChange={(e) => set('priority', e.target.value as Priority)}>
+                  {(Object.keys(PRIORITY_META) as Priority[]).map((p) => (
+                    <option key={p} value={p}>
+                      {PRIORITY_META[p].label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </details>
           <Field label="توضیحات" className="sm:col-span-2">
             <textarea className="field min-h-[76px]" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </Field>
-          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2 rounded-soft border border-ink-100 bg-white/70 p-3">
+            <p className="sm:col-span-2 text-[12px] font-semibold text-ink-500">وضعیت پایش</p>
             <Toggle checked={form.enabled} onChange={(v) => set('enabled', v)} label="تجهیز فعال است" hint="تجهیزات غیرفعال در گزارش‌ها و داشبورد لحاظ نمی‌شوند" />
             <Toggle
               checked={form.monitoring_enabled}
@@ -316,6 +359,58 @@ export default function DeviceForm({
               hint="در صورت غیرفعال بودن، موتور مانیتورینگ برای این تجهیز Ping ارسال نمی‌کند"
             />
           </div>
+        </div>
+      ) : null}
+
+      {tab === 'access' ? (
+        <div className="space-y-4">
+          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+            نام کاربری و رمز عبور با AES-256-GCM رمزنگاری می‌شوند و در فهرست تجهیزات، خروجی فایل یا لاگ نمایش داده نمی‌شوند.
+            رمز فعلی برای ویرایش خوانده نمی‌شود؛ برای تغییر، رمز تازه را وارد کنید و برای حذف، گزینهٔ حذف رمز را بزنید.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="نام کاربری" hint="در پایگاه‌داده رمزنگاری‌شده ذخیره می‌شود">
+              <input
+                dir="ltr"
+                className="field num"
+                autoComplete="off"
+                value={form.access_username}
+                onChange={(e) => set('access_username', e.target.value)}
+                placeholder="admin"
+              />
+            </Field>
+            <Field
+              label={device?.hasAccessPassword ? 'رمز عبور جدید' : 'رمز عبور'}
+              hint={device?.hasAccessPassword ? 'خالی بماند: رمز فعلی حفظ می‌شود' : 'اختیاری — بعداً هم قابل ثبت است'}
+            >
+              <input
+                dir="ltr"
+                type="password"
+                className="field num"
+                autoComplete="new-password"
+                value={form.access_password}
+                onChange={(e) => {
+                  set('access_password', e.target.value);
+                  if (e.target.value) set('clear_access_password', false);
+                }}
+                placeholder={device?.hasAccessPassword ? '••••••••' : 'رمز عبور تجهیز'}
+              />
+            </Field>
+          </div>
+          {device?.hasAccessPassword ? (
+            <label className="flex cursor-pointer items-center gap-2 rounded-soft border border-ink-200 bg-white/80 px-3 py-2 text-[12px] text-ink-600">
+              <input
+                type="checkbox"
+                className="accent-red-600"
+                checked={form.clear_access_password}
+                onChange={(e) => {
+                  set('clear_access_password', e.target.checked);
+                  if (e.target.checked) set('access_password', '');
+                }}
+              />
+              رمز عبور ذخیره‌شده حذف شود
+            </label>
+          ) : null}
         </div>
       ) : null}
 

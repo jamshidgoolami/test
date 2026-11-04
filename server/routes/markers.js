@@ -7,7 +7,9 @@
  * برای ورود ارائه می‌شود.
  */
 import express from 'express';
+import multer from 'multer';
 import { db, log, transaction } from '../db.js';
+import { extractKml, parseKml } from '../kml.js';
 import { routePermission } from '../permissions.js';
 import { spreadsheetUpload as upload } from '../upload.js';
 import { markerTemplateRows, MARKER_EXPORT_HEADERS } from '../impexp.js';
@@ -19,6 +21,10 @@ router.use(routePermission({ read: 'markers:read', write: 'markers:write' }));
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
+
+// KML/KMZ فایل متنی/آرشیوی است، نه صفحه‌گسترده؛ جدا از upload فرمت‌ها نگه
+// داشته می‌شود و کل فایل در حافظه خوانده می‌شود (سقف ۶۴ مگابایت).
+const kmlUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 * 1024, files: 1 } });
 
 function serializeType(t) {
   return {
@@ -240,6 +246,47 @@ router.post('/markers/import', upload.single('file'), async (req, res) => {
     res.json({ inserted: result.inserted, skipped: errors.length, newTypes: result.newTypes, errors: errors.slice(0, 60) });
   } catch (e) {
     res.status(400).json({ error: `خطا در ثبت علامت‌ها: ${e.message}` });
+  }
+});
+
+/** ورود علامت‌ها از KML/KMZ (ترسیم‌های Google Earth و نرم‌افزارهای مشابه) */
+router.post('/markers/import/kml', kmlUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'فایلی دریافت نشد' });
+  if (!/\.(kml|kmz)$/i.test(req.file.originalname || '')) {
+    return res.status(400).json({ error: 'فقط فایل با پسوند .kml یا .kmz پذیرفته می‌شود.' });
+  }
+  const replace = String(req.body?.mode || '') === 'replace';
+  try {
+    const kml = extractKml(req.file.buffer, req.file.originalname);
+    const { points, placemarks, skipped } = parseKml(kml);
+    if (!placemarks) return res.status(400).json({ error: 'در فایل هیچ Placemarkی یافت نشد.' });
+    if (!points.length) return res.status(400).json({ error: 'در فایل هیچ مختصات معتبری یافت نشد.' });
+    const now = Date.now();
+    const ins = db.prepare(
+      'INSERT INTO map_markers(type_id, name, latitude, longitude, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+    );
+    // نام نوع در بدنه می‌آید (از فیلتر فهرست)؛ در نبود آن نوع پیش‌فرض ساخته می‌شود.
+    const result = transaction(
+      () => {
+        const typeId = resolveTypeId({
+          type_id: req.body?.typeId,
+          type: text(req.body?.type, 80) || 'علامت KML',
+          color: req.body?.color,
+        });
+        if (replace) db.prepare('DELETE FROM map_markers').run();
+        let inserted = 0;
+        for (const p of points) {
+          ins.run(typeId, p.name, p.latitude, p.longitude, p.notes, now, now);
+          inserted++;
+        }
+        return { inserted, typeId };
+      },
+      { label: 'markers.import.kml' }
+    );
+    log('info', `ورود ${req.file.originalname}: ${result.inserted} علامت از KML/KMZ افزوده شد.`);
+    res.json({ inserted: result.inserted, skipped: placemarks - points.length, badCoordinates: skipped, typeId: result.typeId });
+  } catch (e) {
+    res.status(400).json({ error: `خطا در خواندن فایل KML/KMZ: ${e.message}` });
   }
 });
 

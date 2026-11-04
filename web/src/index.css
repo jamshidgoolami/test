@@ -23,11 +23,7 @@
     @apply bg-ink-50 text-ink-800 font-sans;
     margin: 0;
     min-height: 100vh;
-    background-image:
-      radial-gradient(1100px 520px at 100% -10%, rgba(37, 99, 235, 0.09), transparent 60%),
-      radial-gradient(900px 460px at -10% 0%, rgba(251, 191, 36, 0.12), transparent 55%),
-      linear-gradient(180deg, #fbfcfe 0%, #f4f7fb 100%);
-    background-attachment: fixed;
+    background-color: #f6f8fb;
   }
 
   * {
@@ -151,7 +147,7 @@
 /* در Tailwind 4 کلاس‌های سفارشی با @utility تعریف می‌شوند تا بتوان در @apply
    به آن‌ها ارجاع داد؛ کلاس‌های داخل @layer components چنین قابلیتی ندارند. */
 @utility surface {
-  @apply bg-white/85 backdrop-blur-xl border border-white/70 shadow-card;
+  @apply bg-white border border-ink-200/70 shadow-card;
 }
 
 @utility btn {
@@ -169,8 +165,7 @@
   }
 
   .btn-primary {
-    @apply btn text-white shadow-glow;
-    background-image: linear-gradient(135deg, #2563eb 0%, #3b82f6 55%, #1d4ed8 100%);
+    @apply btn bg-brand-600 text-white shadow-soft hover:bg-brand-700;
   }
   .btn-primary:hover:not(:disabled) {
     filter: brightness(1.06);
@@ -204,7 +199,7 @@
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-medium border;
+    @apply inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[12px] font-medium border;
   }
 
   .table-wrap {
@@ -217,7 +212,12 @@
     @apply sticky top-0 z-10 bg-ink-50/95 backdrop-blur px-4 py-3 text-right text-xs font-semibold text-ink-500 whitespace-nowrap border-b border-ink-200;
   }
   .table tbody td {
-    @apply px-4 py-3 border-b border-ink-100 text-ink-700 align-middle whitespace-nowrap;
+    @apply px-4 py-3 border-b border-ink-100 text-ink-700 align-middle;
+  }
+  .table tbody td.num,
+  .table tbody td .num,
+  .table tbody th {
+    white-space: nowrap;
   }
   .table tbody tr {
     @apply transition-colors;
@@ -307,15 +307,6 @@
   padding-inline: 0.4rem;
 }
 
-@container device-card (max-width: 300px) {
-  .device-card__metrics {
-    gap: 0.375rem;
-  }
-  .device-card__metric {
-    padding-inline: 0.375rem;
-  }
-}
-
 @container device-card (max-width: 240px) {
   .device-card__head {
     flex-direction: column;
@@ -327,21 +318,6 @@
   }
   .device-card__chart-caption {
     display: none;
-  }
-  .device-card__metrics {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
-  .device-card__metric {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.125rem 0.5rem;
-    text-align: start;
-  }
-  .device-card__metric > p {
-    margin: 0;
   }
   .device-card__footer {
     justify-content: center;
@@ -382,12 +358,12 @@
 /* ارتفاع بوم از ارتفاع دید کم می‌شود تا صفحه اسکرول افقی/عمودی نگیرد
    و بیشترین فضا به بوم برسد. حداقل ارتفاع برای نمایش‌های کوچک حفظ می‌شود. */
 .diagram-workspace {
-  height: calc(100dvh - 190px);
+  height: calc(100dvh - 170px);
   min-height: 480px;
 }
 @media (max-width: 767px) {
   .diagram-workspace {
-    height: calc(100dvh - 238px);
+    height: calc(100dvh - 218px);
     min-height: 420px;
   }
 }
@@ -473,4 +449,40 @@
 }
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 4;
+}
+
+/* ------------------------------------------------------------------ */
+/* خوانایی و حرکت                                                   */
+/* ------------------------------------------------------------------ */
+/* چند صفحه از متن‌های ۹٫۵ تا ۱۱ پیکسلی استفاده می‌کردند. حداقل ۱۲px برای
+   برچسب‌های کمکی و اعداد ریز، بدون تغییر ساختار چیدمان. */
+.text-\[9px\],
+.text-\[9\.5px\],
+.text-\[10px\],
+.text-\[10\.5px\],
+.text-\[11px\],
+.text-\[11\.5px\] {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+  .table thead th,
+  .table tbody td {
+    padding-inline: 0.75rem;
+  }
 }

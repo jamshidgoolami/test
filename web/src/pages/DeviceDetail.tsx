@@ -27,6 +27,8 @@ import {
   FileDown,
   Eye,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useAsync, useDeviceLive, useLiveState, useToast } from '../lib/store';
@@ -68,6 +70,8 @@ export default function DeviceDetail() {
   const [maintOpen, setMaintOpen] = useState(false);
   const [maintDefaults, setMaintDefaults] = useState<{ cause?: string; startedAt?: number }>({});
   const [pinging, setPinging] = useState(false);
+  const [revealedPassword, setRevealedPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   const layoutHook = useWidgetLayout('device_detail_widgets', DETAIL_WIDGETS);
   const { layout, editMode } = layoutHook;
@@ -84,6 +88,15 @@ export default function DeviceDetail() {
     if (live?.ts) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live?.ts]);
+
+  // رمز نمایش‌داده‌شده پس از مدت کوتاهی دوباره پوشیده می‌شود و با عوض‌شدن
+  // تجهیز هم پاک می‌شود تا در صفحهٔ بعدی دیده نشود.
+  useEffect(() => setRevealedPassword(''), [id]);
+  useEffect(() => {
+    if (!revealedPassword) return;
+    const timer = window.setTimeout(() => setRevealedPassword(''), 20000);
+    return () => window.clearTimeout(timer);
+  }, [revealedPassword]);
 
   // پس از قطع/وصل مجدد SSE، جزئیات و تاریخچه دوباره خوانده می‌شود.
   const seenSync = React.useRef(liveState.syncToken);
@@ -107,6 +120,25 @@ export default function DeviceDetail() {
       push((e as Error).message, 'error');
     } finally {
       setPinging(false);
+    }
+  };
+
+  const copyPassword = async () => {
+    if (!device || !canWrite || passwordBusy) return;
+    setPasswordBusy(true);
+    try {
+      const creds = await api.deviceCredentials(device.id);
+      if (!creds.password) {
+        push('برای این تجهیز رمزی ذخیره نشده است', 'info');
+        return;
+      }
+      await copyText(creds.password);
+      setRevealedPassword(creds.password);
+      push('رمز عبور کپی شد', 'success');
+    } catch (e) {
+      push((e as Error).message, 'error');
+    } finally {
+      setPasswordBusy(false);
     }
   };
 
@@ -165,6 +197,36 @@ export default function DeviceDetail() {
               <InfoRow label="زمان آخرین بررسی" value={fmtDateTime(device.lastCheckAt, tzOffset)} />
               <InfoRow label="سازنده / مدل" value={[device.vendor, device.model].filter(Boolean).join(' ') || '—'} />
               <InfoRow label="شماره سریال" value={<span className="num">{device.serial || '—'}</span>} />
+              <InfoRow label="آدرس MAC" value={<span className="num">{device.macAddress || '—'}</span>} />
+              <InfoRow label="پلاک اموال" value={<span className="num">{device.assetTag || '—'}</span>} />
+              <InfoRow
+                label="نام کاربری"
+                value={device.accessUsername ? <span className="num" dir="ltr">{device.accessUsername}</span> : '—'}
+              />
+              <InfoRow
+                label="رمز عبور"
+                value={
+                  device.hasAccessPassword ? (
+                    canWrite ? (
+                      <button
+                        type="button"
+                        onClick={copyPassword}
+                        disabled={passwordBusy}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-2 py-1 text-[11px] text-ink-600 transition hover:border-brand-300 hover:text-brand-700 disabled:opacity-60"
+                        title="کلیک برای کپی رمز عبور"
+                      >
+                        <span className="num" dir="ltr">{revealedPassword || '••••••••'}</span>
+                        {revealedPassword ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                      </button>
+                    ) : (
+                      <span className="num">••••••••</span>
+                    )
+                  ) : (
+                    'ثبت نشده'
+                  )
+                }
+                sub={device.hasAccessPassword ? (canWrite ? 'برای کپی روی رمز کلیک کنید' : 'برای مشاهدهٔ رمز به مجوز ویرایش نیاز است') : undefined}
+              />
               <InfoRow label="مسئول" value={device.owner || '—'} />
               <InfoRow label="موقعیت جغرافیایی" value={device.latitude != null ? <span className="num">{device.latitude.toFixed(5)}, {device.longitude?.toFixed(5)}</span> : 'ثبت نشده'} />
               <InfoRow label="یادداشت" value={device.notes || '—'} />
@@ -181,17 +243,17 @@ export default function DeviceDetail() {
               icon={<Gauge size={18} />}
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <MetricBox label="وضعیت Online / Offline" value={meta.label} tone={meta.text} />
+              <MetricBox label="وضعیت اتصال" value={meta.label} tone={meta.text} />
               <MetricBox label="زمان آخرین Ping" value={fmtDateTime(device.lastCheckAt, tzOffset)} small />
-              <MetricBox label="Response Time" value={fmtMs(live?.rtt ?? device.lastRtt)} />
-              <MetricBox label="Minimum Latency" value={fmtMs(device.minRtt)} />
-              <MetricBox label="Maximum Latency" value={fmtMs(device.maxRtt)} />
-              <MetricBox label="Average Latency" value={fmtMs(device.avgRtt)} />
-              <MetricBox label="Packet Loss" value={fmtPct(device.lossPct, 2)} tone={device.lossPct > 5 ? 'text-sun-600' : undefined} />
-              <MetricBox label="Ping موفق" value={fmtNumber(device.successCount)} tone="text-emerald-600" />
-              <MetricBox label="Ping ناموفق" value={fmtNumber(device.failCount)} tone={device.failCount ? 'text-red-600' : undefined} />
-              <MetricBox label="Consecutive Failures" value={fmtNumber(device.consecutiveFailures)} tone={device.consecutiveFailures ? 'text-red-600' : undefined} />
-              <MetricBox label="Uptime" value={fmtPct(device.uptimePct, 2)} tone={(device.uptimePct ?? 100) < 98 ? 'text-sun-600' : 'text-emerald-600'} />
+              <MetricBox label="زمان پاسخ" value={fmtMs(live?.rtt ?? device.lastRtt)} />
+              <MetricBox label="کمترین تأخیر" value={fmtMs(device.minRtt)} />
+              <MetricBox label="بیشترین تأخیر" value={fmtMs(device.maxRtt)} />
+              <MetricBox label="میانگین تأخیر" value={fmtMs(device.avgRtt)} />
+              <MetricBox label="افت بسته" value={fmtPct(device.lossPct, 2)} tone={device.lossPct > 5 ? 'text-sun-600' : undefined} />
+              <MetricBox label="پاسخ‌های موفق" value={fmtNumber(device.successCount)} tone="text-emerald-600" />
+              <MetricBox label="پاسخ‌های ناموفق" value={fmtNumber(device.failCount)} tone={device.failCount ? 'text-red-600' : undefined} />
+              <MetricBox label="شکست‌های متوالی" value={fmtNumber(device.consecutiveFailures)} tone={device.consecutiveFailures ? 'text-red-600' : undefined} />
+              <MetricBox label="دسترس‌پذیری" value={fmtPct(device.uptimePct, 2)} tone={(device.uptimePct ?? 100) < 98 ? 'text-sun-600' : 'text-emerald-600'} />
               <MetricBox label="زمان آخرین قطعی" value={fmtDateTime(device.lastOutageAt, tzOffset)} small />
               <MetricBox label="مدت قطعی فعلی" value={device.currentOutageStartedAt ? fmtDuration(currentOutageSec) : '—'} tone={device.currentOutageStartedAt ? 'text-red-600' : undefined} />
               <MetricBox label="MTBF" value={health?.mtbfSec ? fmtDuration(health.mtbfSec) : '—'} small />
@@ -275,7 +337,7 @@ export default function DeviceDetail() {
                 )}
               />
               <SeriesCard
-                title="نمودار Packet Loss"
+                title="نمودار افت بسته"
                 subtitle="درصد افت بسته در بازه‌های زمانی"
                 icon={<Percent size={18} />}
                 ranges={['1h', '24h', '7d', '30d']}
@@ -333,7 +395,7 @@ export default function DeviceDetail() {
                 <div className="flex gap-2">
                   <button type="button" className="btn-ghost btn-xs" onClick={refreshOutages}>
                     <RefreshCw size={13} />
-                    بروزرسانی
+                    به‌روزرسانی
                   </button>
                   <button type="button" className="btn-soft btn-xs" onClick={() => { setMaintDefaults({}); setMaintOpen(true); }}>
                     <Wrench size={13} />
@@ -577,7 +639,7 @@ export default function DeviceDetail() {
 
       {editMode ? (
         <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-brand-800">
-          حالت چیدمان فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا ترتیبشان تغییر کند، اندازه را انتخاب کنید یا آن‌ها را مخفی سازید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
+          حالت شخصی‌سازی فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا ترتیبشان تغییر کند، اندازه را انتخاب کنید یا آن‌ها را مخفی سازید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
         </div>
       ) : null}
 
@@ -857,6 +919,24 @@ function MiniStat({ label, value, hint, icon, tone = 'text-ink-700' }: { label: 
       {hint ? <p className="num mt-0.5 text-[10px] text-ink-400">{hint}</p> : null}
     </div>
   );
+}
+
+/** کپی امن با بازگشت به execCommand در مرورگرهایی که Clipboard API ندارند. */
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(area);
+  if (!ok) throw new Error('کپی در این مرورگر ممکن نیست؛ رمز را دستی انتخاب کنید.');
 }
 
 function InfoRow({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {

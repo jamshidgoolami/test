@@ -18,7 +18,6 @@ const Alerts = lazy(() => import('./pages/Alerts'));
 const Maintenance = lazy(() => import('./pages/Maintenance'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Templates = lazy(() => import('./pages/Templates'));
-const Conflicts = lazy(() => import('./pages/Conflicts'));
 const Settings = lazy(() => import('./pages/Settings'));
 const AppHealth = lazy(() => import('./pages/AppHealth'));
 
@@ -59,7 +58,6 @@ export default function App() {
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/templates" element={<Templates />} />
-            <Route path="/conflicts" element={<Conflicts />} />
             {/* مسیر SPA عمداً `/app-health` است: `/health` و `/api/health` نقطه‌های
                 پایانی JSON پایش هستند و بارگذاری مستقیم آن‌ها نباید صفحهٔ HTML بدهد. */}
             <Route path="/app-health" element={<AppHealth />} />

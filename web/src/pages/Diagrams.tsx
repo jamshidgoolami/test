@@ -16,7 +16,9 @@ import { applyEdgeChanges, applyNodeChanges, ReactFlowProvider } from '@xyflow/r
 import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
 import {
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
+  ChevronLeft,
   Eye,
   FileText,
   Image as ImageIcon,
@@ -37,6 +39,7 @@ import {
   clipboardCount,
   copyToClipboard,
   createDeviceNode,
+  createDiagramLinkNode,
   createGroupNode,
   createImageNode,
   createNoteNode,
@@ -58,6 +61,7 @@ import type {
   DiagramConnectionKind,
   DiagramDetail,
   DiagramEdgeData,
+  DiagramGraph,
   DiagramNodeData,
   DiagramShape,
   DiagramSummary,
@@ -71,6 +75,7 @@ import DiagramToolbar from '../features/diagrams/DiagramToolbar';
 import type { CanvasTool, PendingTool } from '../features/diagrams/DiagramToolbar';
 import DiagramInspector from '../features/diagrams/DiagramInspector';
 import DiagramTree from '../features/diagrams/DiagramTree';
+import DiagramOverview from '../features/diagrams/DiagramOverview';
 import { useCanvasHistory } from '../features/diagrams/useCanvasHistory';
 
 type Mode = 'view' | 'edit';
@@ -157,6 +162,13 @@ export default function Diagrams() {
   const [dragging, setDragging] = useState(false);
   const [clipCount, setClipCount] = useState(() => clipboardCount());
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [graph, setGraph] = useState<DiagramGraph | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
+  // مسیر دیاگرام‌هایی که با پیوند باز شده‌اند تا «بازگشت» ممکن باشد.
+  const [trail, setTrail] = useState<{ id: number; name: string }[]>([]);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const listGate = useRef(0);
   const canvasRef = useRef<DiagramCanvasHandle | null>(null);
   const revisionRef = useRef(0);
@@ -255,6 +267,17 @@ export default function Diagrams() {
         revisionRef.current = data.revision;
         setDirty(false);
         autoSyncedFor.current = null;
+        // اگر از نقشهٔ ارتباط با ?node= آمده‌ایم، همان جزء پیوند انتخاب شود.
+        const requestedNode = new URLSearchParams(window.location.search).get('node');
+        if (requestedNode && data.nodes.some((node) => node.id === requestedNode)) {
+          canvas.apply(
+            (prev) => ({
+              ...prev,
+              nodes: prev.nodes.map((node) => ({ ...node, selected: node.id === requestedNode })),
+            }),
+            false
+          );
+        }
       })
       .catch((e) => {
         if (!alive || isAbortError(e)) return;
@@ -268,9 +291,10 @@ export default function Diagrams() {
       alive = false;
       controller.abort();
     };
-    // canvas پایدار است (useCallback)، پس وابستگی فقط شناسهٔ دیاگرام است.
+    // canvas پایدار است (useCallback)؛ به‌جز شناسه، شمارندهٔ بازخوانی اجباری
+    // (پس از تغییر پیوند از نقشهٔ ارتباط) هم محرک بارگذاری مجدد است.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId]);
+  }, [currentId, reloadNonce]);
 
   useEffect(() => {
     try {
@@ -537,7 +561,13 @@ export default function Diagrams() {
               ? createGroupNode(position)
               : pending.kind === 'image'
                 ? createImageNode(position, { src: pending.src, attachmentId: pending.attachmentId })
-                : createNoteNode(position);
+                : pending.kind === 'diagram'
+                  ? createDiagramLinkNode(position, {
+                      diagramId: pending.diagramId,
+                      label: pending.label,
+                      description: pending.description,
+                    })
+                  : createNoteNode(position);
       applyCanvas((prev) => ({
         ...prev,
         nodes: [...prev.nodes.map((item) => ({ ...item, selected: false })), { ...node, selected: true }],
@@ -983,14 +1013,46 @@ export default function Diagrams() {
   /* ---------------------------------------------------------------- */
 
   const openDiagram = useCallback(
-    (nextId: number) => {
-      if (nextId === currentId) return;
+    (nextId: number, options?: { fromLink?: boolean; nodeId?: string }) => {
+      if (nextId === currentId && !options?.nodeId) return;
       if (dirty && !window.confirm('تغییرات این دیاگرام ذخیره نشده است. بدون ذخیره ادامه می‌دهید؟')) return;
       setDirty(false);
-      navigate(`/diagrams/${nextId}`);
+      // رفتن از طریق پیوند/نقشهٔ ارتباط، مسیر بازگشت می‌سازد تا کاربر گم نشود.
+      if (options?.fromLink && currentId && currentId !== nextId) {
+        setTrail((prev) => [
+          ...prev.filter((item) => item.id !== currentId),
+          { id: currentId, name: detail?.name ?? `#${faDigits(currentId)}` },
+        ]);
+      }
+      const suffix = options?.nodeId ? `?node=${encodeURIComponent(options.nodeId)}` : '';
+      navigate(`/diagrams/${nextId}${suffix}`);
     },
-    [currentId, dirty, navigate]
+    [currentId, detail?.name, dirty, navigate]
   );
+
+  const goBackInTrail = useCallback(() => {
+    const previous = trail[trail.length - 1];
+    if (!previous) return;
+    setTrail((items) => items.slice(0, -1));
+    navigate(`/diagrams/${previous.id}`);
+  }, [navigate, trail]);
+
+  const loadGraph = useCallback(() => {
+    setGraphLoading(true);
+    setGraphError(null);
+    api
+      .diagramGraph()
+      .then((data) => {
+        setGraph(data);
+        setGraphError(null);
+      })
+      .catch((e) => {
+        const message = e instanceof ApiError ? e.message : 'دریافت نقشهٔ ارتباط ناموفق بود.';
+        setGraphError(message);
+        push(message, 'error');
+      })
+      .finally(() => setGraphLoading(false));
+  }, [push]);
 
   const startCreate = useCallback((parentId: number | null) => {
     setDialog({ mode: 'create', parentId });
@@ -1024,6 +1086,17 @@ export default function Diagrams() {
         setDialog(null);
         await loadList();
         if (detail?.id === updated.id) setDetail((prev) => (prev ? { ...prev, name: updated.name, description: updated.description } : prev));
+        // با تغییر نام، سرور برچسب پیوندهای این دیاگرام را در بوم‌های دیگر
+        // هم عوض می‌کند و نسخهٔ آن‌ها را بالا می‌برد. اگر بوم باز یکی از
+        // همان‌هاست، نسخهٔ تازه بارگذاری می‌شود تا برچسب تازه دیده شود.
+        const affected = (updated as typeof updated & { relabeledDiagrams?: number[] }).relabeledDiagrams ?? [];
+        if (detail?.id && affected.includes(detail.id)) {
+          if (dirty) {
+            push('نام یک دیاگرام مقصد عوض شد و برچسب پیوندهایش در این بوم به‌روز شده است؛ برای دیدن آن، بوم را بازخوانی کنید.', 'info');
+          } else {
+            setReloadNonce((value) => value + 1);
+          }
+        }
         push('اطلاعات دیاگرام به‌روزرسانی شد.', 'success');
       }
     } catch (e) {
@@ -1031,7 +1104,7 @@ export default function Diagrams() {
     } finally {
       setBusy(false);
     }
-  }, [busy, detail?.id, dialog, formDescription, formName, loadList, navigate, push]);
+  }, [busy, detail?.id, dialog, dirty, formDescription, formName, loadList, navigate, push]);
 
   const confirmDelete = useCallback(
     async (diagram: DiagramSummary) => {
@@ -1085,12 +1158,30 @@ export default function Diagrams() {
             : 'روی بوم کلیک کنید تا مستطیل اضافه شود.'
           : pending.kind === 'image'
             ? 'روی بوم کلیک کنید تا تصویر اضافه شود.'
-            : 'روی بوم کلیک کنید تا یادداشت اضافه شود.';
+            : pending.kind === 'diagram'
+              ? `روی بوم کلیک کنید تا پیوند به «${pending.label}» اضافه شود.`
+              : 'روی بوم کلیک کنید تا یادداشت اضافه شود.';
 
   const selectedDevice = useMemo(() => {
     const deviceId = selectedNode?.data.deviceId ? Number(selectedNode.data.deviceId) : null;
     return deviceId ? devicesById.get(deviceId) ?? null : null;
   }, [devicesById, selectedNode]);
+
+  // مسیر سلسله‌مراتبی دیاگرام جاری؛ برخلاف trail که مسیر پیوندهاست، این مسیر
+  // از parentId ساخته می‌شود و همیشه ریشه تا دیاگرام باز را نشان می‌دهد.
+  const breadcrumb = useMemo(() => {
+    if (!detail) return [] as DiagramSummary[];
+    const byId = new Map(list.map((item) => [item.id, item]));
+    const chain: DiagramSummary[] = [];
+    const seen = new Set<number>();
+    let cursor: DiagramSummary | null = detail;
+    while (cursor && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      chain.unshift(cursor);
+      cursor = cursor.parentId ? byId.get(cursor.parentId) ?? null : null;
+    }
+    return chain;
+  }, [detail, list]);
 
   return (
     <div>
@@ -1107,7 +1198,7 @@ export default function Diagrams() {
       />
 
       {/* نوار بالای صفحه: نام، حالت، ذخیره و پنل */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
         {/* بستن پنل روی خود پنل است؛ این دکمه فقط پس از بستن پنل ظاهر می‌شود. */}
         {!panelOpen ? (
           <button
@@ -1162,6 +1253,18 @@ export default function Diagrams() {
             </div>
           ) : null}
 
+          <button
+            type="button"
+            className="btn-ghost btn-xs"
+            onClick={() => {
+              setOverviewOpen(true);
+              loadGraph();
+            }}
+            title="نمایش نقشهٔ ارتباط بین همهٔ دیاگرام‌ها"
+          >
+            <Workflow size={14} />
+            <span className="hidden lg:inline">نقشهٔ ارتباط</span>
+          </button>
           <button
             type="button"
             className={`btn-ghost btn-xs ${titleBlock ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
@@ -1220,6 +1323,73 @@ export default function Diagrams() {
 
       <div className="diagram-workspace relative flex gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {detail ? (
+            <nav
+              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-ink-200/70 bg-white/80 px-2 py-1 text-[10.5px] text-ink-500"
+              aria-label="مسیر دیاگرام"
+              dir="rtl"
+            >
+              <button
+                type="button"
+                className="shrink-0 rounded px-0.5 text-ink-400 transition hover:text-brand-700"
+                onClick={() => {
+                  setPanelOpen(true);
+                  setPanelTab('tree');
+                }}
+                title="نمایش فهرست دیاگرام‌ها"
+              >
+                دیاگرام‌ها
+              </button>
+              {breadcrumb.map((item, index) => {
+                const isCurrent = index === breadcrumb.length - 1;
+                return (
+                  <span key={item.id} className="flex min-w-0 shrink-0 items-center gap-1">
+                    <ChevronLeft size={11} className="shrink-0 text-ink-300" aria-hidden />
+                    {isCurrent ? (
+                      <span
+                        className="max-w-[220px] truncate font-medium text-ink-800"
+                        aria-current="page"
+                        title={item.name}
+                      >
+                        {item.name}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="max-w-[160px] truncate rounded px-0.5 transition hover:text-brand-700"
+                        onClick={() => openDiagram(item.id)}
+                        title={`باز کردن «${item.name}»`}
+                      >
+                        {item.name}
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+              {trail.length ? <span className="shrink-0 text-ink-400">· از مسیر پیوند</span> : null}
+            </nav>
+          ) : null}
+          {trail.length ? (
+            <div
+              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-200/70 bg-white/80 px-2 py-1 text-[10.5px] text-ink-500"
+              dir="rtl"
+            >
+              <button type="button" className="btn-ghost btn-xs" onClick={goBackInTrail} title="بازگشت به دیاگرام قبلی">
+                <ArrowRight size={12} />
+                بازگشت
+              </button>
+              <span className="min-w-0 truncate">مسیر پیوند: {trail.map((item) => item.name).join(' ‹ ')}</span>
+              <button
+                type="button"
+                className="btn-ghost btn-xs ms-auto"
+                onClick={() => setTrail([])}
+                title="پاک کردن مسیر"
+                aria-label="پاک کردن مسیر پیوند"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ) : null}
           {editing ? (
             <DiagramToolbar
               tool={tool}
@@ -1257,6 +1427,11 @@ export default function Diagrams() {
                 setTool('select');
               }}
               onPickImage={() => pickImage()}
+              diagrams={list.filter((item) => item.id !== currentId)}
+              onPickDiagram={(target) => {
+                setPending({ kind: 'diagram', diagramId: target.id, label: target.name, description: target.description });
+                setTool('select');
+              }}
               onConnectionKind={changeConnectionKind}
               onColor={(color) => {
                 if (selectedNode) patchNodeData(selectedNode.id, { color });
@@ -1320,6 +1495,12 @@ export default function Diagrams() {
                   }}
                   devices={devicesById}
                   onOpenDevice={openDevicePage}
+                  onOpenDiagram={(targetId) => openDiagram(targetId, { fromLink: true })}
+                  onToggleGroup={(nodeId) => {
+                    const group = canvas.snapshot().nodes.find((item) => item.id === nodeId);
+                    if (!group || group.type !== 'group') return;
+                    patchNodeData(nodeId, { collapsed: !group.data.collapsed });
+                  }}
                   exportMeta={exportMeta}
                   titleBlock={titleBlock}
                   snapToGrid={snapToGrid}
@@ -1432,6 +1613,8 @@ export default function Diagrams() {
                   onOpenDevice={openDevicePage}
                   onPingDevice={pingDevice}
                   onReplaceImage={(nodeId) => pickImage(nodeId)}
+                  onOpenDiagram={(targetId) => openDiagram(targetId, { fromLink: true })}
+                  diagrams={list.filter((item) => item.id !== currentId)}
                 />
               ) : (
                 <p className="p-4 text-center text-[11px] text-ink-400">دیاگرامی انتخاب نشده است.</p>
@@ -1440,6 +1623,27 @@ export default function Diagrams() {
           </div>
         </aside>
       </div>
+
+      <DiagramOverview
+        open={overviewOpen}
+        graph={graph}
+        loading={graphLoading}
+        error={graphError}
+        currentId={currentId}
+        canWrite={canWrite}
+        onClose={() => setOverviewOpen(false)}
+        onOpen={(targetId, nodeId) => {
+          setOverviewOpen(false);
+          openDiagram(targetId, { fromLink: true, nodeId });
+        }}
+        onRefresh={loadGraph}
+        onMutated={(sourceId) => {
+          void loadList();
+          // اگر پیوند روی همین دیاگرام بازِ کاربر ساخته/حذف شده، بوم هم تازه شود.
+          if (sourceId && sourceId === currentId && !dirty) setReloadNonce((value) => value + 1);
+        }}
+        onNotify={(message, tone) => push(message, tone ?? 'info')}
+      />
 
       {uploadingImage ? (
         <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] rounded-pill border border-ink-200 bg-white/95 px-3 py-1.5 text-[11.5px] text-ink-600 shadow-pop">

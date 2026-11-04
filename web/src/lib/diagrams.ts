@@ -8,9 +8,11 @@
 import type { Edge, Node } from '@xyflow/react';
 import type {
   Device,
+  DiagramComment,
   DiagramConnectionKind,
   DiagramEdge,
   DiagramEdgeData,
+  DiagramLinkSide,
   DiagramNode,
   DiagramNodeData,
   DiagramNodeType,
@@ -76,17 +78,23 @@ export interface ConnectionType {
   width: number;
 }
 
-/** پنج نوع ارتباط؛ رنگ، ضخامت و الگوی خط هر نوع را از هم جدا می‌کند. */
+/** انواع ارتباط؛ رنگ، ضخامت و الگوی خط هر نوع را از هم جدا می‌کند. */
 export const CONNECTION_TYPES: ConnectionType[] = [
   { kind: 'fiber', label: 'فیبر نوری', color: '#d97706', dash: '', width: 2.5 },
-  { kind: 'copper', label: 'کابل شبکه', color: '#2563eb', dash: '', width: 2.5 },
+  { kind: 'otn', label: 'OTN', color: '#4d7c0f', dash: '3 4', width: 2.5 },
   { kind: 'bandwidth', label: 'پهنای باند', color: '#7c3aed', dash: '', width: 4 },
   { kind: 'radio', label: 'رادیو', color: '#0d9488', dash: '8 6', width: 2.5 },
   { kind: 'modem', label: 'مودم', color: '#db2777', dash: '1 6', width: 3 },
+  // برای سازگاری با پیوندهای قدیمی نگه داشته شده است و در فهرست نوع‌ها آخر می‌آید.
+  { kind: 'copper', label: 'کابل شبکه', color: '#2563eb', dash: '', width: 2.5 },
 ];
 
 export function connectionType(kind: DiagramConnectionKind | undefined): ConnectionType {
-  return CONNECTION_TYPES.find((c) => c.kind === kind) ?? CONNECTION_TYPES[1];
+  return (
+    CONNECTION_TYPES.find((c) => c.kind === kind) ??
+    CONNECTION_TYPES.find((c) => c.kind === 'copper') ??
+    CONNECTION_TYPES[0]
+  );
 }
 
 export const HANDLE_SIDES = ['top', 'right', 'bottom', 'left'] as const;
@@ -139,6 +147,38 @@ export function createShapeNode(shape: DiagramShape, position: { x: number; y: n
     width: size.width,
     height: size.height,
     data: { label: '', shape, text: '', color: shape === 'circle' ? '#bfdbfe' : '#dbeafe' },
+  };
+}
+
+/** گره پیوند به دیاگرام دیگر؛ مقصد با دوبار کلیک باز می‌شود */
+export function createDiagramLinkNode(
+  position: { x: number; y: number },
+  target: {
+    diagramId: number;
+    label: string;
+    description?: string;
+    kind?: DiagramConnectionKind;
+    fromSide?: DiagramLinkSide;
+    toSide?: DiagramLinkSide;
+  }
+): DiagramFlowNode {
+  const width = 220;
+  const height = 80;
+  return {
+    id: newId(),
+    type: 'diagram',
+    position: { x: position.x - width / 2, y: position.y - height / 2 },
+    width,
+    height,
+    data: {
+      label: target.label,
+      diagramId: target.diagramId,
+      color: '#0369a1',
+      ...(target.kind ? { linkKind: target.kind } : {}),
+      ...(target.fromSide ? { fromSide: target.fromSide } : {}),
+      ...(target.toSide ? { toSide: target.toSide } : {}),
+      ...(target.description ? { description: target.description } : {}),
+    },
   };
 }
 
@@ -215,8 +255,24 @@ export function toFlowEdge(edge: DiagramEdge): DiagramFlowEdge {
     target: edge.target,
     sourceHandle: edge.sourceHandle || 'right',
     targetHandle: edge.targetHandle || 'left',
-    data: { kind: edge.kind, label: edge.label },
+    data: {
+      kind: edge.kind,
+      label: edge.label,
+      ...(edge.comments?.length ? { comments: edge.comments } : {}),
+    },
   };
+}
+
+/** فقط فیلدهای لازم کامنت را نگه می‌دارد تا دادهٔ ناسازگار روی بوم نشت نکند. */
+function serializeComments(comments: DiagramComment[] | undefined): DiagramComment[] {
+  return (Array.isArray(comments) ? comments : [])
+    .map((comment) => ({
+      id: String(comment?.id ?? '').slice(0, 80),
+      text: String(comment?.text ?? '').slice(0, 1000),
+      author: String(comment?.author ?? '').slice(0, 120),
+      createdAt: Number(comment?.createdAt) || Date.now(),
+    }))
+    .filter((comment) => comment.id && comment.text.trim());
 }
 
 export function serializeNodes(nodes: DiagramFlowNode[]): DiagramNode[] {
@@ -242,6 +298,12 @@ export function serializeNodes(nodes: DiagramFlowNode[]): DiagramNode[] {
       ...(node.data.src ? { src: node.data.src } : {}),
       ...(node.data.attachmentId ? { attachmentId: node.data.attachmentId } : {}),
       ...(node.data.caption ? { caption: node.data.caption } : {}),
+      ...(node.data.diagramId ? { diagramId: Number(node.data.diagramId) } : {}),
+      ...(node.data.linkKind ? { linkKind: node.data.linkKind } : {}),
+      ...(node.data.fromSide ? { fromSide: node.data.fromSide } : {}),
+      ...(node.data.toSide ? { toSide: node.data.toSide } : {}),
+      ...(node.data.comments?.length ? { comments: serializeComments(node.data.comments) } : {}),
+      ...(node.data.collapsed ? { collapsed: true } : {}),
     },
   }));
 }
@@ -255,6 +317,7 @@ export function serializeEdges(edges: DiagramFlowEdge[]): DiagramEdge[] {
     targetHandle: edge.targetHandle ?? 'left',
     kind: edge.data?.kind ?? 'copper',
     label: String(edge.data?.label ?? ''),
+    ...(edge.data?.comments?.length ? { comments: serializeComments(edge.data.comments) } : {}),
   }));
 }
 
@@ -346,7 +409,11 @@ export function pasteFromClipboard(offset = 28): { nodes: DiagramFlowNode[]; edg
     target: idMap.get(edge.target) as string,
     sourceHandle: edge.sourceHandle || 'right',
     targetHandle: edge.targetHandle || 'left',
-    data: { kind: edge.kind, label: edge.label },
+    data: {
+      kind: edge.kind,
+      label: edge.label,
+      ...(edge.comments?.length ? { comments: edge.comments } : {}),
+    },
   }));
   return { nodes, edges };
 }

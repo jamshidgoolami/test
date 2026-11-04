@@ -305,6 +305,180 @@ export function installationReport(q = {}) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* آمار تجهیزات بر اساس ابعاد (تگ، مدل، سازنده، نوع، محل، تاریخ نصب…)  */
+/* ------------------------------------------------------------------ */
+/* این گزارش از یک پرس‌وجوی واحد روی تجهیزات ساخته می‌شود و همهٔ ابعاد را
+   در یک پاسخ می‌دهد؛ سمت کلاینت فقط بُعد دلخواه را نشان می‌دهد. شمارش
+   وضعیت‌ها و «تاریخ نصب ثبت‌شده» برای هر سبد، گزارش را از یک فهرست ساده
+   فراتر می‌برد و برای برنامه‌ریزی نگهداری قابل استفاده می‌کند. */
+
+const UNSET = 'ثبت‌نشده';
+const NO_TAG = 'بدون تگ';
+const NO_MODEL = 'بدون مدل';
+const NO_LOCATION = 'بدون محل';
+const NO_GROUP = 'بدون گروه';
+const NO_INSTALL = 'بدون تاریخ نصب';
+
+const STATUS_LABELS = {
+  online: 'در دسترس',
+  warning: 'دارای اختلال',
+  offline: 'قطع‌شده',
+  maintenance: 'در تعمیرات',
+  unknown: 'نامشخص',
+};
+
+const PRIORITY_LABELS = {
+  low: 'کم',
+  medium: 'متوسط',
+  high: 'زیاد',
+  critical: 'بحرانی',
+};
+
+const DIMENSION_LABELS = {
+  tags: 'تگ',
+  models: 'مدل',
+  vendors: 'سازنده',
+  types: 'نوع تجهیز',
+  locations: 'محل نصب',
+  groups: 'گروه',
+  statuses: 'وضعیت',
+  priorities: 'اولویت',
+  installMonths: 'ماه نصب',
+  installYears: 'سال نصب',
+};
+
+function addBucket(map, label, row) {
+  const key = String(label || UNSET);
+  let bucket = map.get(key);
+  if (!bucket) {
+    bucket = { label: key, count: 0, online: 0, warning: 0, offline: 0, other: 0, installed: 0 };
+    map.set(key, bucket);
+  }
+  bucket.count += 1;
+  if (row.status === 'online') bucket.online += 1;
+  else if (row.status === 'warning') bucket.warning += 1;
+  else if (row.status === 'offline') bucket.offline += 1;
+  else bucket.other += 1;
+  if (row.installed_at) bucket.installed += 1;
+}
+
+function finalizeBuckets(map, total) {
+  return [...map.values()]
+    .map((b) => ({ ...b, share: total ? Math.round((b.count / total) * 10000) / 100 : 0 }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fa'));
+}
+
+export function inventoryStats(q = {}) {
+  const settings = getSettings();
+  const offsetMin = Number(settings.timezone_offset_minutes) || 0;
+  const f = filters(q);
+  const rows = db
+    .prepare(
+      `SELECT d.id, d.name, d.ip, d.device_type, d.vendor, d.model, d.location,
+              d.status, d.priority, d.installed_at,
+              g.name AS groupName,
+              (SELECT GROUP_CONCAT(t.name, '|') FROM device_tags dt JOIN tags t ON t.id = dt.tag_id
+                WHERE dt.device_id = d.id) AS tagNames
+       FROM devices d LEFT JOIN groups g ON g.id = d.group_id
+       WHERE 1=1 ${f.clause}
+       ORDER BY d.name`
+    )
+    .all(...f.params);
+
+  const dims = {
+    tags: new Map(),
+    models: new Map(),
+    vendors: new Map(),
+    types: new Map(),
+    locations: new Map(),
+    groups: new Map(),
+    statuses: new Map(),
+    priorities: new Map(),
+    installMonths: new Map(),
+    installYears: new Map(),
+  };
+
+  let tagged = 0;
+  let withModel = 0;
+  let withLocation = 0;
+  let withInstalled = 0;
+
+  for (const row of rows) {
+    const tags = String(row.tagNames || '')
+      .split('|')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const installLabel = row.installed_at ? jalaliLabelFromMs(row.installed_at, offsetMin) : null;
+    if (installLabel && installLabel !== '—') withInstalled += 1;
+    if (tags.length) tagged += 1;
+    if (row.model) withModel += 1;
+    if (row.location) withLocation += 1;
+
+    if (tags.length) for (const tag of tags) addBucket(dims.tags, tag, row);
+    else addBucket(dims.tags, NO_TAG, row);
+    addBucket(dims.models, row.model || NO_MODEL, row);
+    addBucket(dims.vendors, row.vendor || UNSET, row);
+    addBucket(dims.types, row.device_type || UNSET, row);
+    addBucket(dims.locations, row.location || NO_LOCATION, row);
+    addBucket(dims.groups, row.groupName || NO_GROUP, row);
+    addBucket(dims.statuses, STATUS_LABELS[row.status] || row.status, row);
+    addBucket(dims.priorities, PRIORITY_LABELS[row.priority] || row.priority, row);
+    addBucket(
+      dims.installMonths,
+      installLabel && installLabel !== '—' ? installLabel.slice(0, 7) : NO_INSTALL,
+      row
+    );
+    addBucket(
+      dims.installYears,
+      installLabel && installLabel !== '—' ? installLabel.slice(0, 4) : NO_INSTALL,
+      row
+    );
+  }
+
+  const total = rows.length;
+  const dimensions = {};
+  for (const [key, map] of Object.entries(dims)) dimensions[key] = finalizeBuckets(map, total);
+
+  return {
+    total,
+    tagged,
+    withModel,
+    withLocation,
+    withInstalled,
+    generatedAt: Date.now(),
+    dimensions,
+  };
+}
+
+router.get('/inventory', (req, res) => {
+  res.json(inventoryStats(req.query));
+});
+
+router.get('/inventory/export', async (req, res) => {
+  const format = String(req.query.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv';
+  const dimension = Object.prototype.hasOwnProperty.call(DIMENSION_LABELS, req.query.dimension)
+    ? String(req.query.dimension)
+    : 'tags';
+  const report = inventoryStats(req.query);
+  const rows = (report.dimensions[dimension] || []).map((b) => ({
+    [DIMENSION_LABELS[dimension]]: b.label,
+    'تعداد تجهیز': b.count,
+    'سهم (٪)': b.share,
+    'در دسترس': b.online,
+    'دارای اختلال': b.warning,
+    'قطع‌شده': b.offline,
+    'سایر': b.other,
+    'دارای تاریخ نصب': b.installed,
+  }));
+  const headers = Object.keys(rows[0] || { [DIMENSION_LABELS[dimension]]: '' }).map((k) => [k, k]);
+  const result = await runJob('export', { rows, headers, format }, { timeoutMs: 120000 });
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="netwatch-inventory-${dimension}-${stamp}.${format}"`);
+  res.send(Buffer.from(result.buffer));
+});
+
 router.get('/mttr', (req, res) => {
   const { from, to } = resolveRange(req.query);
   const f = filters(req.query);

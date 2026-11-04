@@ -5,8 +5,8 @@
 
 | مورد | مقدار |
 | --- | --- |
-| نسخهٔ برنامه | `1.3.0` |
-| نسخهٔ ساختار داده | `SCHEMA_VERSION = 12` |
+| نسخهٔ برنامه | `1.4.0` |
+| نسخهٔ ساختار داده | `SCHEMA_VERSION = 18` |
 | پیش‌نیاز اجرا | Node.js `>= 22.12.0` |
 | تاریخ آخرین بازبینی | ۲۰۲۶-۱۰-۲۲ |
 
@@ -56,6 +56,7 @@
 | سند | موضوع |
 | --- | --- |
 | [install.md](install.md) | نصب تولیدی، systemd، TLS، چک‌لیست انتشار |
+| [offline-install-update.md](offline-install-update.md) | نصب آفلاین (ویندوز x64)، بستهٔ انتقال و بروزرسانی با حفظ داده‌ها |
 | [upgrade.md](upgrade.md) | ارتقا، رفتار Migration، Rollback |
 | [database.md](database.md) | ساختار داده، Migration، یکپارچگی، کارایی |
 | [data-retention.md](data-retention.md) | سیاست نگهداری و هرس |

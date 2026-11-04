@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useId, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, Inbox, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { STATUS_META, statusMeta } from '../lib/format';
 import type { DeviceStatus } from '../lib/types';
@@ -73,12 +74,12 @@ export function StatCard({
   delay?: number;
 }) {
   const tones: Record<string, string> = {
-    brand: 'from-brand-50 to-white text-brand-600 border-brand-100',
-    emerald: 'from-emerald-50 to-white text-emerald-600 border-emerald-100',
-    sun: 'from-sun-50 to-white text-sun-600 border-sun-100',
-    red: 'from-red-50 to-white text-red-600 border-red-100',
-    violet: 'from-violet-50 to-white text-violet-600 border-violet-100',
-    ink: 'from-ink-100 to-white text-ink-500 border-ink-200',
+    brand: 'bg-brand-50 text-brand-600 border-brand-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    sun: 'bg-sun-50 text-sun-600 border-sun-100',
+    red: 'bg-red-50 text-red-600 border-red-100',
+    violet: 'bg-violet-50 text-violet-600 border-violet-100',
+    ink: 'bg-ink-100 text-ink-500 border-ink-200',
   };
   return (
     <button
@@ -101,7 +102,7 @@ export function StatCard({
           ) : null}
         </div>
         {icon ? (
-          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-soft bg-gradient-to-br border ${tones[tone]}`}>{icon}</span>
+          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-soft border ${tones[tone]}`}>{icon}</span>
         ) : null}
       </div>
     </button>
@@ -170,36 +171,73 @@ export function Modal({
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      [...(panel?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) ?? [])].filter((element) => element.offsetParent !== null);
+    const focusTimer = window.setTimeout(() => focusables()[0]?.focus(), 20);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
+      previous?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   const widths = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' };
-  return (
+  // پنجره به body پورتال می‌شود: اگر یکی از اجداد `transform`/`filter` داشته
+  // باشد (`animate-fade-up` در انتها transform صفر باقی می‌گذارد)، `position:
+  // fixed` نسبت به همان جداد محاسبه می‌شود و پنجره داخل همان کارت/بخش صفحه
+  // باز می‌شد، نه در مرکز صفحه. پورتال از این وابستگی جداست و تراز عمودی هم
+  // وسط صفحه است.
+  return createPortal(
     <div
-      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-ink-900/25 backdrop-blur-sm p-4 sm:p-6"
+      className="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-ink-900/30 p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label={typeof title === 'string' ? title : 'پنجره'}
+      aria-labelledby={titleId}
     >
       <div className="absolute inset-0" onClick={onClose} aria-hidden />
       <div
-        className={`relative my-4 flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden ${widths[size]} animate-fade-up rounded-card bg-white shadow-pop border border-white/70`}
+        ref={panelRef}
+        tabIndex={-1}
+        className={`relative my-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden ${widths[size]} animate-fade-up rounded-card bg-white shadow-pop border border-ink-200`}
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-ink-100 p-5">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-ink-800 truncate">{title}</h3>
+            <h3 id={titleId} className="text-base font-semibold text-ink-800 truncate">{title}</h3>
             {subtitle ? <p className="text-xs text-ink-500 mt-1">{subtitle}</p> : null}
           </div>
           <button type="button" onClick={onClose} className="btn-ghost btn-xs shrink-0" aria-label="بستن">
@@ -212,7 +250,8 @@ export function Modal({
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-ink-100 bg-ink-50/60 p-4 rounded-b-card">{footer}</div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -232,15 +271,37 @@ export function Field({
   children: React.ReactNode;
   className?: string;
 }) {
+  const generatedId = useId();
+  const inputId = React.isValidElement(children) ? (children.props as { id?: string }).id ?? generatedId : generatedId;
+  const hintId = `${generatedId}-hint`;
+  const errorId = `${generatedId}-error`;
+  const child = React.isValidElement(children)
+    ? React.cloneElement(
+        children as React.ReactElement<{ id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }>,
+        {
+          id: inputId,
+          'aria-describedby':
+            [error ? errorId : hint ? hintId : null, (children.props as { 'aria-describedby'?: string })['aria-describedby']]
+              .filter(Boolean)
+              .join(' ') || undefined,
+          ...(error ? { 'aria-invalid': true } : {}),
+        }
+      )
+    : children;
   return (
     <div className={className}>
       {label ? (
-        <label className="label">
-          {label} {required ? <span className="text-red-500">*</span> : null}
+        <label className="label" htmlFor={inputId}>
+          {label} {required ? <span className="text-red-500" aria-hidden>*</span> : null}
+          {required ? <span className="sr-only"> (الزامی)</span> : null}
         </label>
       ) : null}
-      {children}
-      {error ? <p className="mt-1 text-[11px] text-red-600">{error}</p> : hint ? <p className="mt-1 text-[11px] text-ink-400">{hint}</p> : null}
+      {child}
+      {error ? (
+        <p id={errorId} className="mt-1 text-[12px] text-red-600" role="alert">{error}</p>
+      ) : hint ? (
+        <p id={hintId} className="mt-1 text-[12px] text-ink-400">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -268,6 +329,7 @@ export function Toggle({
           checked ? 'bg-brand-500' : 'bg-ink-200'
         }`}
         aria-pressed={checked}
+        aria-label={label ?? 'تغییر وضعیت'}
       >
         <span
           className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${
@@ -299,13 +361,39 @@ export function Tabs<T extends string>({
   size?: 'sm' | 'md';
   className?: string;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const move = (index: number) => {
+    const next = tabs[index];
+    if (!next) return;
+    onChange(next.value);
+    window.requestAnimationFrame(() => {
+      listRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]?.focus();
+    });
+  };
   return (
-    <div className={`inline-flex flex-wrap items-center gap-1 rounded-soft bg-ink-100/70 p-1 ${className}`}>
-      {tabs.map((t) => (
+    <div
+      ref={listRef}
+      role="tablist"
+      aria-label="انتخاب بخش"
+      className={`inline-flex max-w-full flex-wrap items-center gap-1 rounded-soft bg-ink-100/70 p-1 ${className}`}
+    >
+      {tabs.map((t, index) => (
         <button
           key={t.value}
           type="button"
+          role="tab"
+          id={`tab-${t.value}`}
+          aria-selected={value === t.value}
+          tabIndex={value === t.value ? 0 : -1}
           onClick={() => onChange(t.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+              event.preventDefault();
+              if (event.key === 'Home') move(0);
+              else if (event.key === 'End') move(tabs.length - 1);
+              else move((index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length);
+            }
+          }}
           className={`inline-flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
             size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-[13px]'
           } ${value === t.value ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500 hover:text-ink-700'}`}

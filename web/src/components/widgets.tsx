@@ -380,9 +380,15 @@ export function LayoutToolbar({
   const hidden = defs.filter((d) => !layout.find((w) => w.id === d.id)?.visible);
   return (
     <>
-      <button type="button" className={`btn-xs ${editMode ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setEditMode(!editMode)}>
+      <button
+        type="button"
+        className={`btn-xs ${editMode ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={() => setEditMode(!editMode)}
+        title={editMode ? 'بازگشت به نمای عادی' : 'جابه‌جایی، تغییر اندازه و نمایش ویجت‌ها'}
+        aria-pressed={editMode}
+      >
         <LayoutGrid size={14} />
-        {editMode ? 'پایان چیدمان' : 'چیدمان'}
+        {editMode ? 'پایان شخصی‌سازی' : 'شخصی‌سازی'}
       </button>
       {editMode ? (
         <button type="button" className="btn-ghost btn-xs" onClick={() => setPickerOpen(true)}>
@@ -427,6 +433,8 @@ export function LayoutToolbar({
   );
 }
 
+const WIDGET_DRAG_MIME = 'text/nw-widget-row';
+
 /** فهرست کوچک نمایش/مخفی‌سازی سریع (برای تنظیمات) */
 export function WidgetVisibilityRow({
   def,
@@ -436,6 +444,7 @@ export function WidgetVisibilityRow({
   onHeight,
   onUp,
   onDown,
+  onMove,
 }: {
   def: WidgetDef;
   item: LayoutItem;
@@ -444,12 +453,59 @@ export function WidgetVisibilityRow({
   onHeight: (heightPx: number) => void;
   onUp: () => void;
   onDown: () => void;
+  onMove: (sourceId: string, targetId: string) => void;
 }) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [over, setOver] = useState(false);
+
+  const startDrag = (event: React.DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(WIDGET_DRAG_MIME, item.id);
+    // تصویر شبحِ کل ردیف به‌جای فقط دستگیره، هدف کشیدن را واضح می‌کند.
+    if (rowRef.current) event.dataTransfer.setDragImage(rowRef.current, 24, 24);
+    setDragging(true);
+  };
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-soft border border-ink-200 bg-white/70 p-3">
-      <div className="min-w-0">
-        <p className="truncate text-[12.5px] font-medium text-ink-700">{def.title}</p>
-        {def.description ? <p className="mt-0.5 text-[10.5px] text-ink-400">{def.description}</p> : null}
+    <div
+      ref={rowRef}
+      data-widget-row={item.id}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(WIDGET_DRAG_MIME)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setOver(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes(WIDGET_DRAG_MIME)) return;
+        event.preventDefault();
+        setOver(false);
+        const sourceId = event.dataTransfer.getData(WIDGET_DRAG_MIME);
+        if (sourceId && sourceId !== item.id) onMove(sourceId, item.id);
+      }}
+      className={`flex flex-wrap items-center justify-between gap-2 rounded-soft border bg-white/70 p-3 transition ${
+        dragging ? 'opacity-50' : ''
+      } ${over && !dragging ? 'border-brand-300 ring-2 ring-brand-200/60' : 'border-ink-200'}`}
+    >
+      <div
+        draggable
+        onDragStart={startDrag}
+        onDragEnd={() => {
+          setDragging(false);
+          setOver(false);
+        }}
+        className="flex min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing"
+        title="برای تغییر اولویت، نگه دارید و بالا یا پایین بکشید"
+      >
+        <GripVertical size={15} className="shrink-0 text-ink-300" aria-hidden />
+        <div className="min-w-0">
+          <p className="truncate text-[12.5px] font-medium text-ink-700">{def.title}</p>
+          {def.description ? <p className="mt-0.5 text-[10.5px] text-ink-400">{def.description}</p> : null}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select className="field !w-auto !py-1.5 text-[12px]" value={item.size} onChange={(e) => onSize(e.target.value as WidgetSize)} title="عرض ویجت">

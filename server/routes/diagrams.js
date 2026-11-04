@@ -11,6 +11,7 @@
  */
 import express from 'express';
 import multer from 'multer';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { db, getSettings, log } from '../db.js';
 import { routePermission } from '../permissions.js';
@@ -28,8 +29,9 @@ const router = express.Router();
 
 router.use(routePermission({ read: 'diagrams:read', write: 'diagrams:write' }));
 
-const CONNECTION_KINDS = new Set(['fiber', 'copper', 'bandwidth', 'radio', 'modem']);
-const NODE_TYPES = new Set(['device', 'shape', 'note', 'group', 'image']);
+const CONNECTION_KINDS = new Set(['fiber', 'otn', 'copper', 'bandwidth', 'radio', 'modem']);
+const LINK_SIDES = new Set(['top', 'right', 'bottom', 'left']);
+const NODE_TYPES = new Set(['device', 'shape', 'note', 'group', 'image', 'diagram']);
 const MAX_NODES = 800;
 const MAX_EDGES = 1600;
 const MAX_DATA_BYTES = 4 * 1024 * 1024;
@@ -38,6 +40,20 @@ const NAME_MAX = 120;
 const DESCRIPTION_MAX = 2000;
 
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
+
+function cleanLinkKind(raw, fallback = 'fiber') {
+  const kind = String(raw ?? fallback);
+  if (!CONNECTION_KINDS.has(kind)) throw new DiagramError(`نوع ارتباط «${kind}» پشتیبانی نمی‌شود.`);
+  return kind;
+}
+
+/** سمت اتصال اختیاری است؛ مقدار خالی یعنی همان مسیر خودکار قبلی. */
+function cleanLinkSide(raw) {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const side = String(raw);
+  if (!LINK_SIDES.has(side)) throw new DiagramError(`سمت اتصال «${side}» پشتیبانی نمی‌شود.`);
+  return side;
+}
 
 class DiagramError extends Error {
   constructor(message, status = 400) {
@@ -128,6 +144,19 @@ function normalizeParent(parentId) {
   return value;
 }
 
+function cleanComments(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 100)
+    .map((comment) => ({
+      id: text(comment?.id, 80),
+      text: text(comment?.text, 1000),
+      author: text(comment?.author, 120),
+      createdAt: Number.isFinite(Number(comment?.createdAt)) ? Number(comment.createdAt) : nowMs(),
+    }))
+    .filter((comment) => comment.id && comment.text);
+}
+
 function cleanNode(raw, index) {
   if (!raw || typeof raw !== 'object') throw new DiagramError(`جزء شمارهٔ ${index + 1} نامعتبر است.`);
   const id = String(raw.id ?? '').trim();
@@ -139,7 +168,13 @@ function cleanNode(raw, index) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new DiagramError('موقعیت جزء باید عدد باشد.');
   const width = Number(raw.width);
   const height = Number(raw.height);
-  const data = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : {};
+  const rawData = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : {};
+  const data = { ...rawData };
+  if (Array.isArray(rawData.comments)) {
+    const comments = cleanComments(rawData.comments);
+    if (comments.length) data.comments = comments;
+    else delete data.comments;
+  }
   return {
     id,
     type,
@@ -178,6 +213,7 @@ function normalizeGraph(input) {
       targetHandle: String(raw.targetHandle ?? '').slice(0, 20),
       kind,
       label: text(raw.label, 120),
+      ...(Array.isArray(raw.comments) ? { comments: cleanComments(raw.comments) } : {}),
     };
   });
   if (new Set(cleanEdges.map((e) => e.id)).size !== cleanEdges.length) {
@@ -195,6 +231,284 @@ function normalizeGraph(input) {
 router.get('/', (_req, res) => {
   const rows = db.prepare('SELECT * FROM diagrams ORDER BY name COLLATE NOCASE').all();
   res.json({ items: rows.map(serializeSummary) });
+});
+
+/**
+ * نقشهٔ ارتباط دیاگرام‌ها.
+ *
+ * دو نوع رابطه برگردانده می‌شود: ساختار درختی (parentId) و پیوندهای
+ * دستی که کاربر با جزء نوع «diagram» روی بوم ساخته است. هر جزء پیوند یک یال
+ * مستقل است (نه یک جفت مبدأ/مقصد) تا بتوان چند پیوند به یک مقصد را جدا دید،
+ * هر یال را به جزء روی بومش رساند و پیوندهای شکسته را دقیق پاک کرد.
+ */
+router.get('/graph', (_req, res) => {
+  const rows = db
+    .prepare(
+      'SELECT id, parent_id, name, description, data, revision, updated_at FROM diagrams ORDER BY name COLLATE NOCASE'
+    )
+    .all();
+  const ids = new Set(rows.map((row) => row.id));
+  const links = [];
+  const broken = [];
+  const seen = new Set();
+  const outCount = new Map();
+  const inCount = new Map();
+  const brokenCount = new Map();
+
+  const items = rows.map((row) => {
+    let graph = { nodes: [], edges: [] };
+    try {
+      graph = JSON.parse(row.data || '{}');
+    } catch {
+      /* دادهٔ خراب نباید نقشهٔ ارتباط را از کار بیندازد */
+    }
+    const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+    const edges = Array.isArray(graph.edges) ? graph.edges : [];
+    for (const node of nodes) {
+      if (!node || node.type !== 'diagram') continue;
+      const target = Number(node.data?.diagramId);
+      const nodeId = String(node.id ?? '');
+      const nodeLabel = text(node.data?.label, 120);
+      if (!Number.isInteger(target) || target <= 0 || target === row.id || !nodeId) continue;
+      if (!ids.has(target)) {
+        broken.push({ from: row.id, fromName: row.name, nodeId, nodeLabel, to: target });
+        brokenCount.set(row.id, (brokenCount.get(row.id) ?? 0) + 1);
+        continue;
+      }
+      // یکتایی بر اساس جزء است؛ دو جزء با مقصد یکسان دو پیوند مستقل‌اند.
+      const key = `${row.id}:${nodeId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const kind = CONNECTION_KINDS.has(node.data?.linkKind) ? node.data.linkKind : 'fiber';
+      const fromSide = LINK_SIDES.has(node.data?.fromSide) ? node.data.fromSide : undefined;
+      const toSide = LINK_SIDES.has(node.data?.toSide) ? node.data.toSide : undefined;
+      links.push({
+        from: row.id,
+        to: target,
+        nodeId,
+        nodeLabel,
+        label: nodeLabel,
+        kind,
+        ...(fromSide ? { fromSide } : {}),
+        ...(toSide ? { toSide } : {}),
+      });
+      outCount.set(row.id, (outCount.get(row.id) ?? 0) + 1);
+      inCount.set(target, (inCount.get(target) ?? 0) + 1);
+    }
+    return {
+      id: row.id,
+      parentId: row.parent_id ?? null,
+      name: row.name,
+      description: row.description || '',
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      revision: row.revision ?? 0,
+      updatedAt: row.updated_at,
+      inLinks: 0,
+      outLinks: 0,
+      childCount: 0,
+      brokenLinks: 0,
+    };
+  });
+
+  for (const item of items) {
+    item.outLinks = outCount.get(item.id) ?? 0;
+    item.inLinks = inCount.get(item.id) ?? 0;
+    item.childCount = items.filter((other) => other.parentId === item.id).length;
+    item.brokenLinks = brokenCount.get(item.id) ?? 0;
+  }
+
+  const roots = items.filter((item) => item.parentId == null).length;
+  const orphans = items.filter(
+    (item) => item.parentId == null && item.childCount === 0 && item.inLinks === 0 && item.outLinks === 0
+  ).length;
+
+  res.json({
+    items,
+    links,
+    broken,
+    stats: {
+      diagrams: items.length,
+      links: links.length,
+      children: items.filter((item) => item.parentId != null).length,
+      broken: broken.length,
+      roots,
+      orphans,
+    },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* مدیریت پیوند بین دیاگرام‌ها بدون باز کردن بوم                        */
+/* ------------------------------------------------------------------ */
+/* جزء نوع «diagram» همان پیوند است؛ این سه مسیر فقط همان جزء را روی بوم
+   مبدأ می‌سازند، تغییر می‌دهند یا حذف می‌کنند، نسخهٔ دیاگرام را بالا می‌برند
+   و دیاگرام کامل را برمی‌گردانند تا بوم باز همان لحظه همگام شود. */
+const MAX_LINKS = 200;
+
+function readGraph(row) {
+  try {
+    const parsed = JSON.parse(row.data || '{}');
+    return {
+      nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
+      edges: Array.isArray(parsed.edges) ? parsed.edges : [],
+    };
+  } catch {
+    return { nodes: [], edges: [] };
+  }
+}
+
+function writeGraph(id, graph, stamp) {
+  const info = db
+    .prepare('UPDATE diagrams SET data = ?, revision = revision + 1, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(graph), stamp, id);
+  if (!info.changes) throw new DiagramError('دیاگرام پیدا نشد.', 404);
+  return getRow(id);
+}
+
+/** جای خالی برای جزء تازه: ستونی در سمت راست بوم، زیر پیوندهای موجود */
+function linkPosition(nodes, linkCount) {
+  const right = nodes.reduce(
+    (max, node) => Math.max(max, Number(node?.position?.x ?? 0) + Number(node?.width ?? 190)),
+    0
+  );
+  const top = nodes.reduce(
+    (min, node) => Math.min(min, Number(node?.position?.y ?? 0)),
+    0
+  );
+  return { x: Math.round(right + 80), y: Math.round(top + linkCount * 100) };
+}
+
+router.post('/:id/links', (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = getRow(id);
+    const targetId = Number(req.body?.targetId);
+    if (!Number.isInteger(targetId) || targetId <= 0) throw new DiagramError('دیاگرام مقصد را انتخاب کنید.');
+    if (targetId === id) throw new DiagramError('پیوند یک دیاگرام به خودش مجاز نیست.');
+    const target = getRow(targetId);
+    const graph = readGraph(row);
+    const links = graph.nodes.filter((node) => node && node.type === 'diagram');
+    if (links.length >= MAX_LINKS) {
+      throw new DiagramError(`هر دیاگرام حداکثر ${MAX_LINKS} پیوند می‌تواند داشته باشد.`);
+    }
+    if (links.some((node) => Number(node.data?.diagramId) === targetId)) {
+      throw new DiagramError(`این دیاگرام از قبل به «${target.name}» پیوند دارد.`);
+    }
+    if (graph.nodes.length >= MAX_NODES) throw new DiagramError(`حداکثر ${MAX_NODES} جزء در هر دیاگرام مجاز است.`);
+    const label = text(req.body?.label, 120) || target.name;
+    const description = text(req.body?.description, 300);
+    const linkKind = cleanLinkKind(req.body?.linkKind ?? req.body?.kind);
+    const fromSide = cleanLinkSide(req.body?.fromSide);
+    const toSide = cleanLinkSide(req.body?.toSide);
+    const node = {
+      id: `link-${crypto.randomUUID()}`,
+      type: 'diagram',
+      position: linkPosition(graph.nodes, links.length),
+      width: 220,
+      height: 80,
+      data: {
+        label,
+        diagramId: targetId,
+        color: '#0369a1',
+        linkKind,
+        ...(fromSide ? { fromSide } : {}),
+        ...(toSide ? { toSide } : {}),
+        ...(description ? { description } : {}),
+      },
+    };
+    const next = { nodes: [...graph.nodes, node], edges: graph.edges };
+    if (Buffer.byteLength(JSON.stringify(next), 'utf8') > MAX_DATA_BYTES) {
+      throw new DiagramError('حجم دیاگرام بیش از حد مجاز است.');
+    }
+    const saved = writeGraph(id, next, nowMs());
+    log('info', `پیوند «${row.name}» → «${target.name}» ساخته شد.`);
+    res.status(201).json(serialize(saved));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/:id/links/:nodeId', (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = getRow(id);
+    const nodeId = String(req.params.nodeId ?? '');
+    const graph = readGraph(row);
+    const index = graph.nodes.findIndex((node) => node && node.id === nodeId && node.type === 'diagram');
+    if (index < 0) throw new DiagramError('پیوند پیدا نشد.', 404);
+    const current = graph.nodes[index];
+    const targetId =
+      req.body?.targetId === undefined ? Number(current.data?.diagramId) : Number(req.body.targetId);
+    if (!Number.isInteger(targetId) || targetId <= 0) throw new DiagramError('دیاگرام مقصد نامعتبر است.');
+    if (targetId === id) throw new DiagramError('پیوند یک دیاگرام به خودش مجاز نیست.');
+    const target = getRow(targetId);
+    if (
+      graph.nodes.some(
+        (node) => node.id !== nodeId && node.type === 'diagram' && Number(node.data?.diagramId) === targetId
+      )
+    ) {
+      throw new DiagramError(`این دیاگرام از قبل به «${target.name}» پیوند دارد.`);
+    }
+    const label =
+      req.body?.label === undefined
+        ? text(current.data?.label, 120) || target.name
+        : text(req.body.label, 120) || target.name;
+    const description =
+      req.body?.description === undefined ? text(current.data?.description, 300) : text(req.body.description, 300);
+    const kindInput = req.body?.linkKind ?? req.body?.kind;
+    const linkKind =
+      kindInput === undefined
+        ? CONNECTION_KINDS.has(current.data?.linkKind)
+          ? current.data.linkKind
+          : 'fiber'
+        : cleanLinkKind(kindInput);
+    const data = { ...current.data, label, diagramId: targetId, linkKind };
+    if (req.body?.fromSide !== undefined) {
+      const fromSide = cleanLinkSide(req.body.fromSide);
+      if (fromSide) data.fromSide = fromSide;
+      else delete data.fromSide;
+    }
+    if (req.body?.toSide !== undefined) {
+      const toSide = cleanLinkSide(req.body.toSide);
+      if (toSide) data.toSide = toSide;
+      else delete data.toSide;
+    }
+    if (description) data.description = description;
+    else delete data.description;
+    const next = {
+      nodes: graph.nodes.map((node, position) =>
+        position === index ? { ...current, data } : node
+      ),
+      edges: graph.edges,
+    };
+    const saved = writeGraph(id, next, nowMs());
+    log('info', `پیوند «${row.name}» به «${target.name}» به‌روزرسانی شد.`);
+    res.json(serialize(saved));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/:id/links/:nodeId', (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = getRow(id);
+    const nodeId = String(req.params.nodeId ?? '');
+    const graph = readGraph(row);
+    if (!graph.nodes.some((node) => node && node.id === nodeId && node.type === 'diagram')) {
+      throw new DiagramError('پیوند پیدا نشد.', 404);
+    }
+    const next = {
+      nodes: graph.nodes.filter((node) => node.id !== nodeId),
+      edges: graph.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+    };
+    const saved = writeGraph(id, next, nowMs());
+    log('info', `یک پیوند از دیاگرام «${row.name}» حذف شد.`);
+    res.json(serialize(saved));
+  } catch (e) {
+    next(e);
+  }
 });
 
 router.get('/:id', (req, res, next) => {
@@ -235,6 +549,34 @@ router.post('/', (req, res, next) => {
   }
 });
 
+/**
+ * با تغییر نام یک دیاگرام، برچسب جزءهای پیوندی که در بوم‌های دیگر به آن
+ * اشاره می‌کنند هم به‌روز می‌شود. برچسبی که کاربر دستی عوض کرده (و با نام
+ * قبلی یکی نیست) دست نمی‌خورد و نسخهٔ دیاگرام‌های تغییر‌یافته بالا می‌رود.
+ */
+function renameLinkLabels(targetId, oldName, newName, stamp) {
+  const rows = db.prepare('SELECT id, data FROM diagrams WHERE id <> ?').all(targetId);
+  const update = db.prepare('UPDATE diagrams SET data = ?, revision = revision + 1, updated_at = ? WHERE id = ?');
+  let nodes = 0;
+  const diagrams = [];
+  for (const row of rows) {
+    const graph = readGraph(row);
+    let changed = false;
+    const nextNodes = graph.nodes.map((node) => {
+      if (!node || node.type !== 'diagram' || Number(node.data?.diagramId) !== targetId) return node;
+      const label = text(node.data?.label, 120);
+      if (label && label !== oldName) return node;
+      changed = true;
+      nodes += 1;
+      return { ...node, data: { ...node.data, label: newName } };
+    });
+    if (!changed) continue;
+    update.run(JSON.stringify({ nodes: nextNodes, edges: graph.edges }), stamp, row.id);
+    diagrams.push(row.id);
+  }
+  return { nodes, diagrams };
+}
+
 router.put('/:id', (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -250,10 +592,23 @@ router.put('/:id', (req, res, next) => {
         throw new DiagramError('دیاگرام نمی‌تواند زیرمجموعهٔ خودش یا زیرمجموعه‌هایش باشد.');
       }
     }
+    const stamp = nowMs();
+    const oldName = row.name;
     db.prepare(
       `UPDATE diagrams SET name = ?, description = ?, parent_id = ?, updated_at = ? WHERE id = ?`
-    ).run(name, description, parentId, nowMs(), id);
-    res.json(serialize(getRow(id)));
+    ).run(name, description, parentId, stamp, id);
+    const relabeled = name !== oldName ? renameLinkLabels(id, oldName, name, stamp) : { nodes: 0, diagrams: [] };
+    if (relabeled.nodes) {
+      log(
+        'info',
+        `نام دیاگرام «${oldName}» به «${name}» تغییر کرد و برچسب ${relabeled.nodes} پیوند در ${relabeled.diagrams.length} دیاگرام هم به‌روز شد.`
+      );
+    }
+    res.json({
+      ...serialize(getRow(id)),
+      relabeledLinks: relabeled.nodes,
+      relabeledDiagrams: relabeled.diagrams,
+    });
   } catch (e) {
     next(e);
   }

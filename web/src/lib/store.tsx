@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { api, ApiError, isAbortError } from './api';
 import { errorMessage, LatestRequestGate } from './async-gate';
 import { LiveSampleBuffer, nextReconnectDelay, shouldApplySample, type LiveSample } from './live-core';
-import type { Alert, AppSettings, EngineStatus, Group, MapLayer, StatusData, Tag } from './types';
+import type { Alert, AppSettings, DeviceType, EngineStatus, Group, MapLayer, StatusData, Tag } from './types';
 
 export type { LiveSample } from './live-core';
 
@@ -186,11 +186,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-5 left-5 z-[1200] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-5 left-5 z-[1200] flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="false">
         {items.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto animate-fade-up rounded-soft px-4 py-3 text-sm shadow-pop border backdrop-blur-xl max-w-sm ${
+            role={t.kind === 'error' ? 'alert' : 'status'}
+            aria-live={t.kind === 'error' ? 'assertive' : 'polite'}
+            className={`pointer-events-auto animate-fade-up rounded-soft px-4 py-3 text-sm shadow-pop border max-w-sm ${
               t.kind === 'success'
                 ? 'bg-emerald-50/95 border-emerald-200 text-emerald-800'
                 : t.kind === 'error'
@@ -214,6 +216,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 interface MetaData {
   groups: Group[];
   tags: Tag[];
+  /** فهرست مرجع انواع تجهیز (تنظیمات ← انواع تجهیزات) */
+  deviceTypes: DeviceType[];
   types: { value: string; count: number }[];
   locations: { value: string; count: number }[];
   vendors: { value: string; count: number }[];
@@ -232,7 +236,8 @@ interface AppCtx {
   refreshSettings: () => Promise<void>;
   refreshMeta: () => Promise<void>;
   refreshStatus: () => Promise<void>;
-  saveSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  // مقدار برگشتی: کلیدهایی که سرور به‌دلیل نامعتبر‌بودن نپذیرفت (rejected)
+  saveSettings: (patch: Partial<AppSettings>) => Promise<string[]>;
 }
 
 const AppContext = createContext<AppCtx>({
@@ -245,7 +250,7 @@ const AppContext = createContext<AppCtx>({
   refreshSettings: async () => {},
   refreshMeta: async () => {},
   refreshStatus: async () => {},
-  saveSettings: async () => {},
+  saveSettings: async () => [],
 });
 
 export const useApp = () => useContext(AppContext);
@@ -273,6 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setMeta({
         groups: res.groups,
         tags: res.tags,
+        deviceTypes: res.deviceTypes ?? [],
         types: res.types,
         locations: res.locations,
         vendors: res.vendors,
@@ -290,6 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await api.saveSettings(patch);
       setSettings(res.settings);
       setEngine(res.engine);
+      return res.rejected ?? [];
     },
     []
   );

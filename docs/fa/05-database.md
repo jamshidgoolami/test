@@ -7,7 +7,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | مورد | مقدار واقعی |
 | --- | --- |
 | فایل پیش‌فرض | `<NETWATCH_DATA_DIR>/netwatch.db` → `data/netwatch.db` |
-| نسخهٔ ساختار | `SCHEMA_VERSION = 12` در `server/db.js` |
+| نسخهٔ ساختار | `SCHEMA_VERSION = 18` در `server/db.js` |
 | Journal | `WAL` |
 | `synchronous` | `FULL` (قابل تغییر با `NETWATCH_SQLITE_SYNC`) |
 | `foreign_keys` | `ON` |

@@ -13,7 +13,7 @@ import { sanitizeLogText } from './logger.mjs';
 
 const SENSITIVE_KEY = /pass(word)?|secret|token|csrf|cookie|authorization|api[_-]?key|private/i;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const SENSITIVE_READ = /\/(probe|export|export\/geo)$/i;
+const SENSITIVE_READ = /\/(probe|export|export\/geo|credentials)$/i;
 const MAX_DETAILS_CHARS = 4000;
 
 const TARGET_TYPES = {

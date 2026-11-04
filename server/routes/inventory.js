@@ -181,6 +181,69 @@ router.delete('/tags/:id', (req, res) => {
   res.json({ deleted: db.prepare('DELETE FROM tags WHERE id=?').run(Number(req.params.id)).changes });
 });
 
+/* --------------------------- انواع تجهیز --------------------------- */
+
+// نوع تجهیز روی خود تجهیز به‌صورت متن ذخیره می‌شود؛ این جدول فقط فهرست مرجع
+// است تا مدیر بتواند نوع تازه بسازد و در فیلد «نوع تجهیز» ببیند.
+router.get('/device-types', (_req, res) => {
+  res.json({
+    items: db
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM devices d WHERE d.device_type = t.name) AS device_count
+         FROM device_types t ORDER BY t.name`
+      )
+      .all(),
+  });
+});
+
+router.post('/device-types', (req, res) => {
+  const name = text(req.body?.name, 60);
+  if (!name) return res.status(400).json({ error: 'نام نوع تجهیز الزامی است' });
+  if (db.prepare('SELECT id FROM device_types WHERE name = ?').get(name)) {
+    return res.status(400).json({ error: 'نوعی با این نام از قبل وجود دارد' });
+  }
+  const r = db
+    .prepare('INSERT INTO device_types(name, color, created_at) VALUES (?,?,?)')
+    .run(name, /^#[0-9a-fA-F]{6}$/.test(String(req.body?.color)) ? String(req.body.color) : '#2563eb', Date.now());
+  res.status(201).json(db.prepare('SELECT * FROM device_types WHERE id=?').get(Number(r.lastInsertRowid)));
+});
+
+router.put('/device-types/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM device_types WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'نوع تجهیز یافت نشد' });
+  const name = req.body?.name === undefined ? existing.name : text(req.body.name, 60) || existing.name;
+  if (name !== existing.name && db.prepare('SELECT id FROM device_types WHERE name=? AND id!=?').get(name, id)) {
+    return res.status(400).json({ error: 'نوعی با این نام از قبل وجود دارد' });
+  }
+  // تغییر نام باید تجهیزات موجود را هم هم‌گام کند، وگرنه فیلتر نوع قدیمی می‌ماند.
+  const updated = transaction(
+    () => {
+      db.prepare('UPDATE device_types SET name=?, color=? WHERE id=?').run(
+        name,
+        req.body?.color === undefined ? existing.color : /^#[0-9a-fA-F]{6}$/.test(String(req.body.color)) ? String(req.body.color) : existing.color,
+        id
+      );
+      return name === existing.name
+        ? 0
+        : db.prepare('UPDATE devices SET device_type=?, updated_at=? WHERE device_type=?').run(name, Date.now(), existing.name).changes;
+    },
+    { label: 'inventory.deviceType.rename' }
+  );
+  res.json({ updated, item: db.prepare('SELECT * FROM device_types WHERE id=?').get(id) });
+});
+
+router.delete('/device-types/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare('SELECT * FROM device_types WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ error: 'نوع تجهیز یافت نشد' });
+  const used = db.prepare('SELECT COUNT(*) AS c FROM devices WHERE device_type = ?').get(row.name).c;
+  if (used) {
+    return res.status(400).json({ error: `این نوع برای ${used} تجهیز ثبت شده است؛ ابتدا نوع آن‌ها را تغییر دهید.` });
+  }
+  res.json({ deleted: db.prepare('DELETE FROM device_types WHERE id=?').run(id).changes });
+});
+
 /** اختصاص/حذف تگ از تجهیز به‌صورت تکی */
 router.post('/tags/:tagId/devices', (req, res) => {
   const tagId = Number(req.params.tagId);

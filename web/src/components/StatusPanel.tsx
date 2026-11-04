@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Database, HardDrive, RefreshCw, Server, ShieldCheck, Signal, Wifi, WifiOff } from 'lucide-react';
+import { Activity, ChevronDown, ChevronUp, Database, HardDrive, RefreshCw, Server, ShieldCheck, Signal, Wifi, WifiOff } from 'lucide-react';
 import { useApp, useLiveState } from '../lib/store';
 import { faDigits, fmtRelative } from '../lib/format';
 
@@ -10,6 +10,24 @@ const MODE_LABEL: Record<string, string> = {
   tcp: 'TCP',
   simulate: 'شبیه‌سازی',
 };
+
+const STATUS_PANEL_KEY = 'nw.systemStatus';
+
+function readStatusPanelOpen(): boolean {
+  try {
+    return localStorage.getItem(STATUS_PANEL_KEY) !== 'collapsed';
+  } catch {
+    return true;
+  }
+}
+
+function saveStatusPanelOpen(open: boolean) {
+  try {
+    localStorage.setItem(STATUS_PANEL_KEY, open ? 'expanded' : 'collapsed');
+  } catch {
+    /* ذخیره‌سازی مرورگر در دسترس نیست */
+  }
+}
 
 type Tone = 'ok' | 'warn' | 'down' | 'wait';
 
@@ -62,6 +80,9 @@ function StatusRow({
 export default function StatusPanel({ collapsed = false }: { collapsed?: boolean }) {
   const live = useLiveState();
   const { status: data, statusError: error, refreshStatus } = useApp();
+  const [open, setOpen] = useState(readStatusPanelOpen);
+
+  useEffect(() => saveStatusPanelOpen(open), [open]);
 
   const serverTone: Tone = error ? 'down' : data?.server.ok ? 'ok' : 'wait';
   const serverText = error ? 'بی‌پاسخ' : data?.server.ok ? 'متصل' : 'در حال بررسی…';
@@ -136,27 +157,41 @@ export default function StatusPanel({ collapsed = false }: { collapsed?: boolean
 
   return (
     <div
-      className={`mx-3 mb-3 rounded-card border border-ink-200/70 bg-gradient-to-br from-brand-50/70 to-sun-50/60 p-3.5 ${
+      className={`mx-3 mb-3 rounded-card border border-ink-200/70 bg-ink-50/60 p-3 ${
         collapsed ? 'lg:mx-auto lg:mb-4 lg:flex lg:items-center lg:justify-center lg:p-2' : ''
       }`}
     >
       <div className={`flex items-center justify-between gap-2 text-[11px] font-medium text-ink-600 ${collapsed ? 'lg:hidden' : ''}`}>
-        <span className="flex items-center gap-2">
-          <Activity size={14} className="text-brand-500" />
-          وضعیت سامانه
+        <span className="flex min-w-0 items-center gap-2">
+          <Activity size={14} className="shrink-0 text-brand-500" />
+          <span className="truncate">وضعیت سامانه</span>
         </span>
-        <button
-          type="button"
-          className="btn-ghost btn-xs !p-1"
-          onClick={() => void refreshStatus()}
-          aria-label="به‌روزرسانی وضعیت"
-          title="به‌روزرسانی وضعیت"
-        >
-          <RefreshCw size={12} />
-        </button>
+        <span className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            className="btn-ghost btn-xs !p-1"
+            onClick={() => void refreshStatus()}
+            aria-label="به‌روزرسانی وضعیت"
+            title="به‌روزرسانی وضعیت"
+          >
+            <RefreshCw size={12} />
+          </button>
+          <button
+            type="button"
+            className="btn-ghost btn-xs !p-1"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls="status-panel-body"
+            aria-label={open ? 'پنهان کردن وضعیت سامانه' : 'نمایش وضعیت سامانه'}
+            title={open ? 'پنهان کردن وضعیت سامانه' : 'نمایش وضعیت سامانه'}
+          >
+            {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+        </span>
       </div>
       {collapsed ? <Activity size={16} className="hidden text-brand-500 lg:block" /> : null}
 
+      <div id="status-panel-body" hidden={!open}>
       <div className={`mt-2.5 space-y-1.5 ${collapsed ? 'lg:hidden' : ''}`}>
         <StatusRow icon={<Server size={11} />} label="API" tone={serverTone} value={serverText} title={error || undefined} />
         <StatusRow
@@ -214,6 +249,7 @@ export default function StatusPanel({ collapsed = false }: { collapsed?: boolean
       <Link to="/settings" className={`mt-2 block text-center text-[10.5px] text-brand-600 hover:text-brand-700 ${collapsed ? 'lg:hidden' : ''}`}>
         مدیریت تنظیمات موتور
       </Link>
+      </div>
     </div>
   );
 }

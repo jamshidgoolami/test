@@ -14,31 +14,47 @@ import {
   ClipboardList,
   CalendarClock,
   Wrench,
+  Tag,
+  MapPin,
+  Boxes,
 } from 'lucide-react';
 import { api, downloadUrl } from '../lib/api';
 import { useApp, useAsync } from '../lib/store';
+import { useUrlParams } from '../lib/params';
 import { faDigits, fmtDateTime, fmtDayLabel, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRelative, statusMeta } from '../lib/format';
 import JalaliDateInput from '../components/JalaliDateInput';
 import { jalaliDateRange } from '../lib/jalali';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Field, PageLoader, StatCard, StatusPill, Tabs } from '../components/ui';
 import { DailyBars, TopBarList, TrendLineChart } from '../components/charts';
-import type { ReportData } from '../lib/types';
+import type { InventoryDimension, InventoryStats, ReportData } from '../lib/types';
 
 type SortKey = 'availability' | 'avgRtt' | 'maxRtt' | 'lossPct' | 'outages' | 'downtimeSec' | 'checks' | 'alerts' | 'name';
 
 export default function Reports() {
   const { meta, tzOffset } = useApp();
-  const [range, setRange] = useState('7d');
-  const [group, setGroup] = useState('');
-  const [tag, setTag] = useState('');
-  const [deviceId, setDeviceId] = useState('');
-  const [sort, setSort] = useState<SortKey>('availability');
-  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+  const { params, setParam } = useUrlParams();
+  const range = params.get('range') ?? '7d';
+  const group = params.get('group') ?? '';
+  const tag = params.get('tag') ?? '';
+  const deviceId = params.get('device') ?? '';
+  const sort = (params.get('sort') as SortKey | null) ?? 'availability';
+  const order: 'asc' | 'desc' = params.get('order') === 'desc' ? 'desc' : 'asc';
   // بازهٔ سفارشی شمسی برای گزارش اصلی (اختیاری).
-  const [fromIso, setFromIso] = useState('');
-  const [toIso, setToIso] = useState('');
-  const [installedFrom, setInstalledFrom] = useState(() => jalaliDateRange(3).from);
-  const [installedTo, setInstalledTo] = useState(() => jalaliDateRange(3).to);
+  const defaultInstalled = jalaliDateRange(3);
+  const fromIso = params.get('from') ?? '';
+  const toIso = params.get('to') ?? '';
+  const installedFrom = params.get('installedFrom') || defaultInstalled.from;
+  const installedTo = params.get('installedTo') || defaultInstalled.to;
+  const setRange = (value: string) => setParam('range', value === '7d' ? '' : value);
+  const setGroup = (value: string) => setParam('group', value);
+  const setTag = (value: string) => setParam('tag', value);
+  const setDeviceId = (value: string) => setParam('device', value);
+  const setSort = (value: SortKey) => setParam('sort', value);
+  const setOrder = (value: 'asc' | 'desc') => setParam('order', value === 'asc' ? '' : value);
+  const setFromIso = (value: string) => setParam('from', value);
+  const setToIso = (value: string) => setParam('to', value);
+  const setInstalledFrom = (value: string) => setParam('installedFrom', value);
+  const setInstalledTo = (value: string) => setParam('installedTo', value);
 
   const customFrom = fromIso ? Date.parse(`${fromIso}T00:00:00Z`) - tzOffset * 60000 : undefined;
   const customTo = toIso ? Date.parse(`${toIso}T23:59:59Z`) - tzOffset * 60000 : undefined;
@@ -126,7 +142,7 @@ export default function Reports() {
           <div className="ms-auto flex items-center gap-2">
             <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
               <RefreshCw size={14} />
-              بروزرسانی
+              به‌روزرسانی
             </button>
             <a className="btn-ghost btn-xs" href={exportUrl('csv')}>
               <Download size={14} />
@@ -255,7 +271,7 @@ export default function Reports() {
                     <option value="alerts">مرتب‌سازی: هشدارها</option>
                     <option value="name">مرتب‌سازی: نام</option>
                   </select>
-                  <button type="button" className="btn-ghost btn-xs" onClick={() => setOrder((o) => (o === 'asc' ? 'desc' : 'asc'))}>
+                  <button type="button" className="btn-ghost btn-xs" onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}>
                     <ArrowDownUp size={13} />
                     {order === 'asc' ? 'صعودی' : 'نزولی'}
                   </button>
@@ -481,6 +497,8 @@ export default function Reports() {
             )}
           </Card>
 
+          <InventoryStatsCard group={group} tag={tag} deviceId={deviceId} />
+
           <Card>
             <CardHeader title="گزارش‌های آماده" subtitle="خروجی‌های قابل استفاده برای مستندسازی و پیگیری مدیریتی" icon={<FileBarChart size={18} />} />
             <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -491,6 +509,180 @@ export default function Reports() {
           </Card>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * آمار تجهیزات بر اساس تگ، مدل، سازنده، نوع، محل نصب، گروه و تاریخ نصب.
+ *
+ * همهٔ ابعاد در یک پاسخ سرور می‌آیند و این بخش فقط بُعد انتخاب‌شده را نشان
+ * می‌دهد؛ بنابراین جابه‌جایی بین تگ‌ها و مدل‌ها پرس‌وجوی تازه‌ای نمی‌فرستد.
+ */
+const INVENTORY_DIMENSIONS: { key: InventoryDimension; label: string }[] = [
+  { key: 'tags', label: 'تگ‌ها' },
+  { key: 'models', label: 'مدل' },
+  { key: 'vendors', label: 'سازنده' },
+  { key: 'types', label: 'نوع تجهیز' },
+  { key: 'locations', label: 'محل نصب' },
+  { key: 'groups', label: 'گروه' },
+  { key: 'installMonths', label: 'ماه نصب' },
+  { key: 'installYears', label: 'سال نصب' },
+  { key: 'statuses', label: 'وضعیت' },
+  { key: 'priorities', label: 'اولویت' },
+];
+
+function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: string; deviceId: string }) {
+  const [dim, setDim] = useState<InventoryDimension>('tags');
+  const [filter, setFilter] = useState('');
+  const { data, loading, error, refresh } = useAsync<InventoryStats>(
+    (signal) => api.inventoryStats({ group, tag, device: deviceId || undefined }, signal),
+    [group, tag, deviceId]
+  );
+
+  const buckets = useMemo(() => {
+    const items = data?.dimensions?.[dim] ?? [];
+    const needle = filter.trim();
+    if (!needle) return items;
+    return items.filter((b) => b.label.includes(needle));
+  }, [data, dim, filter]);
+
+  const exportUrl = downloadUrl('/reports/inventory/export', {
+    format: 'xlsx',
+    dimension: dim,
+    group,
+    tag,
+    device: deviceId || undefined,
+  });
+
+  return (
+    <Card padded={false} className="p-4">
+      <CardHeader
+        title="آمار تجهیزات بر اساس تگ، مدل، محل و تاریخ نصب"
+        subtitle="شمارش تجهیزات به تفکیک هر بُعد، همراه با وضعیت و پوشش تاریخ نصب"
+        icon={<Boxes size={18} />}
+        action={
+          <div className="flex items-center gap-2">
+            <button type="button" className="btn-ghost btn-xs" onClick={refresh} disabled={loading}>
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              به‌روزرسانی
+            </button>
+            <a className="btn-soft btn-xs" href={exportUrl}>
+              <Download size={13} /> خروجی Excel
+            </a>
+          </div>
+        }
+      />
+
+      {error && !data ? (
+        <p className="mt-3 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[11.5px] text-red-700">خطا در دریافت آمار: {error}</p>
+      ) : null}
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        <InventoryMini label="کل تجهیزات" value={data?.total ?? 0} />
+        <InventoryMini label="دارای تگ" value={data?.tagged ?? 0} />
+        <InventoryMini label="دارای مدل" value={data?.withModel ?? 0} />
+        <InventoryMini label="دارای محل نصب" value={data?.withLocation ?? 0} />
+        <InventoryMini label="دارای تاریخ نصب" value={data?.withInstalled ?? 0} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
+        {INVENTORY_DIMENSIONS.map((d) => (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => setDim(d.key)}
+            aria-pressed={dim === d.key}
+            className={`rounded-pill border px-2.5 py-1 text-[11px] font-medium transition ${
+              dim === d.key
+                ? 'border-brand-300 bg-brand-50 text-brand-700'
+                : 'border-ink-200 bg-white/70 text-ink-500 hover:border-brand-200 hover:text-ink-700'
+            }`}
+          >
+            {d.label}
+            <span className="num ms-1 text-[10px] text-ink-400">
+              {faDigits(data?.dimensions?.[d.key]?.length ?? 0)}
+            </span>
+          </button>
+        ))}
+        <div className="relative ms-auto min-w-[170px]">
+          <Filter size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            className="field !rounded-pill !py-1.5 pr-7 text-[11.5px]"
+            placeholder="فیلتر مقدار…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {loading && !data ? (
+        <p className="py-8 text-center text-[12px] text-ink-400">در حال محاسبه آمار…</p>
+      ) : buckets.length === 0 ? (
+        <EmptyState title="موردی در این بُعد یافت نشد" description="فیلترها یا عبارت جست‌وجو را تغییر دهید." />
+      ) : (
+        <div className="mt-3 table-wrap max-h-[420px]">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{INVENTORY_DIMENSIONS.find((d) => d.key === dim)?.label ?? 'مقدار'}</th>
+                <th>تعداد</th>
+                <th>سهم</th>
+                <th>در دسترس</th>
+                <th>دارای اختلال</th>
+                <th>قطع‌شده</th>
+                <th>تاریخ نصب ثبت‌شده</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buckets.map((b) => {
+                const linkable = dim !== 'statuses' && dim !== 'priorities' && !b.label.startsWith('بدون') && b.label !== 'ثبت‌نشده';
+                return (
+                  <tr key={b.label}>
+                    <td>
+                      {linkable ? (
+                        <Link to={`/devices?search=${encodeURIComponent(b.label)}`} className="font-medium text-ink-800 hover:text-brand-700">
+                          {b.label}
+                        </Link>
+                      ) : (
+                        <span className="text-ink-600">{b.label}</span>
+                      )}
+                    </td>
+                    <td className="num font-semibold text-ink-700">{fmtNumber(b.count)}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <span className="h-1.5 w-20 overflow-hidden rounded-pill bg-ink-100">
+                          <span className="block h-full rounded-pill bg-brand-500" style={{ width: `${Math.max(2, Math.min(100, b.share))}%` }} />
+                        </span>
+                        <span className="num text-[10.5px] text-ink-500">{fmtPct(b.share, 1)}</span>
+                      </div>
+                    </td>
+                    <td className="num text-emerald-600">{fmtNumber(b.online)}</td>
+                    <td className="num text-sun-700">{fmtNumber(b.warning)}</td>
+                    <td className="num text-red-600">{fmtNumber(b.offline)}</td>
+                    <td className="num text-ink-500">{fmtNumber(b.installed)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-[10.5px] text-ink-400">
+        برای مشاهدهٔ تجهیزات هر ردیف روی مقدار آن کلیک کنید. خروجی Excel همان بُعد انتخاب‌شده را ذخیره می‌کند.
+      </p>
+    </Card>
+  );
+}
+
+function InventoryMini({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+      <p className="flex items-center gap-1 text-[10px] text-ink-400">
+        {label === 'دارای تگ' ? <Tag size={10} /> : label === 'دارای محل نصب' ? <MapPin size={10} /> : null}
+        {label}
+      </p>
+      <p className="num mt-0.5 text-[15px] font-semibold text-ink-800">{fmtNumber(value)}</p>
     </div>
   );
 }

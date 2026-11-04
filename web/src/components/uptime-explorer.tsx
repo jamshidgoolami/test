@@ -264,12 +264,12 @@ export function AvailabilityExplorer({
     <Card className={`flex flex-col overflow-visible ${className}`}>
       <CardHeader
         title="دسترس‌پذیری و وضعیت اتصال"
-        subtitle="تاریخچهٔ یکپارچهٔ Online/Offline، Availability و قطعی‌های ثبت‌شده"
+        subtitle="تاریخچهٔ یکپارچهٔ وضعیت اتصال، دسترس‌پذیری و قطعی‌های ثبت‌شده"
         icon={<Activity size={18} />}
         action={
-          <button type="button" className="btn-ghost btn-xs" onClick={refresh} aria-label="بروزرسانی نمودار دسترس‌پذیری">
+          <button type="button" className="btn-ghost btn-xs" onClick={refresh} aria-label="به‌روزرسانی نمودار دسترس‌پذیری">
             <RefreshCw size={13} className={seriesState.refreshing || outageState.refreshing ? 'animate-spin' : ''} />
-            بروزرسانی
+            به‌روزرسانی
           </button>
         }
       />
@@ -277,7 +277,7 @@ export function AvailabilityExplorer({
       {/* آمار بالای نمودار — مستقل از نما، از همان پنجرهٔ انتخاب‌شده */}
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
         <Metric
-          label="Uptime"
+          label="دسترس‌پذیری"
           value={ready ? fmtPct(stats.uptime, 2) : '—'}
           hint={ready ? `${fmtNumber(stats.samples)} بررسی در این بازه` : 'در حال محاسبه…'}
           tone={UPTIME_TEXT[stats.state]}

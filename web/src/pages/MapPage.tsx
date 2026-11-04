@@ -3,6 +3,9 @@ import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import {
   Camera,
+  Circle,
+  ChevronDown,
+  ChevronLeft,
   CirclePlus,
   Crosshair,
   Download,
@@ -20,14 +23,17 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Ruler,
   Save,
   Search,
+  Square,
   Star,
   Trash2,
   TriangleAlert,
   Upload,
   Wifi,
   Wrench,
+  X,
 } from 'lucide-react';
 import { api, downloadUrl } from '../lib/api';
 import { useApp, useAsync, useSubmitGuard, useToast } from '../lib/store';
@@ -37,6 +43,7 @@ import { buildVectorStyle, LABEL_ANCHOR_LAYER } from '../lib/mapStyle';
 import { Badge, Card, EmptyState, ErrorState, Field, Modal, StatusPill, Toggle } from '../components/ui';
 import type { MapLayer, MapMarker, MarkerType } from '../lib/types';
 import { VirtualList } from '../components/VirtualList';
+import { ColorField } from '../components/ColorField';
 // فقط برای اعلام نوع‌های افزوده‌شده به Leaflet؛ در زمان اجرا کتابخانهٔ MapLibre
 // تنها وقتی لایهٔ برداری واقعی روی نقشه وجود داشته باشد بارگذاری می‌شود.
 import type * as _LeafletMaplibreGL from '@maplibre/maplibre-gl-leaflet';
@@ -80,8 +87,8 @@ type MapDevice = {
   name: string;
   ip: string;
   status: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   deviceType: string;
   groupName: string | null;
   lastRtt: number | null;
@@ -148,6 +155,72 @@ export function MarkerGlyph({ name, size = 14, className = '' }: { name?: string
       return <MapPin {...props} />;
   }
 }
+
+/* ------------------------ ابزارهای اندازه‌گیری ------------------------ */
+type MeasureMode = 'off' | 'distance' | 'area' | 'radius';
+
+interface MeasureReadout {
+  kind: Exclude<MeasureMode, 'off'>;
+  points: number;
+  lengthM: number;
+  areaM2: number;
+  perimeterM: number | null;
+  radiusM: number | null;
+  /** طول هر قطعهٔ رسم‌شده (بدون قطعهٔ پیش‌نمایش) */
+  segments: number[];
+}
+
+/** فوکوس در فیلد متنی نباید کلیدهای میان‌بر اندازه‌گیری را بگیرد */
+function measureTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
+}
+
+/** طول مسیر بر حسب متر؛ مجموع فاصلهٔ ژئودزیک قطعه‌ها روی کرهٔ زمین */
+function pathLengthM(latlngs: L.LatLng[]): number {
+  let total = 0;
+  for (let i = 1; i < latlngs.length; i += 1) total += latlngs[i - 1].distanceTo(latlngs[i]);
+  return total;
+}
+
+/**
+ * مساحت ژئودزیک چندضلعی (متر مربع).
+ * فرمول جمع اضافهٔ کروی همان روشی است که Leaflet.GeometryUtil به کار می‌برد؛
+ * برای مساحت‌های سایتی/شهری دقت کافی دارد و به کتابخانهٔ اضافه نیاز ندارد.
+ */
+function geodesicAreaM2(latlngs: L.LatLng[]): number {
+  if (latlngs.length < 3) return 0;
+  const R = 6378137;
+  const rad = Math.PI / 180;
+  let sum = 0;
+  for (let i = 0; i < latlngs.length; i += 1) {
+    const a = latlngs[i];
+    const b = latlngs[(i + 1) % latlngs.length];
+    sum += (b.lng - a.lng) * rad * (2 + Math.sin(a.lat * rad) + Math.sin(b.lat * rad));
+  }
+  return Math.abs((sum * R * R) / 2);
+}
+
+function fmtDistanceM(m: number): string {
+  if (!Number.isFinite(m)) return '—';
+  if (m < 1) return `${faDigits((m * 100).toFixed(0))} سانتی‌متر`;
+  if (m < 1000) return `${faDigits(m < 10 ? m.toFixed(1) : m.toFixed(0))} متر`;
+  return `${faDigits((m / 1000).toFixed(2))} کیلومتر`;
+}
+
+function fmtAreaM2(m2: number): string {
+  if (!Number.isFinite(m2)) return '—';
+  if (m2 < 10000) return `${faDigits(m2.toFixed(m2 < 100 ? 1 : 0))} متر مربع`;
+  if (m2 < 1000000) return `${faDigits((m2 / 10000).toFixed(2))} هکتار`;
+  return `${faDigits((m2 / 1000000).toFixed(2))} کیلومتر مربع`;
+}
+
+const MEASURE_META: { mode: Exclude<MeasureMode, 'off'>; label: string; icon: React.ReactNode; color: string }[] = [
+  { mode: 'distance', label: 'مسافت', icon: <Ruler size={12} />, color: '#2563eb' },
+  { mode: 'area', label: 'مساحت', icon: <Square size={12} />, color: '#7c3aed' },
+  { mode: 'radius', label: 'شعاع', icon: <Circle size={12} />, color: '#0f766e' },
+];
 
 const isVectorLayer = (layer: MapLayer) => {
   if (layer.fileInfo?.isVector) return true;
@@ -315,6 +388,24 @@ export default function MapPage() {
   const [sideOpen, setSideOpen] = useState(true);
   const [sideTab, setSideTab] = useState<'devices' | 'markers'>('devices');
   const [armedType, setArmedType] = useState<{ typeId: number; typeName: string; typeColor: string; typeIcon: string } | null>(null);
+  // ابزار اندازه‌گیری نقشه؛ نتیجه فقط در همین نشست می‌ماند و ذخیره نمی‌شود.
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [measureMode, setMeasureMode] = useState<MeasureMode>('off');
+  const [measureReadout, setMeasureReadout] = useState<MeasureReadout | null>(null);
+  const measureLayer = useRef<L.LayerGroup | null>(null);
+  const measureLabels = useRef<L.LayerGroup | null>(null);
+  const measurePoints = useRef<L.LatLng[]>([]);
+  const measureShape = useRef<L.Layer | null>(null);
+  const measureVertices = useRef<L.Layer[]>([]);
+  const measureModeRef = useRef<MeasureMode>('off');
+  // پس از دومین کلیک شعاع، لبهٔ دقیق دایره در همین ref می‌ماند تا رسم نهایی
+  // به آخرین موقعیت ماوس وابسته نباشد.
+  const measureRadiusEdge = useRef<L.LatLng | null>(null);
+  // خط شعاع جدا از دایره نگه داشته می‌شود تا با هر جابه‌جایی ماوس خط قبلی
+  // حذف شود؛ وگرنه هر حرکت یک خط تازه روی نقشه باقی می‌گذاشت.
+  const measureRadiusLine = useRef<L.Layer | null>(null);
+  // رسم نهایی بدون پیش‌نمایش؛ دکمهٔ «پایان ترسیم» و Enter از همین استفاده می‌کنند.
+  const measureRedraw = useRef<(() => void) | null>(null);
   const [pendingMarker, setPendingMarker] = useState<{ latitude: number; longitude: number; typeId: number | null; typeName: string; typeColor: string; typeIcon: string; marker?: MapMarker } | null>(null);
   const [showMarkerLabels, setShowMarkerLabels] = useState(true);
   // فهرست نقشه همیشه همهٔ تجهیزات/علامت‌ها را دارد؛ این دو مجموعه فقط نمایش
@@ -322,6 +413,10 @@ export default function MapPage() {
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
   const [hiddenTypeIds, setHiddenTypeIds] = useState<number[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
+  // سطح زوم فعلی: نمایش خوشه‌ای/تکی نشانگرها و برچسب نام به آن وابسته است.
+  // پیش‌تر تغییر زوم باعث بازسازی لایهٔ نشانگرها نمی‌شد و خوشه‌ها با زوم باز
+  // نمی‌شدند؛ این وضعیت با رویداد zoomend هم‌گام می‌شود.
+  const [zoom, setZoom] = useState(settings?.map_default_zoom ?? 6);
 
   const query = useMemo(
     () => ({
@@ -336,8 +431,10 @@ export default function MapPage() {
   // همهٔ تجهیزات (نه فقط محدودهٔ نمای فعلی) خوانده می‌شوند؛ جابه‌جایی نقشه
   // فهرست را تغییر نمی‌دهد و فیلتر نمایش گروه‌ها سمت کلاینت انجام می‌شود.
   const queryKey = JSON.stringify(query);
+  // includeMissing: فهرست باید همهٔ تجهیزات را نشان دهد تا کاربر تجهیز بدون
+  // مختصات را هم ببیند و موقعیتش را ثبت کند (نشانگر فقط برای دارای مختصات).
   const { data: mapData, loading, error, refresh, updatedAt } = useAsync(
-    (signal) => api.mapDevices({ ...query }, signal),
+    (signal) => api.mapDevices({ ...query, includeMissing: 1 }, signal),
     [queryKey]
   );
   const { data: layersData, refresh: refreshLayers } = useAsync((signal) => api.layers(signal), []);
@@ -380,10 +477,14 @@ export default function MapPage() {
     L.control.scale({ position: 'bottomright', imperial: false }).addTo(map);
     mapRef.current = map;
     deviceLayer.current = L.layerGroup().addTo(map);
+    setZoom(map.getZoom());
+    const onZoom = () => setZoom(map.getZoom());
+    map.on('zoomend', onZoom);
     setReady(true);
     return () => {
       for (const id of flyTimers.current) window.clearTimeout(id);
       flyTimers.current = [];
+      map.off('zoomend', onZoom);
       map.remove();
       mapRef.current = null;
       deviceLayer.current = null;
@@ -423,6 +524,15 @@ export default function MapPage() {
       document.body.style.overflow = prev;
     };
   }, [fullscreen]);
+
+  // باز/بسته کردن فهرست، عرض نقشه را عوض می‌کند؛ Leaflet باید اندازهٔ تازه را
+  // بگیرد وگرنه بخشی از نقشه خاکستری می‌ماند. در تمام‌صفحه فهرست روی نقشه
+  // می‌آید، اما این فراخوانی بی‌ضرر است.
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(() => mapRef.current?.invalidateSize(), 320);
+    return () => window.clearTimeout(timer);
+  }, [fullscreen, ready, sideOpen]);
 
   /* ------------------------- base layers ------------------------- */
   useEffect(() => {
@@ -635,9 +745,13 @@ export default function MapPage() {
 
     layer.clearLayers();
     markers.current.clear();
-    const zoom = map.getZoom();
-    const showLabel = !!settings?.map_show_labels;
-    const cellSize = zoom >= 17 ? 0 : 64;
+    // سیاست نمایش بر اساس زوم:
+    //   • زوم ۱ تا ۱۵: نقاط نزدیک در یک دایره با تعداد تجمیع می‌شوند
+    //   • زوم ۱۶ تا ۲۰: هر تجهیز جداگانه و نامش کنار آن نمایش داده می‌شود
+    const z = map.getZoom();
+    const detailed = z >= 16;
+    const showLabel = detailed || !!settings?.map_show_labels;
+    const cellSize = detailed ? 0 : 64;
 
     type Cell = { lat: number; lng: number; items: MapDevice[] };
     const cells = new Map<string, Cell>();
@@ -648,7 +762,7 @@ export default function MapPage() {
       if (!cellSize) {
         key = `p:${device.id}`;
       } else {
-        const p = map.project([lat, lng], zoom);
+        const p = map.project([lat, lng], z);
         key = `${Math.floor(p.x / cellSize)}:${Math.floor(p.y / cellSize)}`;
       }
       const cell = cells.get(key);
@@ -676,12 +790,12 @@ export default function MapPage() {
           riseOnHover: true,
           interactive: true,
         }).addTo(layer);
-        cluster.on('click', () => map.setView([lat, lng], Math.min(19, zoom + 2), { animate: true }));
+        cluster.on('click', () => map.setView([lat, lng], Math.min(19, z + 2), { animate: true }));
         continue;
       }
 
       const device = cell.items[0];
-      const marker = L.marker([device.latitude, device.longitude], {
+      const marker = L.marker([lat, lng], {
         icon: markerIcon(device, showLabel),
         riseOnHover: true,
         draggable: editing,
@@ -693,7 +807,7 @@ export default function MapPage() {
           return;
         }
         marker.openPopup();
-        map.panTo([device.latitude, device.longitude]);
+        map.panTo([lat, lng]);
       });
       // در حالت جابه‌جایی، کشیدن نشانگر مستقیماً موقعیت جدید را ذخیره می‌کند.
       marker.on('dragend', async () => {
@@ -706,21 +820,23 @@ export default function MapPage() {
           refresh();
         } catch (e) {
           push((e as Error).message, 'error');
-          marker.setLatLng([device.latitude, device.longitude]);
+          marker.setLatLng([lat, lng]);
         }
       });
       markers.current.set(device.id, marker);
     }
-  }, [visibleDevices, ready, editing, settings?.map_show_labels]);
+  }, [visibleDevices, ready, editing, settings?.map_show_labels, zoom]);
 
   /* --------------------------- map markers (علامت‌ها) --------------------------- */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const current = new Set<number>();
+    // در زوم‌های نزدیک (۱۶+) نام علامت همیشه کنار آن است؛ پایین‌تر تابع تنظیمات.
+    const showLabels = showMarkerLabels || zoom >= 16;
     for (const marker of visibleMarkers) {
       current.add(marker.id);
-      const icon = markerPinIcon(marker, showMarkerLabels);
+      const icon = markerPinIcon(marker, showLabels);
       let pin = markerPins.current.get(marker.id);
       // تغییر حالت جابه‌جایی نیاز به ساخت دوبارهٔ Marker با draggable دارد؛
       // افزودن بعدی handler فقط برای Markerهای ساخته‌شده با draggable کار می‌کند.
@@ -758,13 +874,15 @@ export default function MapPage() {
         markerPins.current.delete(id);
       }
     }
-  }, [visibleMarkers, ready, showMarkerLabels, editing, refreshMarkers, push]);
+  }, [visibleMarkers, ready, showMarkerLabels, editing, refreshMarkers, push, zoom]);
 
   /* ------------------------- edit / place on map ------------------------- */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const onClick = (e: L.LeafletMouseEvent) => {
+      // در حال اندازه‌گیری، کلیک باید نقطهٔ اندازه‌گیری بگذارد نه تجهیز/علامت.
+      if (measureModeRef.current !== 'off') return;
       const lat = Number(e.latlng.lat.toFixed(6));
       const lng = Number(e.latlng.lng.toFixed(6));
       if (armedType) {
@@ -782,6 +900,286 @@ export default function MapPage() {
       map.off('click', onClick);
     };
   }, [ready, editing, placingDevice, armedType]);
+
+  /* ------------------------- اندازه‌گیری روی نقشه ------------------------- */
+  // ابزار مسافت/مساحت/شعاع فقط برای خواندن است: نتیجه در همین نشست می‌ماند،
+  // در پایگاه‌داده ذخیره نمی‌شود و روی تجهیزات یا علامت‌ها اثری ندارد.
+  const clearMeasure = useCallback(() => {
+    measureLayer.current?.clearLayers();
+    measureLabels.current?.clearLayers();
+    measurePoints.current = [];
+    measureShape.current = null;
+    measureVertices.current = [];
+    measureRadiusEdge.current = null;
+    measureRadiusLine.current = null;
+    setMeasureReadout(null);
+  }, []);
+
+  /**
+   * پایان دادن به ترسیم.
+   *
+   * پیش‌تر فقط حالت ابزار خاموش می‌شد و خط پیش‌نمایشِ چسبیده به ماوس
+   * (خط‌چین تا آخرین موقعیت نشانگر) روی نقشه می‌ماند؛ همین باعث می‌شد به نظر
+   * برسد ترسیم تمام نشده است. اینجا اول شکل نهایی بدون پیش‌نمایش رسم می‌شود،
+   * بعد ابزار خاموش می‌شود. نقاط، خطوط و برچسب‌ها می‌مانند.
+   */
+  const finishMeasure = useCallback(() => {
+    if (measureModeRef.current === 'off') return;
+    measureRedraw.current?.();
+    setMeasureMode('off');
+  }, []);
+
+  const startMeasure = useCallback(
+    (mode: Exclude<MeasureMode, 'off'>) => {
+      setMeasureOpen(true);
+      // کلیک دوباره روی ابزار فعال یعنی «پایان»، نه پاک کردن نتیجه.
+      if (measureModeRef.current === mode) {
+        finishMeasure();
+        return;
+      }
+      clearMeasure();
+      setMeasureMode(mode);
+    },
+    [clearMeasure, finishMeasure]
+  );
+
+  const canFinishMeasure =
+    measureReadout == null
+      ? false
+      : measureReadout.kind === 'area'
+        ? measureReadout.points >= 3
+        : measureReadout.kind === 'radius'
+          ? (measureReadout.radiusM ?? 0) > 0
+          : measureReadout.points >= 2;
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    measureModeRef.current = measureMode;
+    const container = map.getContainer();
+    if (measureMode === 'off') {
+      container.style.cursor = '';
+      return;
+    }
+    container.style.cursor = 'crosshair';
+    const layer = measureLayer.current ?? L.layerGroup().addTo(map);
+    measureLayer.current = layer;
+    const accent = measureMode === 'area' ? '#7c3aed' : measureMode === 'radius' ? '#0f766e' : '#2563eb';
+
+    // برچسب‌ها لایهٔ جداگانه دارند تا با هر رسم دوباره ساخته شوند و در
+    // رویداد کلیک/کشیدن نقشه دخالت نکنند.
+    const labelLayer = measureLabels.current ?? L.layerGroup().addTo(map);
+    measureLabels.current = labelLayer;
+
+    const addLabel = (latlng: L.LatLng, text: string, variant: 'segment' | 'total' = 'segment') => {
+      const icon = L.divIcon({
+        className: 'nw-measure-label',
+        html: `<span class="nw-measure-chip ${variant}" style="--mc:${accent}">${text}</span>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+      L.marker(latlng, {
+        icon,
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: variant === 'total' ? 720 : 640,
+      }).addTo(labelLayer);
+    };
+    const midpoint = (a: L.LatLng, b: L.LatLng) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
+    const centroid = (points: L.LatLng[]) =>
+      L.latLng(
+        points.reduce((sum, point) => sum + point.lat, 0) / points.length,
+        points.reduce((sum, point) => sum + point.lng, 0) / points.length
+      );
+
+    const addVertex = (latlng: L.LatLng) => {
+      const dot = L.circleMarker(latlng, {
+        radius: 4,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: accent,
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(layer);
+      measureVertices.current.push(dot);
+    };
+
+    const redraw = (cursor?: L.LatLng) => {
+      if (measureShape.current) {
+        layer.removeLayer(measureShape.current);
+        measureShape.current = null;
+      }
+      if (measureRadiusLine.current) {
+        layer.removeLayer(measureRadiusLine.current);
+        measureRadiusLine.current = null;
+      }
+      labelLayer.clearLayers();
+      const pts = measurePoints.current;
+      if (!pts.length) {
+        setMeasureReadout(null);
+        return;
+      }
+
+      if (measureMode === 'distance') {
+        const preview = cursor ? [...pts, cursor] : pts;
+        measureShape.current = L.polyline(preview, {
+          color: accent,
+          weight: 3,
+          opacity: 0.95,
+          dashArray: cursor ? '6 6' : undefined,
+          interactive: false,
+        }).addTo(layer);
+        // اندازهٔ هر قطعه روی همان خط و مجموع در انتهای مسیر نوشته می‌شود.
+        for (let i = 1; i < pts.length; i += 1) {
+          addLabel(midpoint(pts[i - 1], pts[i]), fmtDistanceM(pts[i - 1].distanceTo(pts[i])));
+        }
+        if (cursor && pts.length) {
+          addLabel(midpoint(pts[pts.length - 1], cursor), fmtDistanceM(pts[pts.length - 1].distanceTo(cursor)));
+        }
+        addLabel(pts[pts.length - 1], `مجموع: ${fmtDistanceM(pathLengthM(preview))}`, 'total');
+        setMeasureReadout({
+          kind: 'distance',
+          points: pts.length,
+          lengthM: pathLengthM(preview),
+          areaM2: 0,
+          perimeterM: null,
+          radiusM: null,
+          segments: pts.slice(1).map((point, index) => pts[index].distanceTo(point)),
+        });
+        return;
+      }
+
+      if (measureMode === 'area') {
+        const ring = cursor ? [...pts, cursor] : pts;
+        const closed = ring.length >= 3;
+        measureShape.current = (closed
+          ? L.polygon(ring, { color: accent, weight: 2.5, fillColor: accent, fillOpacity: 0.12, interactive: false })
+          : L.polyline(ring, { color: accent, weight: 2.5, dashArray: '6 6', interactive: false })
+        ).addTo(layer);
+        const segments: number[] = [];
+        for (let i = 1; i < pts.length; i += 1) segments.push(pts[i - 1].distanceTo(pts[i]));
+        segments.forEach((value, index) => addLabel(midpoint(pts[index], pts[index + 1]), fmtDistanceM(value)));
+        const perimeterM = closed ? pathLengthM([...ring, ring[0]]) : null;
+        const areaM2 = closed ? geodesicAreaM2(ring) : 0;
+        if (closed) {
+          // ضلع بستن (از آخرین نقطه به نقطهٔ اول) فقط در رسم نهایی نمایش داده می‌شود.
+          if (!cursor) {
+            const closing = pts[pts.length - 1].distanceTo(pts[0]);
+            segments.push(closing);
+            addLabel(midpoint(pts[pts.length - 1], pts[0]), fmtDistanceM(closing));
+          }
+          addLabel(centroid(ring), `مساحت: ${fmtAreaM2(areaM2)}`, 'total');
+        }
+        setMeasureReadout({
+          kind: 'area',
+          points: pts.length,
+          lengthM: perimeterM ?? pathLengthM(ring),
+          areaM2,
+          perimeterM,
+          radiusM: null,
+          segments,
+        });
+        return;
+      }
+
+      const center = pts[0];
+      const edge = cursor ?? measureRadiusEdge.current;
+      if (!edge) {
+        setMeasureReadout({ kind: 'radius', points: 1, lengthM: 0, areaM2: 0, perimeterM: 0, radiusM: 0, segments: [] });
+        return;
+      }
+      measureRadiusEdge.current = edge;
+      const radiusM = center.distanceTo(edge);
+      measureShape.current = L.circle(center, {
+        radius: radiusM,
+        color: accent,
+        weight: 2.5,
+        fillColor: accent,
+        fillOpacity: 0.1,
+        interactive: false,
+      }).addTo(layer);
+      measureRadiusLine.current = L.polyline([center, edge], {
+        color: accent,
+        weight: 1.5,
+        dashArray: '4 4',
+        interactive: false,
+      }).addTo(layer);
+      addLabel(midpoint(center, edge), fmtDistanceM(radiusM));
+      addLabel(center, `مساحت: ${fmtAreaM2(Math.PI * radiusM * radiusM)}`, 'total');
+      setMeasureReadout({
+        kind: 'radius',
+        points: 1,
+        lengthM: radiusM,
+        areaM2: Math.PI * radiusM * radiusM,
+        perimeterM: 2 * Math.PI * radiusM,
+        radiusM,
+        segments: [],
+      });
+    };
+    measureRedraw.current = () => redraw();
+
+    const onClick = (e: L.LeafletMouseEvent) => {
+      if (measureModeRef.current === 'radius') {
+        if (!measurePoints.current.length) {
+          measurePoints.current = [e.latlng];
+          measureRadiusEdge.current = null;
+          addVertex(e.latlng);
+          setMeasureReadout({ kind: 'radius', points: 1, lengthM: 0, areaM2: 0, perimeterM: 0, radiusM: 0, segments: [] });
+        } else {
+          // دومین کلیک، شعاع را دقیقاً همان‌جا قطعی می‌کند و ترسیم تمام می‌شود.
+          measureRadiusEdge.current = e.latlng;
+          redraw(e.latlng);
+          setMeasureMode('off');
+        }
+        return;
+      }
+      measurePoints.current = [...measurePoints.current, e.latlng];
+      addVertex(e.latlng);
+      redraw();
+    };
+
+    const onMove = (e: L.LeafletMouseEvent) => {
+      if (measureModeRef.current === 'distance' || measureModeRef.current === 'area') {
+        if (measurePoints.current.length) redraw(e.latlng);
+        return;
+      }
+      if (measureModeRef.current === 'radius' && measurePoints.current.length === 1) redraw(e.latlng);
+    };
+
+    const onContext = (e: L.LeafletMouseEvent) => {
+      e.originalEvent?.preventDefault?.();
+      if (measureModeRef.current === 'radius') return;
+      if (!measurePoints.current.length) return;
+      measurePoints.current = measurePoints.current.slice(0, -1);
+      const last = measureVertices.current.pop();
+      if (last) layer.removeLayer(last);
+      redraw();
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (measureTypingTarget(e.target)) return;
+      if (e.key === 'Escape') {
+        setMeasureMode('off');
+        clearMeasure();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        finishMeasure();
+      }
+    };
+
+    map.on('click', onClick);
+    map.on('mousemove', onMove);
+    map.on('contextmenu', onContext);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      map.off('click', onClick);
+      map.off('mousemove', onMove);
+      map.off('contextmenu', onContext);
+      window.removeEventListener('keydown', onKey);
+      container.style.cursor = '';
+      measureRedraw.current = null;
+    };
+  }, [clearMeasure, finishMeasure, measureMode, ready]);
 
   /* ------------------------- drag & drop از فهرست به نقشه ------------------------- */
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -840,7 +1238,12 @@ export default function MapPage() {
       if (!device) {
         try {
           const d = await api.device(id);
-          if (d.latitude == null || d.longitude == null) return;
+          if (d.latitude == null || d.longitude == null) {
+            setEditing(true);
+            setPlacingDevice(id);
+            push(`«${d.name}» مختصات ندارد؛ روی نقشه محل آن را کلیک کنید.`, 'warning');
+            return;
+          }
           device = {
             id: d.id,
             name: d.name,
@@ -859,10 +1262,18 @@ export default function MapPage() {
           return;
         }
       }
+      if (device.latitude == null || device.longitude == null) {
+        // تجهیز بدون مختصات: حالت جانمایی فعال می‌شود تا همان کلیک بعدی روی نقشه
+        // محل آن را بگیرد (رفتار مشابه کشیدن از فهرست).
+        setEditing(true);
+        setPlacingDevice(device.id);
+        push(`«${device.name}» مختصات ندارد؛ روی نقشه محل آن را کلیک کنید.`, 'warning');
+        return;
+      }
       map.setView([device.latitude, device.longitude], Math.max(map.getZoom(), 14), { animate: true });
       schedulePopup(() => markers.current.get(id));
     },
-    [schedulePopup]
+    [schedulePopup, push]
   );
 
   const flyToMarker = useCallback(
@@ -883,9 +1294,9 @@ export default function MapPage() {
 
 
   return (
-    <div className="space-y-4">
-      <Card padded={false} className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-3">
+      <Card padded={false} className="p-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
             <Search size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-400" />
             <input className="field !rounded-pill pr-9" placeholder="جست‌وجوی تجهیز روی نقشه…" value={query.search} onChange={(e) => setParam('search', e.target.value)} />
@@ -907,29 +1318,65 @@ export default function MapPage() {
           </select>
 
           <div className="ms-auto flex flex-wrap items-center gap-2">
-            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); }} title="جابه‌جایی تجهیزات و علامت‌ها روی نقشه">
+            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); }} title="جابه‌جایی تجهیزات و علامت‌ها روی نقشه" aria-pressed={editing}>
               <Crosshair size={14} />
               {editing ? 'حالت جابه‌جایی فعال' : 'جابه‌جایی موقعیت'}
             </button>
-            <button type="button" className="btn-ghost btn-xs" onClick={() => setFullscreen((v) => !v)} aria-pressed={fullscreen} title={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه نقشه'}>
-              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              {fullscreen ? 'خروج از تمام‌صفحه' : 'تمام‌صفحه'}
-            </button>
-            <button type="button" className="btn-ghost btn-xs" onClick={() => setLayersOpen(true)}>
-              <Layers size={14} />
-              لایه‌های نقشه
-            </button>
-            <a className="btn-ghost btn-xs" href={downloadUrl('/devices/export/geo', { format: 'xlsx' })}>
-              <Download size={14} />
-              خروجی مختصات
-            </a>
-            <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
+            <button type="button" className="btn-ghost btn-xs" onClick={refresh} aria-label="به‌روزرسانی نقشه">
               <RefreshCw size={14} />
+              به‌روزرسانی
             </button>
+            <span
+              className="inline-flex items-center gap-0.5 rounded-pill border border-ink-200 bg-white p-0.5"
+              role="group"
+              aria-label="ابزارهای نقشه"
+            >
+              <button
+                type="button"
+                className={`grid h-7 w-7 place-items-center rounded-pill transition ${
+                  fullscreen ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
+                }`}
+                onClick={() => setFullscreen((value) => !value)}
+                aria-pressed={fullscreen}
+                aria-label={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
+                title={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
+              >
+                {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button
+                type="button"
+                className={`grid h-7 w-7 place-items-center rounded-pill transition ${
+                  measureOpen ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
+                }`}
+                onClick={() => setMeasureOpen((value) => !value)}
+                aria-pressed={measureOpen}
+                aria-label="اندازه‌گیری روی نقشه"
+                title="اندازه‌گیری مسافت، مساحت و شعاع"
+              >
+                <Ruler size={14} />
+              </button>
+              <button
+                type="button"
+                className="grid h-7 w-7 place-items-center rounded-pill text-ink-500 transition hover:bg-ink-50 hover:text-ink-700"
+                onClick={() => setLayersOpen(true)}
+                aria-label="لایه‌های نقشه"
+                title="لایه‌های نقشه"
+              >
+                <Layers size={14} />
+              </button>
+              <a
+                className="grid h-7 w-7 place-items-center rounded-pill text-ink-500 transition hover:bg-ink-50 hover:text-ink-700"
+                href={downloadUrl('/devices/export/geo', { format: 'xlsx' })}
+                aria-label="خروجی مختصات"
+                title="خروجی مختصات"
+              >
+                <Download size={14} />
+              </a>
+            </span>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-ink-100 pt-3">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2">
           {(['online', 'warning', 'offline', 'maintenance'] as const).map((s) => {
             const sm = statusMeta(s);
             return (
@@ -940,7 +1387,7 @@ export default function MapPage() {
             );
           })}
           <span className="text-[11px] text-ink-400">
-            نمایش {faDigits(visibleDevices.length)} از {faDigits(withGeo)} تجهیز دارای موقعیت (همه در فهرست)
+            {faDigits(visibleDevices.length)} تجهیز در فهرست — {faDigits(withGeo)} دارای مختصات، {faDigits(missingGeo)} بدون مختصات
           </span>
           {mapData?.truncated ? (
             <span className="chip border-sun-200 bg-sun-50 text-sun-700">فهرست به سقف پاسخ سرور محدود شد</span>
@@ -996,19 +1443,163 @@ export default function MapPage() {
           >
             <div
               ref={containerRef}
-              className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[520px] w-full sm:h-[620px]'}
+              className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[calc(100dvh-215px)] min-h-[460px] max-h-[820px] w-full'}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
             />
-            {fullscreen ? (
-              <button type="button" className="absolute left-3 top-3 z-[500] btn-ghost btn-xs border border-ink-200 bg-white/95" onClick={() => setFullscreen(false)}>
-                <Minimize2 size={14} />
-                خروج از تمام‌صفحه
-              </button>
+            {fullscreen && !sideOpen ? (
+              <div className="absolute left-3 top-3 z-[500] flex items-center gap-2">
+                <button
+                  type="button"
+                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/95 text-ink-600 shadow-soft transition hover:bg-white hover:text-ink-900"
+                  onClick={() => setSideOpen(true)}
+                  title="نمایش فهرست نقشه"
+                  aria-label="نمایش فهرست نقشه"
+                  aria-controls="map-side-list"
+                  aria-expanded={false}
+                >
+                  <PanelLeftOpen size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/95 text-ink-600 shadow-soft transition hover:bg-white hover:text-ink-900"
+                  onClick={() => setFullscreen(false)}
+                  title="بستن نقشه و خروج از تمام‌صفحه"
+                  aria-label="بستن نقشه و خروج از تمام‌صفحه"
+                >
+                  <Minimize2 size={16} />
+                </button>
+              </div>
             ) : null}
             {loading ? (
               <div className="absolute inset-x-0 top-0 h-1 bg-brand-100">
                 <div className="h-full w-1/3 animate-pulse bg-brand-500" />
+              </div>
+            ) : null}
+            {measureOpen ? (
+              <div
+                className="absolute right-3 top-3 z-[520] w-[252px] rounded-card border border-ink-200 bg-white/95 p-2.5 shadow-pop backdrop-blur"
+                dir="rtl"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="flex items-center gap-1 text-[11.5px] font-semibold text-ink-700">
+                    <Ruler size={13} className="text-brand-600" />
+                    اندازه‌گیری روی نقشه
+                  </p>
+                  <button
+                    type="button"
+                    className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-ink-50 hover:text-ink-700"
+                    onClick={() => {
+                      setMeasureMode('off');
+                      setMeasureOpen(false);
+                      clearMeasure();
+                    }}
+                    aria-label="بستن ابزار اندازه‌گیری"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+
+                <div className="mt-2 grid grid-cols-3 gap-1" role="group" aria-label="ابزار اندازه‌گیری">
+                  {MEASURE_META.map((item) => (
+                    <button
+                      key={item.mode}
+                      type="button"
+                      onClick={() => startMeasure(item.mode)}
+                      aria-pressed={measureMode === item.mode}
+                      className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[11px] font-medium transition ${
+                        measureMode === item.mode ? 'text-white' : 'border-ink-200 bg-white text-ink-600 hover:border-brand-200'
+                      }`}
+                      style={measureMode === item.mode ? { background: item.color, borderColor: item.color } : undefined}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-2 rounded-soft border border-ink-100 bg-ink-50/60 p-2 text-[11px] text-ink-600">
+                  {measureReadout ? (
+                    <div className="space-y-0.5">
+                      {measureReadout.kind === 'distance' ? (
+                        <>
+                          <p>
+                            طول کل: <span className="num font-semibold text-ink-800">{fmtDistanceM(measureReadout.lengthM)}</span>
+                          </p>
+                          <p className="num text-[10px] text-ink-400">
+                            {faDigits(measureReadout.points)} نقطه · {faDigits(measureReadout.segments.length)} قطعه
+                          </p>
+                        </>
+                      ) : measureReadout.kind === 'area' ? (
+                        <>
+                          <p>
+                            مساحت: <span className="num font-semibold text-ink-800">{fmtAreaM2(measureReadout.areaM2)}</span>
+                          </p>
+                          <p>
+                            محیط: <span className="num text-ink-700">{measureReadout.perimeterM != null ? fmtDistanceM(measureReadout.perimeterM) : '—'}</span>
+                          </p>
+                          <p className="num text-[10px] text-ink-400">
+                            {faDigits(measureReadout.points)} نقطه · {faDigits(measureReadout.segments.length)} ضلع
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            شعاع: <span className="num font-semibold text-ink-800">{fmtDistanceM(measureReadout.radiusM ?? 0)}</span>
+                          </p>
+                          <p>
+                            مساحت دایره: <span className="num text-ink-700">{fmtAreaM2(measureReadout.areaM2)}</span>
+                          </p>
+                          <p>
+                            محیط: <span className="num text-ink-700">{fmtDistanceM(measureReadout.perimeterM ?? 0)}</span>
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p>
+                      {measureMode === 'distance'
+                        ? 'نقطه‌های مسیر را یکی‌یکی روی نقشه کلیک کنید.'
+                        : measureMode === 'area'
+                          ? 'نقطه‌های محیط زمین را کلیک کنید؛ از سه نقطه به بعد مساحت محاسبه می‌شود.'
+                          : measureMode === 'radius'
+                            ? 'ابتدا مرکز دایره و سپس لبهٔ آن را کلیک کنید.'
+                            : 'مسافت، مساحت یا شعاع را انتخاب کنید.'}
+                    </p>
+                  )}
+                  {measureMode !== 'off' ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn-primary btn-xs"
+                        onClick={finishMeasure}
+                        disabled={!canFinishMeasure}
+                        title="بستن ترسیم و نگه داشتن نتیجه (Enter)"
+                      >
+                        <Flag size={11} />
+                        پایان ترسیم
+                      </button>
+                      <button type="button" className="btn-ghost btn-xs" onClick={clearMeasure}>
+                        <Trash2 size={11} />
+                        پاک کردن
+                      </button>
+                    </div>
+                  ) : measureReadout ? (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <span className="rounded-pill bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        پایان‌یافته
+                      </span>
+                      <button type="button" className="btn-ghost btn-xs" onClick={clearMeasure}>
+                        <Trash2 size={11} />
+                        پاک کردن
+                      </button>
+                    </div>
+                  ) : null}
+                  <p className="mt-1 text-[9.5px] leading-4 text-ink-400">
+                    کلیک: نقطه · Enter یا «پایان ترسیم»: بستن رسم · راست‌کلیک: حذف نقطه · Esc: پاک کردن · نتیجه ذخیره
+                    نمی‌شود
+                  </p>
+                </div>
               </div>
             ) : null}
             {pending ? (
@@ -1029,6 +1620,11 @@ export default function MapPage() {
             ) : null}
           </div>
           <style>{`
+            /* برچسب اندازه‌گیری: کادر مستقل از استایل پیش‌فرض Leaflet، فونت
+               فارسی، کنتراست بالا و کمی بالاتر از خط تا روی خط نیفتد. */
+            .nw-measure-label { width: 0 !important; height: 0 !important; background: transparent !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; pointer-events: none !important; }
+            .nw-measure-chip { display: inline-block; transform: translate(-50%, calc(-50% - 11px)); white-space: nowrap; direction: rtl; font-family: Vazirmatn, Tahoma, sans-serif !important; font-size: 11.5px; font-weight: 700; line-height: 1.7; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 9px; color: #0b1220; background: #ffffff; border: 2px solid var(--mc); box-shadow: 0 2px 6px rgba(15, 23, 42, .3), 0 0 0 1px rgba(255, 255, 255, .7); pointer-events: none; user-select: none; }
+            .nw-measure-chip.total { transform: translate(-50%, calc(-50% - 13px)); color: #ffffff; background: var(--mc); border-color: #ffffff; box-shadow: 0 2px 8px rgba(15, 23, 42, .4), 0 0 0 1.5px var(--mc); font-size: 12px; }
             .nw-pin { position: relative; display: grid; place-items: center; width: 18px; height: 18px; }
             .nw-dot { width: 12px; height: 12px; border-radius: 999px; background: var(--c); border: 2px solid #fff; box-shadow: 0 2px 8px rgba(15,23,42,.35); display:block; }
             .nw-pulse { position: absolute; inset: 0; border-radius: 999px; opacity: .45; animation: nwPulse 1.8s ease-out infinite; display:block; }
@@ -1046,25 +1642,39 @@ export default function MapPage() {
           `}</style>
         </div>
 
-        <div className={`flex shrink-0 flex-col gap-2 ${sideOpen ? 'xl:w-[324px]' : 'xl:w-auto'}`}>
-          {/* دکمهٔ باز/بسته کردن فهرست — بالای خود فهرست، مانند منوی اصلی */}
-          <div className="flex items-center gap-2">
+        <div
+          className={
+            fullscreen
+              ? `fixed inset-y-0 left-0 z-[1200] flex w-[330px] max-w-[88vw] flex-col gap-2 p-3 transition-transform duration-300 ${
+                  sideOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
+                }`
+              : `flex shrink-0 flex-col gap-2 ${sideOpen ? 'xl:w-[324px]' : 'xl:w-auto'}`
+          }
+          aria-hidden={fullscreen && !sideOpen ? true : undefined}
+        >
+          {!sideOpen && !fullscreen ? (
             <button
               type="button"
-              className="btn-ghost btn-xs"
-              onClick={() => setSideOpen((v) => !v)}
-              aria-expanded={sideOpen}
+              className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/90 text-ink-500 shadow-soft transition hover:text-ink-800"
+              onClick={() => setSideOpen(true)}
               aria-controls="map-side-list"
-              title={sideOpen ? 'بستن فهرست' : 'باز کردن فهرست تجهیزات و علامت‌ها'}
-              aria-label={sideOpen ? 'بستن فهرست' : 'باز کردن فهرست'}
+              aria-expanded={false}
+              title="نمایش فهرست نقشه"
+              aria-label="نمایش فهرست نقشه"
             >
-              {sideOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-              {sideOpen ? 'بستن فهرست' : 'باز کردن فهرست'}
+              <PanelLeftOpen size={15} />
             </button>
-          </div>
+          ) : null}
 
           {sideOpen ? (
-          <Card id="map-side-list" className="flex h-[460px] flex-col overflow-hidden xl:h-[582px]">
+          <Card
+            id="map-side-list"
+            className={
+              fullscreen
+                ? 'flex h-full min-h-0 flex-col overflow-hidden shadow-pop'
+                : 'flex h-[460px] flex-col overflow-hidden xl:h-[582px]'
+            }
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-ink-800">
@@ -1072,6 +1682,30 @@ export default function MapPage() {
                   فهرست نقشه
                 </h3>
                 <p className="mt-0.5 text-[11px] text-ink-500">تجهیزات دارای موقعیت و علامت‌های جانمایی‌شده</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {fullscreen ? (
+                  <button
+                    type="button"
+                    className="grid h-7 w-7 place-items-center rounded-md text-ink-500 transition hover:bg-ink-50 hover:text-ink-900"
+                    onClick={() => setFullscreen(false)}
+                    title="بستن نقشه و خروج از تمام‌صفحه"
+                    aria-label="بستن نقشه و خروج از تمام‌صفحه"
+                  >
+                    <Minimize2 size={15} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="grid h-7 w-7 place-items-center rounded-md text-ink-500 transition hover:bg-ink-50 hover:text-ink-900"
+                  onClick={() => setSideOpen(false)}
+                  title="بستن فهرست نقشه"
+                  aria-label="بستن فهرست نقشه"
+                  aria-controls="map-side-list"
+                  aria-expanded
+                >
+                  <PanelLeftClose size={15} />
+                </button>
               </div>
             </div>
 
@@ -1174,6 +1808,11 @@ export default function MapPage() {
 }
 
 /* ============================== فهرست تجهیزات ============================== */
+/** یک ردیف فهرست: یا سرتیتر یک گروه، یا یک تجهیز */
+type ListRow =
+  | { kind: 'group'; key: string; group: string; name: string; count: number; positioned: number; hidden: boolean }
+  | { kind: 'device'; key: string; device: MapDevice };
+
 function DeviceList({
   devices,
   groups,
@@ -1191,6 +1830,40 @@ function DeviceList({
   onFlyTo: (id: number) => void;
   onDragStart: (id: number) => void;
 }) {
+  // گروه‌های جمع‌شده فقط در فهرست پنهان می‌شوند؛ نمایش روی نقشه با Eye کنترل می‌شود.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const rows = useMemo<ListRow[]>(() => {
+    const byGroup = new Map<string, MapDevice[]>();
+    for (const d of devices) {
+      const g = d.groupName || '__none__';
+      const list = byGroup.get(g);
+      if (list) list.push(d);
+      else byGroup.set(g, [d]);
+    }
+    const names = [...byGroup.keys()].sort((a, b) => {
+      // «بدون گروه» همیشه آخر می‌آید
+      if (a === '__none__') return 1;
+      if (b === '__none__') return -1;
+      return a.localeCompare(b, 'fa');
+    });
+    const out: ListRow[] = [];
+    for (const g of names) {
+      const list = (byGroup.get(g) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+      const isCollapsed = collapsed.includes(g);
+      out.push({
+        kind: 'group',
+        key: `g:${g}`,
+        group: g,
+        name: g === '__none__' ? 'بدون گروه' : g,
+        count: list.length,
+        positioned: list.filter((d) => d.latitude != null && d.longitude != null).length,
+        hidden: hiddenGroups.includes(g),
+      });
+      if (!isCollapsed) for (const d of list) out.push({ kind: 'device', key: `d:${d.id}`, device: d });
+    }
+    return out;
+  }, [devices, hiddenGroups, collapsed]);
+
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col">
       {/* نمایش/عدم نمایش گروه‌های مختلف در فهرست و روی نقشه */}
@@ -1221,47 +1894,84 @@ function DeviceList({
           })}
         </div>
       </details>
-      {/* فهرست مجازی: هزاران تجهیز بدون ساخت هزاران DOM node نمایش داده می‌شود */}
+      {/* فهرست مجازی با ارتفاع متغیر: سرتیتر گروه‌ها هم داخل همان فهرست
+          رندر می‌شوند تا با هزاران تجهیز، DOM سبک بماند. */}
       <VirtualList
-        items={devices}
-        itemHeight={58}
-        keyOf={(d) => d.id}
+        items={rows}
+        itemHeight={56}
+        heightOf={(r) => (r.kind === 'group' ? 34 : 56)}
+        keyOf={(r) => r.key}
         empty={
           <EmptyState
-            title="تجهیزی با مختصات یافت نشد"
-            description="برای تجهیزات عرض و طول جغرافیایی ثبت کنید یا از فهرست بکشید و روی نقشه رها کنید."
+            title="تجهیزی یافت نشد"
+            description="با فیلترهای فعلی تجهیزی نیست؛ فیلتر جست‌وجو/وضعیت/گروه را تغییر دهید یا تجهیز جدید بسازید."
             icon={<MapPin size={22} />}
           />
         }
-        render={(d) => (
-          <div
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('text/nw-device', String(d.id));
-              e.dataTransfer.setData('text/plain', String(d.id));
-              e.dataTransfer.effectAllowed = 'move';
-              onDragStart(d.id);
-            }}
-            className={`mb-1.5 flex h-[52px] cursor-grab items-center justify-between gap-2 rounded-soft border bg-white/70 px-2.5 py-2 transition active:cursor-grabbing ${
-              selectedId === d.id ? 'border-brand-300 ring-1 ring-brand-200' : 'border-ink-100 hover:border-brand-200'
-            }`}
-            title="برای جانمایی، بکشید و روی نقشه رها کنید"
-          >
-            <button type="button" className="min-w-0 flex-1 text-right" onClick={() => onFlyTo(d.id)}>
-              <span className="block truncate text-[12px] font-medium text-ink-700">{d.name}</span>
-              <span className="num block text-[10.5px] text-ink-400">
-                {d.latitude == null ? 'بدون مختصات' : `${d.latitude.toFixed(4)}, ${d.longitude?.toFixed(4)}`}
-              </span>
-            </button>
-            <StatusPill status={d.status} size="sm" showLabel={false} />
-            <Link to={`/devices/${d.id}`} className="btn-ghost btn-xs">
-              جزئیات
-            </Link>
-          </div>
-        )}
+        render={(row) =>
+          row.kind === 'group' ? (
+            <div className="flex h-[34px] items-center justify-between gap-1 border-b border-ink-100 pb-1 pt-1.5">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-1 text-right"
+                onClick={() => setCollapsed((prev) => (prev.includes(row.group) ? prev.filter((g) => g !== row.group) : [...prev, row.group]))}
+                title={collapsed.includes(row.group) ? 'باز کردن گروه' : 'جمع کردن گروه'}
+              >
+                {collapsed.includes(row.group) ? (
+                  <ChevronLeft size={13} className="shrink-0 text-ink-400" />
+                ) : (
+                  <ChevronDown size={13} className="shrink-0 text-ink-400" />
+                )}
+                <span className="truncate text-[11.5px] font-semibold text-ink-600">{row.name}</span>
+                <span className="num shrink-0 rounded-pill bg-ink-100 px-1.5 text-[10px] text-ink-500">{faDigits(row.count)}</span>
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-xs shrink-0 !px-1"
+                onClick={() => onToggleGroup(row.group)}
+                title={row.hidden ? `نمایش ${row.name} روی نقشه` : `مخفی کردن ${row.name} روی نقشه`}
+                aria-pressed={!row.hidden}
+              >
+                {row.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
+                <span className="num text-[9.5px] text-ink-400">
+                  {faDigits(row.positioned)}/{faDigits(row.count)}
+                </span>
+              </button>
+            </div>
+          ) : (
+            <div
+              draggable
+              onDragStart={(e) => {
+                const d = row.device;
+                e.dataTransfer.setData('text/nw-device', String(d.id));
+                e.dataTransfer.setData('text/plain', String(d.id));
+                e.dataTransfer.effectAllowed = 'move';
+                onDragStart(d.id);
+              }}
+              className={`mb-1 flex h-[52px] cursor-grab items-center justify-between gap-2 rounded-soft border bg-white/70 px-2.5 py-2 transition active:cursor-grabbing ${
+                selectedId === row.device.id ? 'border-brand-300 ring-1 ring-brand-200' : 'border-ink-100 hover:border-brand-200'
+              }`}
+              title="برای جانمایی، بکشید و روی نقشه رها کنید"
+            >
+              <button type="button" className="min-w-0 flex-1 text-right" onClick={() => onFlyTo(row.device.id)}>
+                <span className="block truncate text-[12px] font-medium text-ink-700">{row.device.name}</span>
+                <span className="num block text-[10.5px] text-ink-400">
+                  {row.device.latitude == null || row.device.longitude == null
+                    ? 'بدون مختصات — کلیک کنید و محل را روی نقشه مشخص کنید'
+                    : `${row.device.latitude.toFixed(4)}, ${row.device.longitude.toFixed(4)}`}
+                </span>
+              </button>
+              {row.device.latitude == null ? <MapPin size={12} className="shrink-0 text-sun-500" /> : null}
+              <StatusPill status={row.device.status} size="sm" showLabel={false} />
+              <Link to={`/devices/${row.device.id}`} className="btn-ghost btn-xs">
+                جزئیات
+              </Link>
+            </div>
+          )
+        }
       />
       <p className="mt-2 border-t border-ink-100 pt-2 text-center text-[10px] leading-relaxed text-ink-400">
-        {`${faDigits(devices.length)} تجهیز در این نما — فهرست مجازی، فقط ردیف‌های دیده‌شده رندر می‌شوند.`}
+        {`${faDigits(devices.length)} تجهیز در ${faDigits(new Set(devices.map((d) => d.groupName || '__none__')).size)} گروه — فهرست مجازی، فقط ردیف‌های دیده‌شده رندر می‌شوند.`}
       </p>
     </div>
   );
@@ -1305,6 +2015,16 @@ function MarkersList({
   const importFile = async (file: File) => {
     setBusy(true);
     try {
+      // KML/KMZ (ترسیم‌های Google Earth) هم مسیر ورود خودش را دارد؛ صفحه‌گسترده
+      // از همان مسیر Excel/CSV می‌رود.
+      if (/\.(kml|kmz)$/i.test(file.name)) {
+        const chosen = types.find((t) => t.id === filterType) ?? null;
+        const res = await api.markerImportKml(file, { typeId: chosen?.id ?? null, type: chosen?.name });
+        const skipped = res.skipped ? ` — ${faDigits(res.skipped)} مورد بدون نقطه یافت شد` : '';
+        push(`${faDigits(res.inserted)} علامت از KML/KMZ وارد شد${skipped}`, res.inserted ? 'success' : 'warning');
+        onChanged();
+        return;
+      }
       const res = await api.markerImport(file, 'append');
       push(`${faDigits(res.inserted)} علامت وارد شد${res.skipped ? ` — ${faDigits(res.skipped)} ردیف نامعتبر` : ''}`, res.inserted ? 'success' : 'warning');
       onChanged();
@@ -1438,7 +2158,7 @@ function MarkersList({
             {armedTypeId ? <p className="text-center text-[10.5px] text-brand-600">در انتظار کلیک روی نقشه…</p> : null}
 
             <div className="flex flex-wrap items-center gap-1.5">
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.currentTarget.value = ''; }} />
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.kml,.kmz" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.currentTarget.value = ''; }} />
               <button type="button" className="btn-ghost btn-xs flex-1 justify-center" disabled={busy} onClick={() => fileRef.current?.click()}>
                 <Upload size={12} />
                 ورود از فایل
@@ -1453,7 +2173,7 @@ function MarkersList({
               </a>
             </div>
             <p className="text-[10px] leading-relaxed text-ink-400">
-              قالب ورود: نام علامت، نوع علامت، عرض جغرافیایی، طول جغرافیایی، توضیحات. انواع ناشناخته به‌صورت خودکار ساخته می‌شوند.
+              ورودی: فایل Excel/CSV (نام، نوع، عرض و طول جغرافیایی، توضیحات) یا فایل ترسیم <span className="ltr">KML/KMZ</span>. هر Placemark به یک علامت تبدیل می‌شود؛ اگر نوعی در فهرست انتخاب شده باشد همان نوع به علامت‌های تازه داده می‌شود.
             </p>
           </div>
         </div>
@@ -1555,7 +2275,7 @@ function MarkerTypeForm({ draft, onClose, onSaved }: { draft: Partial<MarkerType
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً تجهیز در حال نصب" />
         </Field>
         <Field label="رنگ">
-          <input type="color" className="field h-[42px] p-1" value={color} onChange={(e) => setColor(e.target.value)} />
+          <ColorField value={color} onChange={setColor} />
         </Field>
         <Field label="آیکون">
           <select className="field" value={icon} onChange={(e) => setIcon(e.target.value)}>

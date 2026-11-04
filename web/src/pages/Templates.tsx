@@ -153,7 +153,7 @@ export default function Templates() {
           <div className="ms-auto flex gap-2">
             <button type="button" className="btn-ghost btn-xs" onClick={() => templates.refresh()} disabled={templates.refreshing}>
               <RefreshCw size={14} className={templates.refreshing ? 'animate-spin' : ''} />
-              بروزرسانی
+              به‌روزرسانی
             </button>
             {canWrite ? (
               <button type="button" className="btn-primary btn-xs" onClick={openCreate}>

@@ -1,5 +1,5 @@
 /**
- * قالب تجهیز (بدون بازنویسی ناخواسته)، عضویت چندگروهی و تعارض مبتنی بر شاهد.
+ * قالب تجهیز (بدون بازنویسی ناخواسته) و عضویت چندگروهی.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -8,7 +8,7 @@ import { useTempDataDir, cleanupDir, addDevice } from '../helpers.mjs';
 const dir = useTempDataDir('management');
 const { db } = await import('../../db.js');
 const { getDevice, setDeviceGroups, groupsFor, updateDevice } = await import('../../store.js');
-const { createTemplate, applyTemplate, updateTemplate, normalizeTemplateSettings, detectConflicts } = await import('../../management.js');
+const { createTemplate, applyTemplate, updateTemplate, normalizeTemplateSettings } = await import('../../management.js');
 
 test.after(() => {
   db.close();
@@ -65,20 +65,4 @@ test('هر تجهیز فقط عضو یک گروه است و جایگزینی گ�
   assert.deepEqual(groupsFor([id]).get(id).map((g) => g.id), [g2]);
   assert.equal(db.prepare('SELECT group_id FROM devices WHERE id=?').get(id).group_id, g2);
   void updateDevice;
-});
-
-test('تعارض فقط با شاهد گزارش می‌شود و هیچ موردی قطعی نیست', () => {
-  addDevice(db, { name: 'هم‌سریال ۱', ip: '10.31.0.1', serial: 'SN-UNIQUE-1', hostname: 'edge-1' });
-  addDevice(db, { name: 'هم‌سریال ۲', ip: '10.31.0.2', serial: 'sn-unique-1', hostname: 'edge-2' });
-  addDevice(db, { name: 'هم‌هاست ۱', ip: '10.31.0.3', hostname: 'shared-host' });
-  addDevice(db, { name: 'هم‌هاست ۲', ip: '10.31.0.4', hostname: 'SHARED-HOST' });
-
-  const report = detectConflicts();
-  const serial = report.items.find((i) => i.type === 'duplicate_serial');
-  assert.ok(serial, 'تعارض سریال شناسایی می‌شود');
-  assert.equal(serial.devices.length, 2);
-  assert.equal(serial.definitive, false);
-  assert.ok(serial.evidence.length >= 2);
-  assert.ok(report.items.every((i) => i.definitive === false));
-  assert.match(report.note, /تأیید مدیر/);
 });

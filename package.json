@@ -1,11 +1,14 @@
 {
   "name": "netping-monitor",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "NetWatch - آفلاین مانیتورینگ تجهیزات شبکه (Ping Monitoring, Alerts, Reports, Maintenance, Map)",
   "engines": {
     "node": ">=22.12.0"
+  },
+  "allowScripts": {
+    "fsevents": true
   },
   "scripts": {
     "dev": "node server/index.js --dev",
@@ -32,6 +35,7 @@
     "qa:soak72": "node server/scripts/qa-soak.mjs --minutes 4320 --devices 100 --interval 30",
     "release:prepare": "node server/scripts/release-prepare.mjs",
     "release:artifact": "node server/scripts/release-artifact.mjs",
+    "offline:prepare": "node scripts/offline/prepare.mjs",
     "seed:reset": "node server/scripts/reset-demo.js",
     "db:backup": "node server/scripts/db-backup.mjs",
     "db:restore": "node server/scripts/db-restore.mjs",

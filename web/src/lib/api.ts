@@ -5,20 +5,24 @@ import type {
   AppSettings,
   AuthUser,
   BackupStatus,
-  ConflictReport,
   DashboardData,
   Device,
   DeviceAttachment,
   DeviceTemplate,
+  DeviceType,
   DiagramAttachment,
+  DiagramConnectionKind,
   DiagramDetail,
   DiagramEdge,
+  DiagramGraph,
+  DiagramLinkSide,
   DiagramNode,
   DiagramSummary,
   EngineStatus,
   FlapsData,
   Group,
   InstallationReport,
+  InventoryStats,
   MttrReport,
   MaintenanceRecord,
   MapLayer,
@@ -239,8 +243,8 @@ export const api = {
         name: string;
         ip: string;
         status: string;
-        latitude: number;
-        longitude: number;
+        latitude: number | null;
+        longitude: number | null;
         deviceType: string;
         groupName: string | null;
         lastRtt: number | null;
@@ -263,6 +267,7 @@ export const api = {
     request<{
       groups: Group[];
       tags: Tag[];
+      deviceTypes: DeviceType[];
       types: { value: string; count: number }[];
       locations: { value: string; count: number }[];
       vendors: { value: string; count: number }[];
@@ -415,6 +420,12 @@ export const api = {
   createTag: (body: Record<string, unknown>) => request<Tag>('/tags', { method: 'POST', body: JSON.stringify(body) }),
   updateTag: (id: number, body: Record<string, unknown>) => request<{ updated: number }>(`/tags/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteTag: (id: number) => request<{ deleted: number }>(`/tags/${id}`, { method: 'DELETE' }),
+  deviceTypes: (signal?: AbortSignal) => request<{ items: DeviceType[] }>('/device-types', { signal }),
+  createDeviceType: (body: { name: string; color?: string }) =>
+    request<DeviceType>('/device-types', { method: 'POST', body: JSON.stringify(body) }),
+  updateDeviceType: (id: number, body: { name?: string; color?: string }) =>
+    request<{ updated: number; item: DeviceType }>(`/device-types/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteDeviceType: (id: number) => request<{ deleted: number }>(`/device-types/${id}`, { method: 'DELETE' }),
   tagDevices: (tagId: number, ids: number[], mode: 'add' | 'remove') =>
     request<{ affected: number }>(`/tags/${tagId}/devices`, { method: 'POST', body: JSON.stringify({ ids, mode }) }),
   layers: (signal?: AbortSignal) =>
@@ -455,8 +466,52 @@ export const api = {
     fd.append('mode', mode);
     return request<{ inserted: number; skipped: number; newTypes: string[]; errors: unknown[] }>('/markers/import', { method: 'POST', body: fd });
   },
+  /** ورود علامت‌ها از KML/KMZ؛ نوع انتخاب‌شده در فهرست به آن‌ها داده می‌شود. */
+  markerImportKml: (file: File, opts: { typeId?: number | null; type?: string; mode?: 'append' | 'replace' } = {}) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('mode', opts.mode ?? 'append');
+    if (opts.typeId) fd.append('typeId', String(opts.typeId));
+    if (opts.type) fd.append('type', opts.type);
+    return request<{ inserted: number; skipped: number; badCoordinates: number; typeId: number }>('/markers/import/kml', {
+      method: 'POST',
+      body: fd,
+    });
+  },
   /* ---------------- دیاگرام‌های شبکه ---------------- */
   diagrams: (signal?: AbortSignal) => request<{ items: DiagramSummary[] }>('/diagrams', { signal }),
+  /** نقشهٔ ارتباط بین فایل‌های دیاگرام (درخت + پیوندهای دستی) */
+  diagramGraph: (signal?: AbortSignal) => request<DiagramGraph>('/diagrams/graph', { signal }),
+  diagramAddLink: (
+    id: number,
+    body: {
+      targetId: number;
+      label?: string;
+      description?: string;
+      kind?: DiagramConnectionKind;
+      fromSide?: DiagramLinkSide;
+      toSide?: DiagramLinkSide;
+    }
+  ) =>
+    request<DiagramDetail>(`/diagrams/${id}/links`, { method: 'POST', body: JSON.stringify(body) }),
+  diagramUpdateLink: (
+    id: number,
+    nodeId: string,
+    body: {
+      targetId?: number;
+      label?: string;
+      description?: string;
+      kind?: DiagramConnectionKind;
+      fromSide?: DiagramLinkSide | null;
+      toSide?: DiagramLinkSide | null;
+    }
+  ) =>
+    request<DiagramDetail>(`/diagrams/${id}/links/${encodeURIComponent(nodeId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  diagramDeleteLink: (id: number, nodeId: string) =>
+    request<DiagramDetail>(`/diagrams/${id}/links/${encodeURIComponent(nodeId)}`, { method: 'DELETE' }),
   diagram: (id: number, signal?: AbortSignal) => request<DiagramDetail>(`/diagrams/${id}`, { signal }),
   createDiagram: (body: { name: string; description?: string; parentId?: number | null }) =>
     request<DiagramDetail>('/diagrams', { method: 'POST', body: JSON.stringify(body) }),
@@ -532,8 +587,9 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) }
     ),
 
-  /* ---------------- تعارض IP ---------------- */
-  conflicts: (signal?: AbortSignal) => request<ConflictReport>('/conflicts', { signal }),
+  /** اعتبارنامه فقط با مجوز نوشتن و برای کپی صریح در صفحهٔ جزئیات. */
+  deviceCredentials: (deviceId: number | string) =>
+    request<{ username: string; password: string }>(`/devices/${deviceId}/credentials`),
 
   /* ---------------- پیوست تجهیز ---------------- */
   attachments: (deviceId: number | string, signal?: AbortSignal) =>
@@ -553,6 +609,9 @@ export const api = {
     request<{ range: { from: number; to: number } } & MttrReport>(`/reports/mttr${qs(params)}`, { signal, timeoutMs: LONG_TIMEOUT_MS }),
   installations: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>
     request<InstallationReport>(`/reports/installations${qs(params)}`, { signal, timeoutMs: LONG_TIMEOUT_MS }),
+  /** آمار تجهیزات به تفکیک تگ، مدل، سازنده، نوع، محل و تاریخ نصب */
+  inventoryStats: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>
+    request<InventoryStats>(`/reports/inventory${qs(params)}`, { signal, timeoutMs: LONG_TIMEOUT_MS }),
 };
 
 export type Api = typeof api;

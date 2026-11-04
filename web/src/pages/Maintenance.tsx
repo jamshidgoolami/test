@@ -15,6 +15,7 @@ import {
 import { api, downloadUrl } from '../lib/api';
 import { useApp, useAsync, useToast } from '../lib/store';
 import { useAuth } from '../lib/auth';
+import { useUrlParams } from '../lib/params';
 import { faDigits, fmtDateTime, fmtDuration, fmtNumber } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Field, PageLoader, Pagination, StatCard, Tabs } from '../components/ui';
 import { TopBarList } from '../components/charts';
@@ -26,12 +27,19 @@ export default function Maintenance() {
   const { push } = useToast();
   const { can } = useAuth();
   const canWrite = can('maintenance:write');
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [cause, setCause] = useState('');
-  const [action, setAction] = useState('');
-  const [status, setStatus] = useState('');
-  const [range, setRange] = useState('all');
+  const { params, setParam } = useUrlParams();
+  const page = Math.max(1, Number(params.get('page') ?? 1) || 1);
+  const search = params.get('search') ?? '';
+  const cause = params.get('cause') ?? '';
+  const action = params.get('action') ?? '';
+  const status = params.get('status') ?? '';
+  const range = params.get('range') ?? 'all';
+  const setPage = (value: number) => setParam('page', value <= 1 ? '' : String(value));
+  const setSearch = (value: string) => setParam('search', value);
+  const setCause = (value: string) => setParam('cause', value);
+  const setAction = (value: string) => setParam('action', value);
+  const setStatus = (value: string) => setParam('status', value);
+  const setRange = (value: string) => setParam('range', value === 'all' ? '' : value);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<MaintenanceRecord | null>(null);
 
@@ -89,19 +97,13 @@ export default function Maintenance() {
                 className="field !rounded-pill pr-9"
                 placeholder="جست‌وجو در عنوان، توضیحات، تجهیز یا تکنسین…"
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <Tabs
               size="sm"
               value={range}
-              onChange={(v) => {
-                setRange(v);
-                setPage(1);
-              }}
+              onChange={setRange}
               tabs={[
                 { value: 'all', label: 'همه' },
                 { value: '7d', label: '۷ روز' },
@@ -124,7 +126,7 @@ export default function Maintenance() {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 pt-3">
-            <select className="field !w-auto !rounded-pill" value={cause} onChange={(e) => { setCause(e.target.value); setPage(1); }}>
+            <select className="field !w-auto !rounded-pill" value={cause} onChange={(e) => setCause(e.target.value)}>
               <option value="">همه علت‌ها</option>
               {(settings?.repair_causes ?? []).map((c) => (
                 <option key={c} value={c}>
@@ -132,7 +134,7 @@ export default function Maintenance() {
                 </option>
               ))}
             </select>
-            <select className="field !w-auto !rounded-pill" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
+            <select className="field !w-auto !rounded-pill" value={action} onChange={(e) => setAction(e.target.value)}>
               <option value="">همه اقدامات</option>
               {(settings?.repair_actions ?? []).map((a) => (
                 <option key={a} value={a}>
@@ -148,7 +150,7 @@ export default function Maintenance() {
             <span className="ms-auto flex items-center gap-2">
               <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
                 <RefreshCw size={14} />
-                بروزرسانی
+                به‌روزرسانی
               </button>
               <a className="btn-ghost btn-xs" href={downloadUrl('/reports/export', { format: 'xlsx', from: from ?? '' })}>
                 <Download size={14} />
