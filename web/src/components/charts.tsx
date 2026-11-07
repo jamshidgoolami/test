@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -11,6 +11,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -18,6 +19,8 @@ import {
   YAxis,
 } from 'recharts';
 import { faDigits, fmtClock, fmtDayLabel, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRangeLabel } from '../lib/format';
+import { WEEKDAY_SHORT } from '../lib/uptime';
+import { calendarTone, dateKeyLocal, type CalendarTone, type ChartCalendar, type DailyMetric, type DailyPoint } from '../lib/chart-daily';
 
 export { fmtClock, fmtDayLabel, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRangeLabel };
 
@@ -54,7 +57,7 @@ export function LatencyAreaChart({
   color = '#2563eb',
   accent = '#f59e0b',
 }: {
-  points: { t: number; rtt: number | null; minRtt?: number | null; maxRtt?: number | null }[];
+  points: { t: number; rtt: number | null; minRtt?: number | null; maxRtt?: number | null; availability?: number }[];
   range?: string;
   threshold?: number | null;
   height?: number;
@@ -64,9 +67,10 @@ export function LatencyAreaChart({
   accent?: string;
 }) {
   const data = points.map((p) => ({ ...p, label: fmtRangeLabel(p.t, range, tzOffset), rtt: p.rtt ?? null }));
+  const tick = { fontSize: height < 170 ? 9 : 10, fill: 'var(--chart-tick)' };
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 10, right: 10, left: -16, bottom: 0 }}>
         <defs>
           <linearGradient id="latencyFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.34} />
@@ -79,13 +83,28 @@ export function LatencyAreaChart({
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
-        <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
-        <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} unit="" />
-        {threshold ? <ReferenceLine y={threshold} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.8} /> : null}
+        <XAxis dataKey="label" tick={tick} tickLine={false} axisLine={false} minTickGap={30} interval="preserveStartEnd" />
+        <YAxis tick={tick} tickLine={false} axisLine={false} width={44} domain={[0, 'auto']} />
+        {threshold ? <ReferenceArea y1={0} y2={threshold} fill="#16a34a" fillOpacity={0.05} /> : null}
+        {threshold ? (
+          <ReferenceLine
+            y={threshold}
+            stroke="#f59e0b"
+            strokeDasharray="5 4"
+            strokeWidth={1.2}
+            label={{ value: 'آستانه', position: 'insideTopRight', fontSize: 9, fill: '#b45309' }}
+          />
+        ) : null}
         <Tooltip
-          content={({ active, payload, label }) => {
+          content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
-            const p = payload[0].payload as { rtt: number | null; minRtt?: number | null; maxRtt?: number | null; t: number };
+            const p = payload[0].payload as {
+              rtt: number | null;
+              minRtt?: number | null;
+              maxRtt?: number | null;
+              availability?: number;
+              t: number;
+            };
             return (
               <TooltipShell
                 title={fmtRangeLabel(p.t, range, tzOffset)}
@@ -93,6 +112,7 @@ export function LatencyAreaChart({
                   { label: 'میانگین تأخیر', value: fmtMs(p.rtt), color },
                   ...(showMinMax && p.minRtt != null ? [{ label: 'کمترین', value: fmtMs(p.minRtt), color: '#16a34a' }] : []),
                   ...(showMinMax && p.maxRtt != null ? [{ label: 'بیشترین', value: fmtMs(p.maxRtt), color: accent }] : []),
+                  { label: 'دسترس‌پذیری', value: fmtPct(p.availability, 2) },
                 ]}
               />
             );
@@ -131,16 +151,19 @@ export function LossAreaChart({
   range = '24h',
   height = 180,
   tzOffset = 210,
+  threshold,
 }: {
-  points: { t: number; loss: number }[];
+  points: { t: number; loss: number; availability?: number; samples?: number }[];
   range?: string;
   height?: number;
   tzOffset?: number;
+  threshold?: number | null;
 }) {
   const data = points.map((p) => ({ ...p, label: fmtRangeLabel(p.t, range, tzOffset) }));
+  const tick = { fontSize: height < 170 ? 9 : 10, fill: 'var(--chart-tick)' };
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 10, right: 10, left: -16, bottom: 0 }}>
         <defs>
           <linearGradient id="lossFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.35} />
@@ -148,13 +171,37 @@ export function LossAreaChart({
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
-        <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
-        <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} domain={[0, (max: number) => Math.max(5, Math.ceil(max))]} />
+        <XAxis dataKey="label" tick={tick} tickLine={false} axisLine={false} minTickGap={30} interval="preserveStartEnd" />
+        <YAxis
+          tick={tick}
+          tickLine={false}
+          axisLine={false}
+          width={44}
+          domain={[0, (max: number) => Math.max(threshold ?? 5, Math.ceil(max))]}
+        />
+        {threshold ? (
+          <ReferenceLine
+            y={threshold}
+            stroke="#dc2626"
+            strokeDasharray="5 4"
+            strokeWidth={1.2}
+            label={{ value: 'آستانه', position: 'insideTopRight', fontSize: 9, fill: '#b91c1c' }}
+          />
+        ) : null}
         <Tooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
-            const p = payload[0].payload as { t: number; loss: number };
-            return <TooltipShell title={fmtRangeLabel(p.t, range, tzOffset)} rows={[{ label: 'افت بسته', value: fmtPct(p.loss), color: '#f59e0b' }]} />;
+            const p = payload[0].payload as { t: number; loss: number; availability?: number; samples?: number };
+            return (
+              <TooltipShell
+                title={fmtRangeLabel(p.t, range, tzOffset)}
+                rows={[
+                  { label: 'افت بسته', value: fmtPct(p.loss), color: '#f59e0b' },
+                  { label: 'دسترس‌پذیری', value: fmtPct(p.availability, 2) },
+                  { label: 'تعداد نمونه', value: fmtNumber(p.samples ?? 0) },
+                ]}
+              />
+            );
           }}
         />
         <Area type="monotone" dataKey="loss" stroke="#f59e0b" strokeWidth={2.2} fill="url(#lossFill)" dot={false} connectNulls />
@@ -963,6 +1010,194 @@ export function ChartFill({
       <div className="absolute inset-0 overflow-hidden">{children(Math.max(48, height))}</div>
     </div>
   );
+}
+
+/* -------------------- تقویم میانگین‌های روزانه (۳۰ روز) -------------------- */
+/**
+ * نمای تقویمی نمودارهای تاریخی: هر خانه یک روز و رنگ آن فاصله از آستانه است.
+ *
+ * اندازهٔ خانه از عرض و ارتفاع در دسترس ویجت محاسبه می‌شود؛ در حالت کوچک
+ * شمارهٔ روز و رنگ‌ها خوانا می‌مانند؛ مقدار عددی فقط وقتی جا دارد داخل خانه
+ * می‌آید و جزئیات کامل با بردن نشانگر یا کلیک روی روز در یک خط زیر تقویم
+ * نمایش داده می‌شود.
+ */
+export function DailyCalendarHeatmap({
+  days,
+  metric,
+  threshold,
+  tzOffset,
+  calendar,
+  height = 240,
+}: {
+  days: DailyPoint[];
+  metric: DailyMetric;
+  threshold?: number | null;
+  tzOffset: number;
+  calendar: ChartCalendar;
+  height?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const read = () => setWidth(Math.round(el.getBoundingClientRect().width));
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const peak = useMemo(() => {
+    let maxValue = 0;
+    for (const day of days) if (day.value != null && day.value > maxValue) maxValue = day.value;
+    return Math.max(1, maxValue, threshold ?? 0);
+  }, [days, threshold]);
+
+  const lead = days.length ? days[0].weekday : 0;
+  const rows = days.length ? Math.ceil((lead + days.length) / 7) : 0;
+  const gap = 6;
+  const maxCellFromWidth = ((width > 0 ? width : 420) - gap * 6) / 7;
+  const maxCellFromHeight = rows ? (Math.max(70, height - 52) - gap * (rows - 1)) / rows : 32;
+  const cell = Math.max(20, Math.min(56, Math.floor(Math.min(maxCellFromWidth, maxCellFromHeight))));
+  const showValue = cell >= 36;
+  const todayKey = dateKeyLocal(Date.now(), tzOffset);
+  const active = days.find((day) => day.key === (hoverKey ?? pinnedKey)) ?? null;
+  const trackWidth = cell * 7 + gap * 6;
+
+  return (
+    <div ref={ref} className="flex h-full min-h-0 w-full flex-col items-center gap-1.5">
+      <div style={{ width: trackWidth }} className="shrink-0">
+        <div className="grid" style={{ gridTemplateColumns: `repeat(7, ${cell}px)`, gap }}>
+          {WEEKDAY_SHORT.map((label) => (
+            <span key={label} className="text-center text-[9.5px] text-ink-400" aria-hidden>
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-h-0 w-full flex-1 overflow-y-auto">
+        <div
+          className="mx-auto grid content-start"
+          style={{ width: trackWidth, gridTemplateColumns: `repeat(7, ${cell}px)`, gridAutoRows: `${cell}px`, gap }}
+          role="grid"
+          aria-label="تقویم میانگین روزانه"
+        >
+          {Array.from({ length: lead }, (_, i) => (
+            <span key={`pad-${i}`} aria-hidden />
+          ))}
+          {days.map((day) => {
+            const tone = calendarTone(day, metric, threshold);
+            const style = dayToneStyle(tone, day, peak);
+            const detail = dayDetail(day, metric);
+            const lowAvailability = day.availability != null && day.samples > 0 && day.availability < 99;
+            return (
+              <button
+                key={day.key}
+                type="button"
+                role="gridcell"
+                aria-label={detail}
+                aria-pressed={pinnedKey === day.key}
+                title={detail}
+                onMouseEnter={() => setHoverKey(day.key)}
+                onMouseLeave={() => setHoverKey(null)}
+                onFocus={() => setHoverKey(day.key)}
+                onBlur={() => setHoverKey(null)}
+                onClick={() => setPinnedKey((prev) => (prev === day.key ? null : day.key))}
+                className={`relative grid place-items-center overflow-hidden rounded-md transition ${
+                  tone === 'none' ? 'border border-dashed border-ink-200' : 'border border-transparent'
+                } ${day.key === todayKey ? 'ring-1 ring-brand-400' : ''} ${
+                  active?.key === day.key ? 'outline outline-1 outline-offset-1 outline-brand-300' : ''
+                }`}
+                style={style}
+              >
+                <span className="num absolute start-1 top-0.5 text-[8.5px] opacity-70">{day.dayLabel}</span>
+                {showValue && day.value != null ? (
+                  <span className="num text-[10.5px] font-semibold leading-none">{compactDayValue(day.value, metric)}</span>
+                ) : null}
+                {showValue && day.samples > 0 && day.avgRtt == null && metric === 'latency' ? (
+                  <span className="text-[9px] font-semibold leading-none">قطع</span>
+                ) : null}
+                {cell >= 28 && lowAvailability ? (
+                  <span
+                    className="absolute bottom-0.5 start-0.5 h-1 w-1 rounded-full"
+                    style={{ background: day.availability != null && day.availability < 98 ? '#dc2626' : '#f59e0b' }}
+                    aria-hidden
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-t border-ink-100 bg-surface/80 pt-1.5 text-[10px] text-ink-400">
+        {active ? (
+          <span className="min-w-0 truncate" title={dayDetail(active, metric)}>
+            {dayDetail(active, metric)}
+          </span>
+        ) : (
+          <span className="truncate">برای جزئیات، نشانگر را روی روزها ببرید یا کلیک کنید.</span>
+        )}
+        <span className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="flex items-center gap-1">
+            <i className="h-2 w-2 rounded-sm" style={{ background: 'rgba(22,163,74,0.55)' }} /> سالم
+          </span>
+          <span className="flex items-center gap-1">
+            <i className="h-2 w-2 rounded-sm" style={{ background: 'rgba(217,119,6,0.6)' }} /> نزدیک آستانه
+          </span>
+          <span className="flex items-center gap-1">
+            <i className="h-2 w-2 rounded-sm" style={{ background: 'rgba(220,38,38,0.7)' }} /> بالای آستانه
+          </span>
+          {threshold != null ? (
+            <span className="num whitespace-nowrap">
+              آستانه {metric === 'latency' ? fmtMs(threshold) : fmtPct(threshold, 1)}
+            </span>
+          ) : null}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const TONE_RGB: Record<Exclude<CalendarTone, 'none'>, string> = {
+  good: '22,163,74',
+  warn: '217,119,6',
+  bad: '220,38,38',
+};
+
+/** شدت رنگ با مقدار روز نسبت به بیشینهٔ تقویم و رنگ با فاصله از آستانه. */
+function dayToneStyle(tone: CalendarTone, day: DailyPoint, peak: number): React.CSSProperties {
+  if (tone === 'none') return { color: 'var(--ink-400)', background: 'transparent' };
+  const rgb = TONE_RGB[tone];
+  const ratio = day.value == null ? 1 : Math.min(1, Math.max(0, day.value / peak));
+  const alpha = 0.16 + 0.58 * ratio;
+  const color = alpha >= 0.5 ? '#ffffff' : tone === 'good' ? '#166534' : tone === 'warn' ? '#92400e' : '#991b1b';
+  return { background: `rgba(${rgb}, ${alpha.toFixed(2)})`, color };
+}
+
+function compactDayValue(value: number, metric: DailyMetric): string {
+  if (metric === 'latency') return faDigits(Math.round(value));
+  return faDigits(value < 10 ? value.toFixed(1) : Math.round(value));
+}
+
+function dayDetail(day: DailyPoint, metric: DailyMetric): string {
+  if (day.samples === 0) return `${day.title} — بدون داده`;
+  const chunks = [day.title];
+  if (metric === 'latency') {
+    chunks.push(day.avgRtt == null ? 'بدون پاسخ' : `میانگین ${fmtMs(day.avgRtt)}`);
+  } else {
+    chunks.push(`میانگین افت ${fmtPct(day.avgLoss, 1)}`);
+    if (day.avgRtt != null) chunks.push(`تأخیر ${fmtMs(day.avgRtt)}`);
+  }
+  if (day.maxRtt != null && metric === 'latency') chunks.push(`بیشینه ${fmtMs(day.maxRtt)}`);
+  if (day.availability != null) chunks.push(`دسترس‌پذیری ${fmtPct(day.availability, 1)}`);
+  chunks.push(`${fmtNumber(day.samples)} نمونه`);
+  return chunks.join(' · ');
 }
 
 export { StatusBands } from './status-timeline';

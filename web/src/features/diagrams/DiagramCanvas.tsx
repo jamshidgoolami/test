@@ -28,14 +28,13 @@ import {
   BaseEdge,
   ConnectionMode,
   Controls,
-  EdgeLabelRenderer,
   Handle,
   MiniMap,
   NodeResizer,
   Position,
   ReactFlow,
   getNodesBounds,
-  getSmoothStepPath,
+  getBezierPath,
   useReactFlow,
   useStore,
 } from '@xyflow/react';
@@ -51,7 +50,15 @@ import type {
 import { ChevronDown, ImageOff, Link2, Maximize2, MessageSquare, Minimize2, Minus, Plus, StickyNote } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import '@xyflow/react/dist/style.css';
-import { GRID_SIZE, GROUP_DEFAULT_COLOR, HANDLE_SIDES, connectionType, contrastText, deviceType } from '../../lib/diagrams';
+import {
+  CONNECTION_TYPES,
+  GRID_SIZE,
+  GROUP_DEFAULT_COLOR,
+  HANDLE_SIDES,
+  connectionType,
+  contrastText,
+  deviceType,
+} from '../../lib/diagrams';
 import { composeExportSheet, downloadDataUrl, downloadDiagramPdf, safeFileName } from '../../lib/diagram-export';
 import type { ExportMeta } from '../../lib/diagram-export';
 import type { DiagramFlowEdge, DiagramFlowNode, HandleSide } from '../../lib/diagrams';
@@ -70,6 +77,7 @@ const TOOL_CONTEXT = createContext({
   placing: false,
   exporting: false,
   zoomLevel: 'mid' as ZoomLevel,
+  highlightNodeId: null as string | null,
   devices: EMPTY_DEVICES,
   onOpenDevice: (_id: number) => {},
   onOpenDiagram: (_id: number) => {},
@@ -431,6 +439,8 @@ function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
 
 function ConnectionEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -440,87 +450,50 @@ function ConnectionEdge({
   data,
   selected,
 }: EdgeProps<DiagramFlowEdge>) {
-  const { exporting, zoomLevel } = useContext(TOOL_CONTEXT);
+  const { exporting, highlightNodeId } = useContext(TOOL_CONTEXT);
   const active = selected && !exporting;
   const meta = connectionType(data?.kind as DiagramConnectionKind | undefined);
-  const [path, labelX, labelY] = getSmoothStepPath({
+  // مسیر خمیدهٔ بزیه از هر سمتی به هر سمت دیگر (حتی مورب) روان رسم می‌شود.
+  const [path] = getBezierPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
-    borderRadius: 16,
-    offset: 22,
+    curvature: 0.32,
   });
-  const label = data?.label || meta.label;
-  const comments = Array.isArray(data?.comments) ? data.comments : [];
-  const markerId = `diagram-arrow-${id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const dimmed = !!highlightNodeId && highlightNodeId !== source && highlightNodeId !== target;
+  const width = active ? meta.width + 1.5 : meta.width;
   return (
     <>
       {/* هالهٔ سفید زیر خط، ارتباط را روی پس‌زمینهٔ شلوغ خوانا نگه می‌دارد. */}
       <BaseEdge
         id={id}
         path={path}
-        interactionWidth={22}
+        interactionWidth={26}
         style={{
           stroke: 'rgb(var(--nw-surface))',
-          strokeWidth: (active ? meta.width + 1.5 : meta.width) + 3.5,
-          opacity: 0.94,
+          strokeWidth: width + (dimmed ? 2.5 : 3.5),
+          opacity: dimmed ? 0.3 : 0.94,
         }}
       />
-      <defs>
-        <marker
-          id={markerId}
-          viewBox="0 0 10 10"
-          refX="8"
-          refY="5"
-          markerWidth="5"
-          markerHeight="5"
-          orient="auto-start-reverse"
-          markerUnits="userSpaceOnUse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={meta.color} />
-        </marker>
-      </defs>
+      {/* بدون برچسب و فلش: نوع ارتباط فقط با رنگ/الگوی خط و راهنمای رنگ خوانده می‌شود. */}
       <path
         d={path}
         fill="none"
         stroke={meta.color}
-        strokeWidth={active ? meta.width + 1.5 : meta.width}
+        strokeWidth={width}
         strokeDasharray={meta.dash || undefined}
         strokeLinecap="round"
         strokeLinejoin="round"
-        markerEnd={`url(#${markerId})`}
         pointerEvents="none"
-        style={{ filter: active ? `drop-shadow(0 0 3px ${meta.color}66)` : undefined }}
+        opacity={dimmed ? 0.16 : 1}
+        style={{
+          filter: active ? `drop-shadow(0 0 3px ${meta.color}66)` : undefined,
+          transition: 'opacity 120ms ease',
+        }}
       />
-      {zoomLevel !== 'far' ? (
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan pointer-events-none absolute"
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
-            dir="rtl"
-          >
-            <span
-              className="inline-flex items-center gap-1 whitespace-nowrap rounded-pill border bg-surface/95 px-1.5 py-0.5 text-[9.5px] font-medium shadow-xs"
-              style={{ borderColor: `${meta.color}66`, color: meta.color }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
-              {label}
-              {comments.length ? (
-                <span
-                  className="inline-flex items-center gap-0.5 border-s border-current/20 ps-1 text-[8.5px]"
-                  title={`${faDigits(comments.length)} کامنت`}
-                >
-                  <MessageSquare size={8} />
-                  {faDigits(comments.length)}
-                </span>
-              ) : null}
-            </span>
-          </div>
-        </EdgeLabelRenderer>
-      ) : null}
     </>
   );
 }
@@ -617,6 +590,8 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   const [exporting, setExporting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(true);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   // در حالت نمایش، باز کردن موقت گروه‌های جمع‌شده نباید دادهٔ دیاگرام را تغییر دهد.
   const [localExpanded, setLocalExpanded] = useState<Set<string>>(() => new Set());
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -863,6 +838,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
         placing,
         exporting,
         zoomLevel,
+        highlightNodeId: hoveredNode,
         devices: devices ?? EMPTY_DEVICES,
         onOpenDevice: onOpenDevice ?? (() => {}),
         onOpenDiagram: onOpenDiagram ?? (() => {}),
@@ -888,6 +864,11 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
           onEdgesDelete={onEdgesDelete}
           onNodeClick={onInspect}
           onEdgeClick={onEdgeInspect}
+          onNodeMouseEnter={(_event, node) => setHoveredNode(node.id)}
+          onNodeMouseLeave={() => setHoveredNode(null)}
+          onPaneMouseMove={() => {
+            if (hoveredNode) setHoveredNode(null);
+          }}
           onNodeDragStart={() => {
             onDragStart?.();
           }}
@@ -968,6 +949,58 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
             )}
           </div>
         </ReactFlow>
+
+        {/* راهنمای رنگ: تنها مرجع نوع ارتباط، چون برچسب متنی روی خطوط حذف شده است. */}
+        <div className="absolute bottom-3 right-3 z-20" dir="rtl">
+          {legendOpen ? (
+            <div className="w-[142px] rounded-xl border border-ink-200 bg-surface/95 px-2 py-1.5 shadow-soft backdrop-blur">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-ink-600">راهنمای رنگ ارتباط</span>
+                <button
+                  type="button"
+                  onClick={() => setLegendOpen(false)}
+                  className="grid h-5 w-5 place-items-center rounded-md text-ink-400 transition hover:bg-ink-50 hover:text-ink-800"
+                  title="جمع کردن راهنمای رنگ"
+                  aria-label="جمع کردن راهنمای رنگ"
+                  aria-expanded={true}
+                >
+                  <Minus size={12} />
+                </button>
+              </div>
+              <ul className="mt-1 grid gap-0.5">
+                {CONNECTION_TYPES.map((type) => (
+                  <li key={type.kind} className="flex items-center gap-1.5 text-[9.5px] leading-4 text-ink-500">
+                    <span
+                      className="w-4 shrink-0"
+                      style={{ borderTop: `2px ${type.dash ? 'dashed' : 'solid'} ${type.color}` }}
+                    />
+                    <span className="truncate">{type.label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setLegendOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface/95 px-2 py-1 text-[10px] text-ink-500 shadow-soft transition hover:text-ink-800"
+              title="نمایش راهنمای رنگ ارتباط"
+              aria-label="نمایش راهنمای رنگ ارتباط"
+              aria-expanded={false}
+            >
+              <span className="flex -space-x-0.5">
+                {CONNECTION_TYPES.slice(0, 4).map((type) => (
+                  <span
+                    key={type.kind}
+                    className="h-2 w-2 rounded-full ring-1 ring-surface"
+                    style={{ background: type.color }}
+                  />
+                ))}
+              </span>
+              راهنمای رنگ
+            </button>
+          )}
+        </div>
 
         <button
           type="button"

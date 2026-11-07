@@ -93,8 +93,19 @@ export default function DeviceForm({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'general' | 'access' | 'monitoring' | 'geo'>('general');
 
+  // فرم فقط هنگام باز شدن پنجره یا تغییر تجهیز مقداردهی می‌شود؛ به‌روزرسانی
+  // دوره‌ای جزئیات تجهیز (شیء تازه با همان شناسه) نباید تب فعال و ورودی‌های
+  // نیمه‌کارهٔ کاربر را به «اطلاعات عمومی» بازنشانی کند.
+  const formKey = open ? String(device?.id ?? 'new') : null;
+  const loadedKey = React.useRef<string | null>(null);
+
   useEffect(() => {
-    if (!open) return;
+    if (formKey == null) {
+      loadedKey.current = null;
+      return;
+    }
+    if (loadedKey.current === formKey) return;
+    loadedKey.current = formKey;
     setError(null);
     setTab('general');
     if (device) {
@@ -135,7 +146,7 @@ export default function DeviceForm({
     } else {
       setForm({ ...empty });
     }
-  }, [open, device, meta?.groups, settings?.timezone_offset_minutes]);
+  }, [formKey, device, meta?.groups, settings?.timezone_offset_minutes]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 

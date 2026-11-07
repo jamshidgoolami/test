@@ -246,15 +246,10 @@ export default function DiagramInspector({
               ))}
             </select>
           </Field>
-          <Field label="برچسب (اختیاری)" hint="اگر خالی بماند، نام نوع ارتباط روی خط نوشته می‌شود.">
-            <input
-              className="field"
-              value={String(edge.data?.label ?? '')}
-              disabled={!editing}
-              placeholder={meta.label}
-              onChange={(e) => onPatchEdge(edge.id, { label: e.target.value })}
-            />
-          </Field>
+          <p className="rounded-soft border border-ink-100 bg-ink-50/60 p-2 text-[10.5px] leading-5 text-ink-500">
+            برچسب متنی روی خط رسم نمی‌شود تا شبکه‌های شلوغ خوانا بمانند؛ نوع ارتباط فقط از رنگ و الگوی خط و
+            راهنمای رنگ کنار بوم خوانده می‌شود. توضیح بیشتر را در کامنت‌های همین ارتباط بنویسید.
+          </p>
         </Section>
 
         <Section title="نمایش">
@@ -707,7 +702,7 @@ export default function DiagramInspector({
                 </button>
               ) : null}
               <p className="text-[10.5px] leading-5 text-ink-400">
-                این جزء روی بوم، فایل دیگری را نمایندگی می‌کند؛ ارتباط بین دیاگرام‌ها در «نقشهٔ ارتباط» دیده می‌شود و با دوبار کلیک روی همین جزء، دیاگرام مقصد باز می‌شود.
+                این جزء روی بوم، فایل دیگری را نمایندگی می‌کند؛ پیوند دوطرفه است و در دیاگرام مقصد هم جزء متناظر ساخته می‌شود. ارتباط بین دیاگرام‌ها در «نقشهٔ ارتباط» دیده می‌شود و با دوبار کلیک روی همین جزء، دیاگرام مقصد باز می‌شود.
               </p>
               <SizeFields width={width} height={height} editing={editing} onResize={(size) => onPatchNode(node.id, size)} />
             </Section>

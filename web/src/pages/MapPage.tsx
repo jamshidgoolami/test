@@ -2382,11 +2382,6 @@ function DeviceList({
             >
               <button type="button" className="min-w-0 flex-1 text-right" onClick={() => onFlyTo(row.device.id)}>
                 <span className="block truncate text-[12px] font-medium text-ink-700">{row.device.name}</span>
-                <span className="num block text-[10.5px] text-ink-400">
-                  {row.device.latitude == null || row.device.longitude == null
-                    ? 'بدون مختصات — کلیک کنید و محل را روی نقشه مشخص کنید'
-                    : `${row.device.latitude.toFixed(4)}, ${row.device.longitude.toFixed(4)}`}
-                </span>
               </button>
               {row.device.latitude == null ? <MapPin size={12} className="shrink-0 text-sun-500" /> : null}
               <StatusPill status={row.device.status} size="sm" showLabel={false} />
@@ -2780,9 +2775,7 @@ function MarkersList({
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[12px] font-medium text-ink-700">{m.name}</span>
-                      <span className="num block text-[10px] text-ink-400">
-                        {m.typeName} · {m.latitude.toFixed(4)}, {m.longitude.toFixed(4)}
-                      </span>
+                      <span className="num block text-[10px] text-ink-400">{m.typeName}</span>
                     </span>
                   </button>
                   <button type="button" className="btn-ghost btn-xs" title="ویرایش" onClick={() => onEdit(m)}>

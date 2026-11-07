@@ -11,7 +11,6 @@ import {
   Edit3,
   Gauge,
   MapPin,
-  Package,
   Percent,
   RefreshCw,
   Server,
@@ -36,22 +35,17 @@ import { useAuth } from '../lib/auth';
 import { DataFreshness } from '../components/Freshness';
 import { faDigits, fmtDate, fmtDateTime, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRelative, PRIORITY_META, statusMeta } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageLoader, StatusPill, Tabs } from '../components/ui';
-import { ChartFill, ChartScroll, ChartZoomControls, LatencyAreaChart, LossAreaChart, TrendLineChart } from '../components/charts';
+import { ChartFill, DailyCalendarHeatmap, LatencyAreaChart, LossAreaChart, TrendLineChart } from '../components/charts';
+import { buildDailyCalendar, summarizeSeries, type DailyMetric } from '../lib/chart-daily';
 import { AvailabilityExplorer } from '../components/uptime-explorer';
 import MaintenanceForm from '../features/MaintenanceForm';
 import DeviceForm from '../features/DeviceForm';
 import { useLivePing } from '../components/LivePing';
 import { LayoutToolbar, WidgetShell, useDragRef, useWidgetLayout, type WidgetDef } from '../components/widgets';
 import { DETAIL_WIDGETS } from '../lib/widgetdefs';
-import type { Device, Outage, Series } from '../lib/types';
+import type { Device, MaintenanceRecord, Outage, Series } from '../lib/types';
 
 type ChartRange = '1h' | '6h' | '24h' | '7d' | '30d';
-
-/**
- * چند پنجرهٔ زمانی برای هر بازه خوانده شود تا اسکرول افقی «روزهای قبل» معنا
- * داشته باشد؛ مثلاً ۲۴ ساعت با span=7 یعنی هفت روز داده و پنجرهٔ دید ۲۴ ساعت.
- */
-const RANGE_SPAN: Record<ChartRange, number> = { '1h': 6, '6h': 4, '24h': 7, '7d': 4, '30d': 3 };
 
 export default function DeviceDetail() {
   const { id } = useParams();
@@ -68,6 +62,7 @@ export default function DeviceDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);
+  const [maintRecord, setMaintRecord] = useState<MaintenanceRecord | null>(null);
   const [maintDefaults, setMaintDefaults] = useState<{ cause?: string; startedAt?: number }>({});
   const [pinging, setPinging] = useState(false);
   const [revealedPassword, setRevealedPassword] = useState('');
@@ -82,7 +77,6 @@ export default function DeviceDetail() {
   const { data: health, refresh: refreshHealth } = useAsync((signal) => api.deviceHealth(id!, signal), [id], { interval: 60000 });
   const { data: outages, refresh: refreshOutages } = useAsync((signal) => api.outages(id!, 100, signal), [id], { interval: 30000 });
   const { data: maint, refresh: refreshMaint } = useAsync((signal) => api.deviceMaintenance(id!, signal), [id]);
-  const { data: samples } = useAsync((signal) => api.samples(id!, 120, signal), [id]);
 
   useEffect(() => {
     if (live?.ts) refresh();
@@ -261,7 +255,7 @@ export default function DeviceDetail() {
               <MetricBox label="تعداد کل بررسی‌ها" value={fmtNumber(device.totalChecks)} />
             </div>
 
-            <div className="mt-5 grid min-h-0 flex-1 gap-4 sm:grid-cols-2">
+            <div className="mt-5 min-h-0 flex-1">
               <div className="flex flex-col">
                 <div className="mb-1.5 flex items-center justify-between text-[11px]">
                   <span className="text-ink-500">
@@ -276,31 +270,6 @@ export default function DeviceDetail() {
                   <Row label="تلاش مجدد" value={`${faDigits(eff?.retries ?? 0)}`} />
                 </div>
               </div>
-              <div className="flex min-h-0 flex-col">
-                <div className="mb-1.5 text-[11px] text-ink-500">
-                  <Package size={11} className="inline" /> آخرین نمونه‌های ثبت‌شده
-                </div>
-                <div className="min-h-[120px] flex-1 overflow-auto rounded-soft border border-ink-200 bg-surface/70">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>زمان</th>
-                        <th>تأخیر</th>
-                        <th>افت</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(samples?.items ?? []).slice(0, 40).map((s) => (
-                        <tr key={s.ts}>
-                          <td className="text-[11px]">{fmtDateTime(s.ts, tzOffset)}</td>
-                          <td className="num">{fmtMs(s.rtt)}</td>
-                          <td className="num">{fmtPct(s.lossPct)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </div>
           </Card>
         );
@@ -312,43 +281,31 @@ export default function DeviceDetail() {
               <TrendingUp size={17} className="text-brand-500" />
               نمودارهای تاریخی
             </h3>
-            {/* کاوشگر وضعیت/دسترس‌پذیری تمام‌عرض است تا چهار نمای ماهانه تا ساعتی
-                فضای کافی داشته باشند؛ دو نمودار تأخیر و افت بسته زیر آن می‌آیند. */}
+            {/* کاوشگر دسترس‌پذیری تمام‌عرض است؛ کارت‌های تأخیر و افت بسته زیر آن،
+                هرکدام با آمار یک‌نگاه و نمای تقویمی در بازهٔ ۳۰ روزه. */}
             <AvailabilityExplorer
               deviceId={id!}
               currentStatus={device.status}
               threshold={eff?.latencyThreshold}
             />
-            {/* هر کارت نمودار حداقل ۳۰۰ پیکسل ارتفاع دارد؛ اگر ارتفاع ویجت کمتر باشد، خود ویجت اسکرول می‌شود */}
             <div className="grid min-h-0 flex-1 auto-rows-[minmax(300px,1fr)] gap-5 xl:grid-cols-2">
               <SeriesCard
-                title="نمودار Latency"
-                subtitle="تغییرات تأخیر — همراه سایه زیر نمودار"
-                icon={<Activity size={18} />}
+                metric="latency"
                 ranges={['1h', '6h', '24h', '7d', '30d']}
                 defaultRange={(settings?.chart_default_range as ChartRange) || '1h'}
                 deviceId={id!}
                 threshold={eff?.latencyThreshold}
                 tzOffset={tzOffset}
-                render={(series, zoom, height) => (
-                  <ChartScroll factor={series.span ?? 1} zoom={zoom} anchorKey={`${series.span}-${series.points[series.points.length - 1]?.t ?? 0}`}>
-                    <LatencyAreaChart points={series.points} range={series.range} threshold={eff?.latencyThreshold} showMinMax height={Math.max(80, height - 24)} tzOffset={tzOffset} />
-                  </ChartScroll>
-                )}
+                calendar={settings?.calendar === 'gregorian' ? 'gregorian' : 'jalali'}
               />
               <SeriesCard
-                title="نمودار افت بسته"
-                subtitle="درصد افت بسته در بازه‌های زمانی"
-                icon={<Percent size={18} />}
+                metric="loss"
                 ranges={['1h', '24h', '7d', '30d']}
                 defaultRange="24h"
                 deviceId={id!}
+                lossThreshold={eff?.lossThreshold}
                 tzOffset={tzOffset}
-                render={(series, zoom, height) => (
-                  <ChartScroll factor={series.span ?? 1} zoom={zoom} anchorKey={`${series.span}-${series.points[series.points.length - 1]?.t ?? 0}`}>
-                    <LossAreaChart points={series.points} range={series.range} height={Math.max(80, height - 24)} tzOffset={tzOffset} />
-                  </ChartScroll>
-                )}
+                calendar={settings?.calendar === 'gregorian' ? 'gregorian' : 'jalali'}
               />
             </div>
           </div>
@@ -397,7 +354,15 @@ export default function DeviceDetail() {
                     <RefreshCw size={13} />
                     به‌روزرسانی
                   </button>
-                  <button type="button" className="btn-soft btn-xs" onClick={() => { setMaintDefaults({}); setMaintOpen(true); }}>
+                  <button
+                    type="button"
+                    className="btn-soft btn-xs"
+                    onClick={() => {
+                      setMaintRecord(null);
+                      setMaintDefaults({});
+                      setMaintOpen(true);
+                    }}
+                  >
                     <Wrench size={13} />
                     ثبت سابقه
                   </button>
@@ -463,7 +428,15 @@ export default function DeviceDetail() {
               subtitle={`${faDigits(maint?.items?.length ?? 0)} سابقه ثبت‌شده برای این تجهیز`}
               icon={<Wrench size={18} />}
               action={
-                <button type="button" className="btn-soft btn-xs" onClick={() => { setMaintDefaults({}); setMaintOpen(true); }}>
+                <button
+                  type="button"
+                  className="btn-soft btn-xs"
+                  onClick={() => {
+                    setMaintRecord(null);
+                    setMaintDefaults({});
+                    setMaintOpen(true);
+                  }}
+                >
                   <Wrench size={13} />
                   سابقه جدید
                 </button>
@@ -482,6 +455,19 @@ export default function DeviceDetail() {
                           <Badge tone="brand">{m.cause}</Badge>
                           <Badge tone="sun">{m.action}</Badge>
                           {m.status === 'open' ? <Badge tone="red">در جریان</Badge> : <Badge tone="emerald">پایان‌یافته</Badge>}
+                          <button
+                            type="button"
+                            className="btn-ghost btn-xs"
+                            title="ویرایش این سابقه"
+                            onClick={() => {
+                              setMaintRecord(m);
+                              setMaintDefaults({});
+                              setMaintOpen(true);
+                            }}
+                          >
+                            <Edit3 size={12} />
+                            ویرایش
+                          </button>
                         </span>
                       </div>
                       <p className="mt-2 text-[11.5px] leading-relaxed text-ink-500">{m.description || '—'}</p>
@@ -507,60 +493,95 @@ export default function DeviceDetail() {
 
   return (
     <div className="space-y-5">
-      {/* سربرگ */}
+      {/* سربرگ فشرده: هویت و وضعیت تجهیز، اقدام‌ها و آمار در دو نوار کوتاه */}
       <Card className="relative overflow-hidden">
-        <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-brand-400/10 blur-3xl" />
-        <div className="pointer-events-none absolute -right-10 -bottom-20 h-56 w-56 rounded-full bg-sun-300/20 blur-3xl" />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-4">
-            <button type="button" className="btn-ghost btn-xs mt-1" onClick={() => navigate('/devices')} aria-label="بازگشت">
+        <div className="pointer-events-none absolute -left-16 -top-20 h-44 w-44 rounded-full bg-brand-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-10 -bottom-24 h-44 w-44 rounded-full bg-sun-300/20 blur-3xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              className="btn-ghost btn-xs"
+              onClick={() => navigate('/devices')}
+              aria-label="بازگشت به فهرست تجهیزات"
+              title="بازگشت"
+            >
               <ArrowRight size={15} />
             </button>
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-glow">
-              <Server size={24} />
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-glow">
+              <Server size={20} />
             </span>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-lg font-bold text-ink-800">{device.name}</h2>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h2 className="truncate text-base font-bold leading-6 text-ink-800">{device.name}</h2>
                 <StatusPill status={device.status} />
-                <Badge className={PRIORITY_META[device.priority]?.className}>اولویت {PRIORITY_META[device.priority]?.label}</Badge>
-                {!device.enabled ? <Badge tone="ink">غیرفعال</Badge> : null}
-                {!device.monitoringEnabled ? <Badge tone="sun">پایش غیرفعال</Badge> : null}
+                <Badge className={`${PRIORITY_META[device.priority]?.className ?? ''} !px-1.5 !py-0 text-[10px]`}>
+                  اولویت {PRIORITY_META[device.priority]?.label}
+                </Badge>
+                {!device.enabled ? (
+                  <Badge tone="ink" className="!px-1.5 !py-0 text-[10px]">
+                    غیرفعال
+                  </Badge>
+                ) : null}
+                {!device.monitoringEnabled ? (
+                  <Badge tone="sun" className="!px-1.5 !py-0 text-[10px]">
+                    پایش غیرفعال
+                  </Badge>
+                ) : null}
                 {device.serviceStatus === 'unavailable' ? (
-                  <Badge tone="sun">
+                  <Badge tone="sun" className="!px-1.5 !py-0 text-[10px]">
                     سرویس{device.servicePort ? ` پورت ${device.servicePort}` : ''} قطع
                   </Badge>
                 ) : null}
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-ink-500">
-                <span className="num">{device.ip}</span>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-500">
+                <span className="num font-medium text-ink-600">{device.ip}</span>
                 <span>{device.deviceType}</span>
                 {device.groupName ? (
-                  <span className="chip" style={{ borderColor: `${device.groupColor}44`, background: `${device.groupColor}12`, color: device.groupColor ?? undefined }}>
+                  <span
+                    className="chip !py-0 text-[10px]"
+                    style={{
+                      borderColor: `${device.groupColor}44`,
+                      background: `${device.groupColor}12`,
+                      color: device.groupColor ?? undefined,
+                    }}
+                  >
                     {device.groupName}
                   </span>
                 ) : null}
                 {device.location ? (
                   <span className="inline-flex items-center gap-1">
-                    <MapPin size={12} />
+                    <MapPin size={11} />
                     {device.location}
                   </span>
                 ) : null}
-                {(device.tags || []).map((t) => (
-                  <span key={t.id} className="chip" style={{ borderColor: `${t.color}44`, background: `${t.color}12`, color: t.color }}>
+                {(device.tags || []).slice(0, 2).map((t) => (
+                  <span
+                    key={t.id}
+                    className="chip !py-0 text-[10px]"
+                    style={{ borderColor: `${t.color}44`, background: `${t.color}12`, color: t.color }}
+                  >
                     {t.name}
                   </span>
                 ))}
+                {(device.tags || []).length > 2 ? (
+                  <span
+                    className="text-[10px] text-ink-400"
+                    title={(device.tags || []).map((t) => t.name).join('، ')}
+                  >
+                    +{(device.tags || []).length - 2} برچسب
+                  </span>
+                ) : null}
               </div>
               {device.statusReason ? (
-                <p className="mt-2 inline-flex items-center gap-1.5 rounded-soft bg-sun-50 px-2.5 py-1 text-[11px] text-warning">
-                  <AlertTriangle size={12} />
+                <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-soft bg-sun-50 px-2 py-0.5 text-[10.5px] text-warning">
+                  <AlertTriangle size={11} />
                   {device.statusReason}
                 </p>
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <LayoutToolbar
               editMode={editMode}
               setEditMode={layoutHook.setEditMode}
@@ -572,23 +593,32 @@ export default function DeviceDetail() {
             {canProbe ? (
               <>
                 <button type="button" className="btn-primary btn-xs" onClick={ping} disabled={pinging}>
-                  <Wifi size={14} />
+                  <Wifi size={13} />
                   {pinging ? 'در حال ارسال…' : 'Ping لحظه‌ای'}
                 </button>
                 <button
                   type="button"
                   className={`btn-xs ${livePing.has(device.id) ? 'btn-soft' : 'btn-ghost'}`}
-                  onClick={() => livePing.toggle({ id: device.id, name: device.name, ip: device.ip, status: device.status })}
+                  onClick={() =>
+                    livePing.toggle({ id: device.id, name: device.name, ip: device.ip, status: device.status })
+                  }
+                  title="پنجرهٔ پینگ زنده"
+                  aria-label="پنجرهٔ پینگ زنده"
+                  aria-pressed={livePing.has(device.id)}
                 >
                   <Gauge size={14} />
-                  پنجرهٔ پینگ زنده
                 </button>
               </>
             ) : null}
             {canWrite ? (
-              <button type="button" className="btn-ghost btn-xs" onClick={() => setEditOpen(true)}>
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={() => setEditOpen(true)}
+                title="ویرایش تجهیز"
+                aria-label="ویرایش تجهیز"
+              >
                 <Edit3 size={14} />
-                ویرایش
               </button>
             ) : null}
             {canMaintenance ? (
@@ -596,42 +626,58 @@ export default function DeviceDetail() {
                 type="button"
                 className="btn-ghost btn-xs"
                 onClick={() => {
+                  setMaintRecord(null);
                   setMaintDefaults({ cause: outages?.open ? 'مشکل شبکه' : undefined, startedAt: device.currentOutageStartedAt ?? Date.now() });
                   setMaintOpen(true);
                 }}
+                title="ثبت تعمیرات"
+                aria-label="ثبت تعمیرات"
               >
                 <Wrench size={14} />
-                ثبت تعمیرات
               </button>
             ) : null}
             {device.latitude != null ? (
-              <Link className="btn-ghost btn-xs" to={`/map?device=${device.id}`}>
+              <Link className="btn-ghost btn-xs" to={`/map?device=${device.id}`} title="نمایش روی نقشه" aria-label="نمایش روی نقشه">
                 <MapPin size={14} />
-                نمایش روی نقشه
               </Link>
             ) : null}
             {canWrite ? (
-              <button type="button" className="btn-danger btn-xs" onClick={removeDevice}>
+              <button
+                type="button"
+                className="btn-danger btn-xs"
+                onClick={removeDevice}
+                title="حذف تجهیز"
+                aria-label="حذف تجهیز"
+              >
                 <Trash2 size={14} />
-                حذف
               </button>
             ) : null}
-            <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
+            <button type="button" className="btn-ghost btn-xs" onClick={refresh} title="تازه‌سازی" aria-label="تازه‌سازی">
               <RefreshCw size={14} />
             </button>
           </div>
         </div>
 
-        <div className="relative mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MiniStat label="وضعیت فعلی" value={meta.label} tone={meta.text} icon={<Activity size={15} />} />
-          <MiniStat label="آخرین بررسی" value={fmtRelative(device.lastCheckAt)} hint={fmtDateTime(device.lastCheckAt, tzOffset)} icon={<Clock size={15} />} />
+        <div className="relative mt-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-white/70 bg-surface/60 px-3 py-2 backdrop-blur sm:flex sm:items-center sm:divide-x sm:divide-ink-100/80">
+          <MiniStat label="وضعیت فعلی" value={meta.label} tone={meta.text} icon={<Activity size={14} />} />
+          <MiniStat
+            label="آخرین بررسی"
+            value={fmtRelative(device.lastCheckAt)}
+            hint={fmtDateTime(device.lastCheckAt, tzOffset)}
+            icon={<Clock size={14} />}
+          />
           <MiniStat
             label="مدت قطعی فعلی"
             value={device.currentOutageStartedAt ? fmtDuration(currentOutageSec) : '—'}
             tone={device.currentOutageStartedAt ? 'text-danger' : 'text-success'}
-            icon={<Timer size={15} />}
+            icon={<Timer size={14} />}
           />
-          <MiniStat label="آخرین قطعی" value={fmtRelative(device.lastOutageAt)} hint={fmtDateTime(device.lastOutageAt, tzOffset)} icon={<ShieldAlert size={15} />} />
+          <MiniStat
+            label="آخرین قطعی"
+            value={fmtRelative(device.lastOutageAt)}
+            hint={fmtDateTime(device.lastOutageAt, tzOffset)}
+            icon={<ShieldAlert size={14} />}
+          />
         </div>
       </Card>
 
@@ -681,9 +727,13 @@ export default function DeviceDetail() {
       <DeviceForm open={editOpen} device={device} onClose={() => setEditOpen(false)} onSaved={() => { refresh(); refreshMeta(); }} />
       <MaintenanceForm
         open={maintOpen}
-        onClose={() => setMaintOpen(false)}
+        onClose={() => {
+          setMaintOpen(false);
+          setMaintRecord(null);
+        }}
+        record={maintRecord}
         deviceId={device.id}
-        outageId={outages?.open?.id ?? null}
+        outageId={maintRecord ? null : outages?.open?.id ?? null}
         defaults={maintDefaults}
         onSaved={() => {
           // سابقهٔ تازه باید بلافاصله در فهرست همین صفحه دیده شود.
@@ -910,13 +960,16 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
 /* ------------------------------ helpers ------------------------------ */
 function MiniStat({ label, value, hint, icon, tone = 'text-ink-700' }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode; tone?: string }) {
   return (
-    <div className="rounded-soft border border-white/70 bg-surface/70 p-3 backdrop-blur">
-      <div className="flex items-center gap-1.5 text-[10.5px] text-ink-400">
-        {icon}
-        {label}
+    <div className="flex min-w-0 flex-1 items-center gap-2 sm:px-4 sm:first:ps-0">
+      {icon ? (
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink-50 text-ink-400">{icon}</span>
+      ) : null}
+      <div className="min-w-0">
+        <p className="truncate text-[9.5px] leading-4 text-ink-400">{label}</p>
+        <p className={`truncate text-[12px] font-semibold leading-5 ${tone}`} title={hint}>
+          {value}
+        </p>
       </div>
-      <p className={`mt-1 text-[14px] font-semibold ${tone}`}>{value}</p>
-      {hint ? <p className="num mt-0.5 text-[10px] text-ink-400">{hint}</p> : null}
     </div>
   );
 }
@@ -970,96 +1023,153 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function SeriesCard({
-  title,
-  subtitle,
-  icon,
+  metric,
   ranges,
   defaultRange,
   deviceId,
   threshold,
+  lossThreshold,
   tzOffset,
-  zoomControls = true,
-  render,
+  calendar,
 }: {
-  title: string;
-  subtitle: string;
-  icon: React.ReactNode;
+  metric: DailyMetric;
   ranges: ChartRange[];
   defaultRange: ChartRange;
   deviceId: string;
+  /** آستانهٔ تأخیر (ms) */
   threshold?: number | null;
+  /** آستانهٔ افت بسته (٪) */
+  lossThreshold?: number | null;
   tzOffset: number;
-  /** نمودارهایی که زوم داخلی دارند (تاریخچهٔ وضعیت) دکمهٔ زوم تکراری نمی‌خواهند */
-  zoomControls?: boolean;
-  render: (series: Series, zoom: number, height: number) => React.ReactNode;
+  calendar: 'jalali' | 'gregorian';
 }) {
   const [range, setRange] = useState<ChartRange>(defaultRange);
-  const [zoom, setZoom] = useState(1);
-  const span = RANGE_SPAN[range] ?? 1;
-  const { data, loading, error, refresh } = useAsync<Series>((signal) => api.series(deviceId, range, signal, span), [deviceId, range, span], {
+  const { data, loading, error, refresh } = useAsync<Series>((signal) => api.series(deviceId, range, signal), [deviceId, range], {
     interval: range === '1h' || range === '6h' ? 60000 : 180000,
   });
 
-  const stats = useMemo(() => {
-    if (!data?.points?.length) return null;
-    // آمار فقط از پنجرهٔ انتخاب‌شده (نه داده‌های قبلی که برای اسکرول آمده‌اند).
-    const totalSpan = Math.max(1, data.span ?? span);
-    const windowPoints = totalSpan > 1 ? data.points.slice(-Math.max(1, Math.round(data.points.length / totalSpan))) : data.points;
-    const rtts = windowPoints.map((p) => p.rtt).filter((v): v is number => v != null);
-    const avg = rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : null;
-    const avail = windowPoints.reduce((a, b) => a + b.availability, 0) / windowPoints.length;
-    return { avg, avail, count: windowPoints.length };
-  }, [data, span]);
+  const points = data?.points ?? [];
+  const isCalendar = range === '30d';
+  const metricThreshold = metric === 'latency' ? threshold : lossThreshold;
+  const daily = useMemo(
+    () => (isCalendar && data ? buildDailyCalendar(points, { metric, tzOffset, calendar, from: data.from, to: data.to }) : []),
+    [isCalendar, data, points, metric, tzOffset, calendar]
+  );
+  const stats = useMemo(() => summarizeSeries(points, metric, metricThreshold), [points, metric, metricThreshold]);
 
-  const rangeLabels: Record<ChartRange, string> = { '1h': '۱ ساعت', '6h': '۶ ساعت', '24h': '۲۴ ساعت', '7d': '۷ روز', '30d': '۳۰ روز' };
+  const rangeLabels: Record<ChartRange, string> = {
+    '1h': '۱ ساعت',
+    '6h': '۶ ساعت',
+    '24h': '۲۴ ساعت',
+    '7d': '۷ روز',
+    '30d': '۳۰ روز',
+  };
+  const title = metric === 'latency' ? 'نمودار Latency' : 'نمودار افت بسته';
+  const subtitle = isCalendar
+    ? 'هر خانه یک روز — میانگین همان روز'
+    : metric === 'latency'
+      ? 'تأخیر میانگین هر بازه، همراه آستانه'
+      : 'درصد افت بسته در هر بازه، همراه آستانه';
+
+  const chips =
+    metric === 'latency'
+      ? [
+          { label: 'میانگین تأخیر', value: fmtMs(stats.avg), tone: 'text-ink-800' },
+          { label: 'کمترین', value: fmtMs(stats.min), tone: 'text-success' },
+          {
+            label: 'بیشترین',
+            value: fmtMs(stats.max),
+            tone: metricThreshold != null && (stats.max ?? 0) > metricThreshold ? 'text-danger' : 'text-ink-800',
+          },
+          {
+            label: 'دسترس‌پذیری',
+            value: fmtPct(stats.availability, 2),
+            tone: (stats.availability ?? 100) < 98 ? 'text-warning' : 'text-success',
+          },
+        ]
+      : [
+          { label: 'میانگین افت', value: fmtPct(stats.avg, 1), tone: 'text-ink-800' },
+          {
+            label: 'بیشترین افت',
+            value: fmtPct(stats.max, 1),
+            tone: (stats.max ?? 0) > 0 ? 'text-warning' : 'text-success',
+          },
+          {
+            label: 'بازه‌های بالای آستانه',
+            value: `${faDigits(stats.over)} از ${faDigits(stats.total)}`,
+            tone: stats.over ? 'text-warning' : 'text-success',
+          },
+          {
+            label: 'دسترس‌پذیری',
+            value: fmtPct(stats.availability, 2),
+            tone: (stats.availability ?? 100) < 98 ? 'text-warning' : 'text-success',
+          },
+        ];
 
   return (
     <Card className="flex flex-1 flex-col">
       <CardHeader
         title={title}
         subtitle={subtitle}
-        icon={icon}
+        icon={metric === 'latency' ? <Activity size={18} /> : <Percent size={18} />}
         action={
-          <div className="flex items-center gap-2">
-            <Tabs size="sm" value={range} onChange={setRange} tabs={ranges.map((r) => ({ value: r, label: rangeLabels[r] }))} />
-            {zoomControls ? <ChartZoomControls zoom={zoom} onChange={setZoom} /> : null}
-          </div>
+          <Tabs
+            size="sm"
+            value={range}
+            onChange={setRange}
+            tabs={ranges.map((r) => ({ value: r, label: rangeLabels[r] }))}
+          />
         }
       />
       {loading && !data ? (
-        <div className="skeleton mt-3 min-h-[220px] flex-1" />
+        <div className="skeleton mt-3 min-h-[200px] flex-1" />
       ) : error && !data ? (
         <div className="mt-3 min-h-0 flex-1">
           <ErrorState message={error} onRetry={refresh} />
         </div>
-      ) : !data?.points?.length ? (
+      ) : !points.length ? (
         <div className="mt-3 min-h-0 flex-1">
-          <EmptyState title="داده‌ای برای این بازه ثبت نشده" description="بازه دیگری را انتخاب کنید یا منتظر ثبت نمونه‌های جدید توسط موتور مانیتورینگ بمانید." icon={<Gauge size={22} />} />
+          <EmptyState
+            title="داده‌ای برای این بازه ثبت نشده"
+            description="بازه دیگری را انتخاب کنید یا منتظر ثبت نمونه‌های جدید توسط موتور مانیتورینگ بمانید."
+            icon={<Gauge size={22} />}
+          />
         </div>
       ) : (
-        <ChartFill className="mt-3 min-h-0 flex-1" minHeight={200}>
-          {(height) => render(data, zoom, height)}
-        </ChartFill>
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {chips.map((chip) => (
+              <div key={chip.label} className="rounded-soft border border-ink-200/70 bg-surface/70 px-2.5 py-1.5">
+                <p className="truncate text-[10px] text-ink-400">{chip.label}</p>
+                <p className={`num mt-0.5 truncate text-[12.5px] font-semibold ${chip.tone}`}>{chip.value}</p>
+              </div>
+            ))}
+          </div>
+          <ChartFill className="mt-3 min-h-0 flex-1" minHeight={isCalendar ? 190 : 170}>
+            {(height) =>
+              isCalendar ? (
+                <DailyCalendarHeatmap
+                  days={daily}
+                  metric={metric}
+                  threshold={metricThreshold}
+                  tzOffset={tzOffset}
+                  calendar={calendar}
+                  height={height}
+                />
+              ) : metric === 'latency' ? (
+                <LatencyAreaChart points={points} range={range} threshold={threshold} height={height} tzOffset={tzOffset} />
+              ) : (
+                <LossAreaChart points={points} range={range} threshold={lossThreshold} height={height} tzOffset={tzOffset} />
+              )
+            }
+          </ChartFill>
+          <p className="mt-2 border-t border-ink-100 pt-2 text-[10.5px] text-ink-400">
+            {isCalendar
+              ? 'رنگ هر روز فاصلهٔ میانگین آن روز از آستانه است؛ برای جزئیات روی روز کلیک کنید.'
+              : 'برای مشاهدهٔ مقدار دقیق هر نقطه، نشانگر را روی نمودار ببرید.'}
+          </p>
+        </>
       )}
-      {stats ? (
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-ink-100 pt-3 text-[11px] text-ink-500">
-          <span>
-            میانگین تأخیر: <span className="num font-medium text-ink-700">{fmtMs(stats.avg)}</span>
-          </span>
-          <span>
-            دسترس‌پذیری بازه: <span className="num font-medium text-ink-700">{fmtPct(stats.avail, 2)}</span>
-          </span>
-          <span>
-            تعداد بازه‌ها: <span className="num font-medium text-ink-700">{faDigits(stats.count)}</span>
-          </span>
-          {threshold ? (
-            <span className="ms-auto inline-flex items-center gap-1.5">
-              <span className="h-0.5 w-5 rounded" style={{ background: '#f59e0b' }} />
-              آستانه {faDigits(threshold)} ms
-            </span>
-          ) : null}
-        </div>
-      ) : null}
     </Card>
   );
 }

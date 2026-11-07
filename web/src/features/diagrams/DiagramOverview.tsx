@@ -55,14 +55,12 @@ import {
   BaseEdge,
   ConnectionMode,
   Controls,
-  EdgeLabelRenderer,
   Handle,
-  MarkerType,
   MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
-  getSmoothStepPath,
+  getBezierPath,
   useNodesInitialized,
   useReactFlow,
 } from '@xyflow/react';
@@ -445,57 +443,32 @@ function OverviewLinkEdge({
   data,
   selected,
   style,
-  markerEnd,
 }: EdgeProps<OverviewEdge>) {
-  const [path, labelX, labelY] = getSmoothStepPath({
+  // خط مورب/خمیده برای شبکه‌های شلوغ؛ بدون فلش و بدون برچسب متنی.
+  const [path] = getBezierPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
-    borderRadius: 18,
-    offset: 26,
+    curvature: 0.3,
   });
   const tree = !!data?.tree;
-  const meta = connectionType(data?.kind);
-  const label = !tree ? data?.nodeLabel || data?.label || '' : '';
   const width = Number(style?.strokeWidth ?? 2);
-
   return (
     <>
       {!tree && selected ? (
-        <path d={path} fill="none" stroke="rgb(var(--nw-surface))" strokeWidth={width + 6} strokeLinecap="round" opacity={0.95} />
+        <path
+          d={path}
+          fill="none"
+          stroke="rgb(var(--nw-surface))"
+          strokeWidth={width + 6}
+          strokeLinecap="round"
+          opacity={0.95}
+        />
       ) : null}
-      <BaseEdge
-        id={id}
-        path={path}
-        markerEnd={markerEnd}
-        style={style}
-        interactionWidth={tree ? 0 : 24}
-      />
-      {label ? (
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan pointer-events-none absolute"
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
-            dir="rtl"
-          >
-            <span
-              className={`inline-flex max-w-[190px] items-center gap-1 rounded-pill border bg-surface/95 px-1.5 py-0.5 text-[9.5px] font-medium shadow-xs ${
-                selected ? 'ring-2 ring-sky-200' : ''
-              }`}
-              style={{ borderColor: `${meta.color}66`, color: meta.color }}
-              title={`${meta.label} · ${label}`}
-            >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: meta.color }} />
-              <span className="truncate">
-                {meta.label} · {label}
-              </span>
-            </span>
-          </div>
-        </EdgeLabelRenderer>
-      ) : null}
+      <BaseEdge id={id} path={path} style={style} interactionWidth={tree ? 0 : 26} />
     </>
   );
 }
@@ -661,7 +634,6 @@ function OverviewBoard({
           strokeWidth: active ? meta.width + 1.2 : meta.width,
           strokeDasharray: meta.dash || undefined,
         },
-        markerEnd: { type: MarkerType.ArrowClosed, color: meta.color, width: 16, height: 16 },
       });
     }
     return [...treeEdges, ...linkEdges];
@@ -808,7 +780,9 @@ function OverviewBoard({
       const from = Number(connection.source);
       const to = Number(connection.target);
       if (!from || !to || from === to) return false;
-      return !links.some((link) => link.from === from && link.to === to);
+      return !links.some(
+        (link) => (link.from === from && link.to === to) || (link.from === to && link.to === from)
+      );
     },
     [busy, canEdit, links]
   );
@@ -856,7 +830,7 @@ function OverviewBoard({
       if (!canEdit || busy) return;
       if (
         !window.confirm(
-          `پیوند «${title}» حذف شود؟ فقط همین جزء پیوند از بوم دیاگرام مبدأ برداشته می‌شود و به بقیهٔ اجزا کاری ندارد.`
+          `پیوند «${title}» حذف شود؟ چون پیوند دوطرفه است، جزء متناظر در هر دو دیاگرام برداشته می‌شود و به بقیهٔ اجزا کاری ندارد.`
         )
       ) {
         return;
