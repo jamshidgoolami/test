@@ -49,7 +49,7 @@ export default function DiagramDevicePalette({ editing, onPick }: DiagramDeviceP
         <div className="flex items-center gap-1">
           <p className="min-w-0 flex-1 text-[10px] leading-4 text-ink-400">
             {editing
-              ? 'روی تجهیز کلیک کنید، سپس روی بوم کلیک کنید.'
+              ? 'تجهیز را روی بوم بکشید یا کلیک کنید و سپس روی بوم کلیک کنید.'
               : 'برای افزودن به بوم، حالت ویرایش را فعال کنید.'}
           </p>
           <button
@@ -82,9 +82,18 @@ export default function DiagramDevicePalette({ editing, onPick }: DiagramDeviceP
                   <button
                     type="button"
                     disabled={!editing}
+                    draggable={editing}
+                    onDragStart={(event) => {
+                      if (!editing) {
+                        event.preventDefault();
+                        return;
+                      }
+                      event.dataTransfer.setData('application/x-netwatch-device', String(device.id));
+                      event.dataTransfer.effectAllowed = 'copy';
+                    }}
                     onClick={() => onPick(device)}
-                    title={editing ? `افزودن «${device.name}» به بوم` : 'حالت ویرایش غیرفعال است'}
-                    className="group flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-right transition hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-55"
+                    title={editing ? `افزودن «${device.name}» به بوم (کلیک یا کشیدن)` : 'حالت ویرایش غیرفعال است'}
+                    className="group flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-right transition hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-55 active:cursor-grabbing [&[draggable=true]]:cursor-grab"
                   >
                     <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${meta.dot}`} aria-hidden />
                     <span className="min-w-0 flex-1">

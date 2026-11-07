@@ -55,7 +55,9 @@ import {
   toFlowEdge,
   toFlowNode,
 } from '../lib/diagrams';
-import type { AlignMode, DiagramFlowEdge, DiagramFlowNode } from '../lib/diagrams';
+import type { AlignMode, DiagramFlowEdge, DiagramFlowNode, DiagramStatusFilter } from '../lib/diagrams';
+import { autoLayoutNodes } from '../lib/diagram-layout';
+import type { AutoLayoutMode } from '../lib/diagram-layout';
 import type {
   Device,
   DiagramConnectionKind,
@@ -157,6 +159,11 @@ export default function Diagrams() {
   const [snapToGrid, setSnapToGrid] = useState(() => readFlag('nw.diagrams.snap', false));
   const [titleBlock, setTitleBlock] = useState(() => readFlag('nw.diagrams.titleblock', true));
   const [autoSave, setAutoSave] = useState(() => readFlag('nw.diagrams.autosave', true));
+  const [layoutMode, setLayoutMode] = useState<AutoLayoutMode>('hierarchical');
+  const [showIp, setShowIp] = useState(() => readFlag('nw.diagrams.showip', true));
+  const [showConnectionInfo, setShowConnectionInfo] = useState(() => readFlag('nw.diagrams.conninfo', true));
+  const [statusFilter, setStatusFilter] = useState<DiagramStatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [syncing, setSyncing] = useState(false);
   // هنگام کشیدن، ذخیرهٔ خودکار موقتاً متوقف می‌شود تا وسط حرکت اجرا نشود.
   const [dragging, setDragging] = useState(false);
@@ -315,6 +322,14 @@ export default function Diagrams() {
   useEffect(() => {
     writeFlag('nw.diagrams.autosave', autoSave);
   }, [autoSave]);
+
+  useEffect(() => {
+    writeFlag('nw.diagrams.showip', showIp);
+  }, [showIp]);
+
+  useEffect(() => {
+    writeFlag('nw.diagrams.conninfo', showConnectionInfo);
+  }, [showConnectionInfo]);
 
   useEffect(
     () => () => {
@@ -481,39 +496,47 @@ export default function Diagrams() {
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (!connection.source || !connection.target || connection.source === connection.target) return;
+      if (
+        !editing ||
+        !connection.source ||
+        !connection.target ||
+        connection.source === connection.target
+      ) {
+        return;
+      }
+      const source = connection.source;
+      const target = connection.target;
       const sourceHandle = connection.sourceHandle ?? 'right';
       const targetHandle = connection.targetHandle ?? 'left';
-      applyCanvas((prev) => {
-        if (
-          prev.edges.some(
-            (edge) =>
-              edge.source === connection.source &&
-              edge.target === connection.target &&
-              edge.sourceHandle === sourceHandle &&
-              edge.targetHandle === targetHandle
-          )
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          edges: [
-            ...prev.edges,
-            {
-              id: newId(),
-              type: 'diagram',
-              source: connection.source as string,
-              target: connection.target as string,
-              sourceHandle,
-              targetHandle,
-              data: { kind: connectionKindRef.current, label: '' },
-            },
-          ],
-        };
-      });
+      const snapshot = canvas.snapshot();
+      // ارتباط تکراری (در هر جهت) خط تازه نمی‌سازد؛ یک جفت تجهیز یک یال دارد.
+      if (
+        snapshot.edges.some(
+          (edge) =>
+            (edge.source === source && edge.target === target) ||
+            (edge.source === target && edge.target === source)
+        )
+      ) {
+        push('این دو جزء از قبل به هم متصل هستند.', 'info');
+        return;
+      }
+      applyCanvas((prev) => ({
+        ...prev,
+        edges: [
+          ...prev.edges,
+          {
+            id: newId(),
+            type: 'diagram',
+            source,
+            target,
+            sourceHandle,
+            targetHandle,
+            data: { kind: connectionKindRef.current, label: '' },
+          },
+        ],
+      }));
     },
-    [applyCanvas]
+    [applyCanvas, canvas, editing, push]
   );
 
   const handleNodesDelete = useCallback(
@@ -664,6 +687,89 @@ export default function Diagrams() {
     [applyCanvas, push]
   );
 
+  const runAutoLayout = useCallback(
+    (mode: AutoLayoutMode) => {
+      setLayoutMode(mode);
+      const changed = applyCanvas((prev) => ({
+        ...prev,
+        nodes: autoLayoutNodes(prev.nodes, prev.edges, { mode }),
+      }));
+      if (!changed) {
+        push('گره‌ها همین حالا مرتب هستند یا همهٔ گره‌ها قفل شده‌اند.', 'info');
+        return;
+      }
+      push(
+        mode === 'grouped'
+          ? 'چیدمان گروه‌بندی‌شده اعمال شد؛ با واگرد قابل بازگشت است.'
+          : mode === 'horizontal'
+            ? 'چیدمان افقی اعمال شد؛ با واگرد قابل بازگشت است.'
+            : 'چیدمان سلسله‌مراتبی اعمال شد؛ با واگرد قابل بازگشت است.',
+        'success'
+      );
+      window.setTimeout(() => canvasRef.current?.fitView(), 90);
+    },
+    [applyCanvas, push]
+  );
+
+  /** Drag & Drop از پنل تجهیزات: همان دادهٔ تجهیز واقعی، نه وضعیت ساختگی. */
+  const dropDevice = useCallback(
+    (deviceId: number, position: { x: number; y: number }) => {
+      if (!editing) return;
+      const device = devicesById.get(deviceId);
+      if (!device) return;
+      const created = createDeviceNode(deviceCatalogKey(device.deviceType), position);
+      const node: DiagramFlowNode = {
+        ...created,
+        selected: true,
+        data: {
+          ...created.data,
+          label: device.name,
+          deviceId: device.id,
+          ip: device.ip,
+          model: device.model || created.data.model || '',
+          serial: device.serial || '',
+          syncedAt: Date.now(),
+        },
+      };
+      applyCanvas((prev) => ({
+        nodes: [...prev.nodes.map((item) => ({ ...item, selected: false })), node],
+        edges: prev.edges.map((edge) => ({ ...edge, selected: false })),
+      }));
+      push(`«${device.name}» به بوم اضافه شد.`, 'success');
+    },
+    [applyCanvas, devicesById, editing, push]
+  );
+
+  const toggleSelectionLock = useCallback(() => {
+    const selected = canvas.snapshot().nodes.filter((node) => node.selected);
+    if (!selected.length) return;
+    const nextLocked = !selected.every((node) => node.data.locked === true);
+    applyCanvas((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) =>
+        node.selected ? { ...node, data: { ...node.data, locked: nextLocked } } : node
+      ),
+    }));
+    push(
+      nextLocked
+        ? `موقعیت ${faDigits(selected.length)} جزء قفل شد.`
+        : `قفل موقعیت ${faDigits(selected.length)} جزء باز شد.`,
+      'success'
+    );
+  }, [applyCanvas, canvas, push]);
+
+  const searchMatches = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return undefined;
+    return nodes.filter(
+      (node) =>
+        node.type === 'device' &&
+        [node.data.label, node.data.ip, node.data.model, node.data.deviceType].some((value) =>
+          String(value ?? '').toLowerCase().includes(needle)
+        )
+    ).length;
+  }, [nodes, searchQuery]);
+
   const recolorSelection = useCallback(
     (color: string) => {
       applyCanvas((prev) => ({
@@ -739,7 +845,7 @@ export default function Diagrams() {
   const nudgeSelection = useCallback(
     (dx: number, dy: number) => {
       const snapshot = canvas.snapshot();
-      if (!snapshot.nodes.some((node) => node.selected)) return;
+      if (!snapshot.nodes.some((node) => node.selected && !node.data.locked)) return;
       if (!nudgeSnapshot.current) {
         nudgeSnapshot.current = snapshot;
         canvas.pushSnapshot(snapshot);
@@ -754,7 +860,7 @@ export default function Diagrams() {
         (prev) => ({
           ...prev,
           nodes: prev.nodes.map((node) =>
-            node.selected
+            node.selected && !node.data.locked
               ? { ...node, position: { x: round(node.position.x + dx), y: round(node.position.y + dy) } }
               : node
           ),
@@ -1452,6 +1558,25 @@ export default function Diagrams() {
               onDuplicate={duplicateSelection}
               onAlign={alignSelection}
               onDistribute={distributeSelection}
+              layoutMode={layoutMode}
+              onAutoLayout={runAutoLayout}
+              onZoomIn={() => canvasRef.current?.zoomIn()}
+              onZoomOut={() => canvasRef.current?.zoomOut()}
+              onFit={() => canvasRef.current?.fitView()}
+              showIp={showIp}
+              onToggleIp={() => setShowIp((value) => !value)}
+              showConnectionInfo={showConnectionInfo}
+              onToggleConnectionInfo={() => setShowConnectionInfo((value) => !value)}
+              statusFilter={statusFilter}
+              onStatusFilter={setStatusFilter}
+              searchQuery={searchQuery}
+              onSearchQuery={setSearchQuery}
+              searchMatches={searchMatches}
+              lockedSelected={selectedNodes.length > 0 && selectedNodes.every((node) => node.data.locked === true)}
+              onToggleLock={toggleSelectionLock}
+              dirty={dirty}
+              saving={saving}
+              onSave={() => void save()}
             />
           ) : null}
 
@@ -1504,6 +1629,11 @@ export default function Diagrams() {
                   exportMeta={exportMeta}
                   titleBlock={titleBlock}
                   snapToGrid={snapToGrid}
+                  showIp={showIp}
+                  showConnectionInfo={showConnectionInfo}
+                  searchQuery={searchQuery}
+                  statusFilter={statusFilter}
+                  onDropDevice={dropDevice}
                   onDragStart={() => {
                     dragSnapshot.current = canvas.snapshot();
                     setDragging(true);
