@@ -5,6 +5,11 @@ import type {
   AppSettings,
   AuthUser,
   BackupStatus,
+  Credential,
+  CredentialInput,
+  CredentialList,
+  CredentialReveal,
+  CredentialSummary,
   DashboardData,
   Device,
   DeviceAttachment,
@@ -20,6 +25,7 @@ import type {
   DiagramSummary,
   EngineStatus,
   FlapsData,
+  GeneratedSecret,
   Group,
   InstallationReport,
   InventoryStats,
@@ -30,6 +36,7 @@ import type {
   MarkerType,
   OutageTimelineData,
   Paged,
+  PasswordGeneratorOptions,
   ReportData,
   RetentionStatus,
   Series,
@@ -612,6 +619,34 @@ export const api = {
     request<{ deleted: number }>(`/devices/${deviceId}/attachments/${attachmentId}`, { method: 'DELETE' }),
   setDeviceGroups: (deviceId: number | string, groupIds: number[]) =>
     request<Device>(`/devices/${deviceId}/groups`, { method: 'PUT', body: JSON.stringify({ groupIds }) }),
+
+  /* ---------------- مخزن اعتبارنامه ---------------- */
+  credentials: (params: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) =>
+    request<CredentialList>(`/credentials${qs(params)}`, { signal }),
+  credential: (id: number | string, signal?: AbortSignal) => request<Credential>(`/credentials/${id}`, { signal }),
+  credentialSummary: (signal?: AbortSignal) => request<CredentialSummary>('/credentials/summary', { signal }),
+  /** رمز خام؛ پاسخ کش نمی‌شود و روی سرور حسابرسی می‌شود. */
+  revealCredential: (id: number | string) => request<CredentialReveal>(`/credentials/${id}/reveal`),
+  createCredential: (body: CredentialInput) =>
+    request<Credential>('/credentials', { method: 'POST', body: JSON.stringify(body) }),
+  updateCredential: (id: number | string, body: CredentialInput) =>
+    request<Credential>(`/credentials/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCredential: (id: number | string) => request<undefined>(`/credentials/${id}`, { method: 'DELETE' }),
+  markCredentialRotated: (id: number | string, rotateEveryDays?: number | null) =>
+    request<Credential>(`/credentials/${id}/rotated`, { method: 'POST', body: JSON.stringify({ rotateEveryDays }) }),
+  generateSecret: (options: Partial<PasswordGeneratorOptions>) =>
+    request<GeneratedSecret>('/credentials/generate', { method: 'POST', body: JSON.stringify(options) }),
+  importDeviceCredentials: () =>
+    request<{ created: number; skipped: number; devices: number }>('/credentials/import-devices', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  recheckCredentials: () =>
+    request<{ checked: number; updated: number; weak: number; unreadable: number }>('/credentials/recheck', {
+      method: 'POST',
+      body: JSON.stringify({}),
+      timeoutMs: LONG_TIMEOUT_MS,
+    }),
 
   /* ---------------- گزارش‌های مدیریتی ---------------- */
   reportMttr: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>

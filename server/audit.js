@@ -13,7 +13,7 @@ import { sanitizeLogText } from './logger.mjs';
 
 const SENSITIVE_KEY = /pass(word)?|secret|token|csrf|cookie|authorization|api[_-]?key|private/i;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const SENSITIVE_READ = /\/(probe|export|export\/geo|credentials)$/i;
+const SENSITIVE_READ = /\/(probe|export|export\/geo|credentials|reveal)$/i;
 const MAX_DETAILS_CHARS = 4000;
 
 const TARGET_TYPES = {
@@ -36,6 +36,7 @@ const TARGET_TYPES = {
   markers: 'marker',
   'marker-types': 'marker_type',
   diagrams: 'diagram',
+  credentials: 'credential',
   audit: 'audit',
 };
 
@@ -48,6 +49,11 @@ const ACTIONS = [
   [/^\/api\/auth\/users(?:\/|$)/, 'user.manage'],
   [/^\/api\/settings\/reset-demo$/, 'data.reset'],
   [/^\/api\/settings$/, 'settings.update'],
+  [/\/credentials\/\d+\/reveal$/, 'credential.reveal'],
+  [/\/credentials\/\d+\/rotated$/, 'credential.rotate'],
+  [/\/credentials\/import-devices$/, 'credential.import'],
+  [/\/credentials\/recheck$/, 'credential.recheck'],
+  [/\/credentials\/generate$/, 'credential.generate'],
   [/^\/api\/system\/backups\/restore$/, 'backup.restore'],
   [/^\/api\/system\/backups\/verify$/, 'backup.verify'],
   [/^\/api\/system\/backups\/prune$/, 'backup.prune'],

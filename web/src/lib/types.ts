@@ -1069,3 +1069,116 @@ export interface DiagramAttachment {
   createdAt: number;
   downloadUrl: string;
 }
+
+/* ------------------------- مخزن اعتبارنامه ------------------------- */
+
+/** نوع اعتبارنامهٔ تجهیز؛ با فهرست سمت سرور هم‌خوان است. */
+export type CredentialKind = 'ssh' | 'https' | 'telnet' | 'snmp' | 'console' | 'wifi' | 'api' | 'database' | 'mail' | 'other';
+
+/**
+ * یک ردیف مخزن اعتبارنامه. رمز هرگز در فهرست/جزئیات برنمی‌گردد؛ فقط
+ * `hasSecret` و مسیر صریح `reveal` وجود دارد.
+ */
+export interface Credential {
+  id: number;
+  deviceId: number | null;
+  deviceName: string | null;
+  deviceIp: string | null;
+  label: string;
+  kind: CredentialKind;
+  kindLabel: string;
+  username: string;
+  host: string;
+  port: number | null;
+  tags: string[];
+  /** امتیاز ذخیره‌شده ۰..۴ (سرور محاسبه کرده است) */
+  strength: number;
+  strengthLabel: string;
+  weak: boolean;
+  weakReasons: string[];
+  hasSecret: boolean;
+  due: boolean;
+  dueAt: number | null;
+  lastRotatedAt: number | null;
+  rotateEveryDays: number | null;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: number;
+  updatedAt: number;
+  /** فقط در جزئیات برمی‌گردد */
+  notes?: string;
+}
+
+export interface CredentialSummary {
+  total: number;
+  weak: number;
+  critical: number;
+  detached: number;
+  due: number;
+  avgStrength: number;
+  kinds: { kind: CredentialKind; label: string; count: number }[];
+}
+
+export interface CredentialKindOption {
+  id: CredentialKind;
+  label: string;
+}
+
+export interface CredentialList extends Paged<Credential> {
+  search: string;
+  kindLabels: CredentialKindOption[];
+}
+
+export interface CredentialReveal {
+  id: number;
+  label: string;
+  username: string;
+  secret: string;
+}
+
+/** گزینه‌های تولید رمز؛ با نرمال‌سازی سمت سرور هم‌خوان است. */
+export interface PasswordGeneratorOptions {
+  mode: 'random' | 'passphrase';
+  length: number;
+  lower: boolean;
+  upper: boolean;
+  digits: boolean;
+  symbols: boolean;
+  avoidAmbiguous: boolean;
+  requireEach: boolean;
+  words: number;
+  separator: string;
+  addNumber: boolean;
+  capitalize: boolean;
+}
+
+export interface CredentialAssessment {
+  score: number;
+  label: string;
+  weak: boolean;
+  reasons: string[];
+  entropyBits: number;
+}
+
+export interface GeneratedSecret {
+  mode: 'random' | 'passphrase';
+  value: string;
+  charsetSize: number;
+  entropyBits: number;
+  options: PasswordGeneratorOptions;
+  assessment: CredentialAssessment;
+}
+
+/** بدنهٔ ساخت/ویرایش اعتبارنامه؛ `secret` فقط هنگام تعیین رمز فرستاده می‌شود. */
+export interface CredentialInput {
+  label?: string;
+  kind?: CredentialKind;
+  deviceId?: number | null;
+  username?: string;
+  secret?: string;
+  notes?: string;
+  host?: string;
+  port?: number | null;
+  tags?: string[];
+  rotateEveryDays?: number | null;
+}

@@ -42,7 +42,7 @@ const DB_EXISTED = (() => {
 })();
 
 /** نسخهٔ ساختار داده؛ با هر Migration افزایش می‌یابد (PRAGMA user_version) */
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 /* ------------------------------------------------------------------ */
 /* سیاست دوام و WAL                                                  */
@@ -1232,6 +1232,46 @@ function applyManagementExtensionsMigration() {
   ).run(Date.now());
 }
 
+/**
+ * گام ۲۱: مخزن اعتبارنامهٔ تجهیزات.
+ *
+ * هر تجهیز می‌تواند چند اعتبارنامه داشته باشد (SSH، پنل وب، SNMP، کنسول …).
+ * نام کاربری، رمز و یادداشت با AES-256-GCM رمزنگاری می‌شوند؛ ستون‌های متنی
+ * (عنوان، میزبان، برچسب‌ها) برای جست‌وجو و فیلتر رمزنگاری نمی‌شوند.
+ *
+ * `strength` (۰..۴) و `weak_reasons` در زمان ذخیره محاسبه می‌شوند تا فهرست
+ * «رمزهای ضعیف» بدون رمزگشایی همهٔ ردیف‌ها قابل فیلتر باشد. حذف تجهیز،
+ * اعتبارنامه را حذف نمی‌کند و فقط اتصالش را خالی می‌کند (ON DELETE SET NULL).
+ */
+function applyCredentialsVaultMigration() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credentials (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id         INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+      label             TEXT NOT NULL DEFAULT '',
+      kind              TEXT NOT NULL DEFAULT 'other',
+      username_enc      TEXT NOT NULL DEFAULT '',
+      secret_enc        TEXT NOT NULL DEFAULT '',
+      notes_enc         TEXT NOT NULL DEFAULT '',
+      host              TEXT NOT NULL DEFAULT '',
+      port              INTEGER,
+      tags              TEXT NOT NULL DEFAULT '',
+      strength          INTEGER NOT NULL DEFAULT 0,
+      weak_reasons      TEXT NOT NULL DEFAULT '[]',
+      last_rotated_at   INTEGER,
+      rotate_every_days INTEGER,
+      created_by        TEXT NOT NULL DEFAULT '',
+      updated_by        TEXT NOT NULL DEFAULT '',
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_credentials_device ON credentials(device_id);
+    CREATE INDEX IF NOT EXISTS idx_credentials_kind ON credentials(kind);
+    CREATE INDEX IF NOT EXISTS idx_credentials_strength ON credentials(strength);
+    CREATE INDEX IF NOT EXISTS idx_credentials_updated ON credentials(updated_at DESC);
+  `);
+}
+
 const MIGRATIONS = [
   { version: 1, name: 'baseline', up: () => {} },
   { version: 2, name: 'resilience', up: applyResilienceMigration },
@@ -1256,6 +1296,7 @@ const MIGRATIONS = [
   { version: 18, name: 'device-identity-and-types', up: applyDeviceIdentityMigration },
   { version: 19, name: 'device-credentials', up: applyDeviceCredentialsMigration },
   { version: 20, name: 'device-sites', up: applySitesMigration },
+  { version: 21, name: 'credentials-vault', up: applyCredentialsVaultMigration },
 ];
 
 /**

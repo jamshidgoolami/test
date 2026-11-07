@@ -16,6 +16,7 @@ const MapPage = lazy(() => import('./pages/MapPage'));
 const Diagrams = lazy(() => import('./pages/Diagrams'));
 const Alerts = lazy(() => import('./pages/Alerts'));
 const Maintenance = lazy(() => import('./pages/Maintenance'));
+const Credentials = lazy(() => import('./pages/Credentials'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Templates = lazy(() => import('./pages/Templates'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="/diagrams/:id" element={<Diagrams />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/credentials" element={<Credentials />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/templates" element={<Templates />} />
             {/* مسیر SPA عمداً `/app-health` است: `/health` و `/api/health` نقطه‌های

@@ -28,6 +28,9 @@ export const ALL_PERMISSIONS = Object.freeze([
   'dashboard:read',
   'devices:read',
   'devices:write',
+  'credentials:read',
+  'credentials:write',
+  'credentials:reveal',
   'reports:read',
   'alerts:read',
   'alerts:write',
@@ -69,6 +72,10 @@ const VIEWER_PERMISSIONS = Object.freeze([
 const OPERATOR_PERMISSIONS = Object.freeze([
   ...VIEWER_PERMISSIONS,
   'devices:write',
+  // اپراتور برای عیب‌یابی روزمره به اعتبارنامهٔ تجهیزات نیاز دارد؛ Viewer نه.
+  'credentials:read',
+  'credentials:write',
+  'credentials:reveal',
   'alerts:write',
   'maintenance:write',
   'inventory:write',

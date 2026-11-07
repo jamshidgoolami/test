@@ -20,7 +20,9 @@ import { config } from './config.js';
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+// v1: بدون AAD (دادهٔ قبلی تجهیزات) — v2: با AAD (اعتبارنامه‌های مخزن)
 const PREFIX = 'v1';
+const PREFIX_AAD = 'v2';
 const KEY_FILE = path.join(config.dataDir, 'device-credentials.key');
 let cachedKey = null;
 
@@ -70,27 +72,39 @@ export function credentialKey() {
   return cachedKey;
 }
 
-/** رمزنگاری یک مقدار متنی؛ رشتهٔ خالی به‌صورت خالی می‌ماند. */
-export function encryptSecret(value) {
+/**
+ * رمزنگاری یک مقدار متنی؛ رشتهٔ خالی به‌صورت خالی می‌ماند.
+ *
+ * `aad` دادهٔ همراه احرازشده است: با چسباندن شناسهٔ ردیف به رمزنگاری،
+ * جابه‌جا کردن ciphertext یک ردیف به ردیف دیگر (copy attack) هنگام رمزگشایی
+ * شکست می‌خورد. مقدار پیش‌فرض خالی، همان قالب v1 قبلی را می‌سازد تا دادهٔ
+ * موجود تجهیزات بدون تغییر خوانده شود.
+ */
+export function encryptSecret(value, aad = '') {
   if (value === null || value === undefined || value === '') return '';
   const iv = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv('aes-256-gcm', credentialKey(), iv);
+  const extra = String(aad ?? '');
+  if (extra) cipher.setAAD(Buffer.from(extra, 'utf8'));
   const ciphertext = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return [PREFIX, iv.toString('base64'), tag.toString('base64'), ciphertext.toString('base64')].join(':');
+  return [extra ? PREFIX_AAD : PREFIX, iv.toString('base64'), tag.toString('base64'), ciphertext.toString('base64')].join(':');
 }
 
-/** رمزگشایی مقدار ذخیره‌شده؛ قالب/کلید نامعتبر خطا می‌دهد. */
-export function decryptSecret(payload) {
+/** رمزگشایی مقدار ذخیره‌شده؛ قالب/کلید/AAD نامعتبر خطا می‌دهد. */
+export function decryptSecret(payload, aad = '') {
   const raw = String(payload || '');
   if (!raw) return '';
   const parts = raw.split(':');
-  if (parts.length !== 4 || parts[0] !== PREFIX) throw new Error('قالب اعتبارنامهٔ رمزنگاری‌شده نامعتبر است.');
+  if (parts.length !== 4 || (parts[0] !== PREFIX && parts[0] !== PREFIX_AAD)) {
+    throw new Error('قالب اعتبارنامهٔ رمزنگاری‌شده نامعتبر است.');
+  }
   const iv = Buffer.from(parts[1], 'base64');
   const tag = Buffer.from(parts[2], 'base64');
   const ciphertext = Buffer.from(parts[3], 'base64');
   if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) throw new Error('اعتبارنامهٔ رمزنگاری‌شده آسیب دیده است.');
   const decipher = crypto.createDecipheriv('aes-256-gcm', credentialKey(), iv);
+  if (parts[0] === PREFIX_AAD) decipher.setAAD(Buffer.from(String(aad ?? ''), 'utf8'));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
 }
@@ -99,9 +113,9 @@ export function decryptSecret(payload) {
  * برای فهرست‌ها: خطای رمزگشایی یک ردیف نباید کل صفحه را خراب کند. مقدار خالی
  * برگردانده می‌شود و رمز عبور همچنان از مسیر صریح credentials خوانده می‌شود.
  */
-export function tryDecryptSecret(payload) {
+export function tryDecryptSecret(payload, aad = '') {
   try {
-    return decryptSecret(payload);
+    return decryptSecret(payload, aad);
   } catch {
     return '';
   }

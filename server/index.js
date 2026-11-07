@@ -65,6 +65,7 @@ import opsRouter from './routes/ops.js';
 import inventoryRouter from './routes/inventory.js';
 import markersRouter from './routes/markers.js';
 import diagramsRouter from './routes/diagrams.js';
+import credentialsRouter from './routes/credentials.js';
 import auditRouter from './routes/audit.js';
 import systemRouter from './routes/system.js';
 
@@ -657,6 +658,7 @@ app.use('/api', opsRouter);
 app.use('/api', inventoryRouter);
 app.use('/api', markersRouter);
 app.use('/api/diagrams', diagramsRouter);
+app.use('/api/credentials', credentialsRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/system', systemRouter);
 

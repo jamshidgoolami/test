@@ -68,6 +68,12 @@ const RAW_NAV_GROUPS: { id: NavGroupId; label: string; items: Omit<NavItem, 'gro
         description: 'سوابق خرابی، تعمیرات و بازه‌های نگهداری',
         keywords: ['maintenance', 'تعمیر', 'خرابی'],
       },
+      {
+        to: '/credentials',
+        label: 'اعتبارنامه‌ها',
+        description: 'مخزن رمزنگاری‌شدهٔ رمز و نام کاربری تجهیزات، تولید رمز و هشدار رمز ضعیف',
+        keywords: ['credential', 'password', 'رمز', 'پسورد', 'اعتبارنامه', 'vault', 'ssh'],
+      },
     ],
   },
   {
