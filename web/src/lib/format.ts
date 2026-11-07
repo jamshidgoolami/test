@@ -169,7 +169,7 @@ export interface StatusMeta {
 export const STATUS_META: Record<DeviceStatus, StatusMeta> = {
   online: {
     label: 'در دسترس',
-    text: 'text-emerald-700',
+    text: 'text-success',
     bg: 'bg-emerald-50',
     border: 'border-emerald-200',
     dot: 'bg-emerald-500',
@@ -177,7 +177,7 @@ export const STATUS_META: Record<DeviceStatus, StatusMeta> = {
   },
   warning: {
     label: 'دارای اختلال',
-    text: 'text-sun-700',
+    text: 'text-warning',
     bg: 'bg-sun-50',
     border: 'border-sun-200',
     dot: 'bg-sun-500',
@@ -185,7 +185,7 @@ export const STATUS_META: Record<DeviceStatus, StatusMeta> = {
   },
   offline: {
     label: 'قطع‌شده',
-    text: 'text-red-700',
+    text: 'text-danger',
     bg: 'bg-red-50',
     border: 'border-red-200',
     dot: 'bg-red-500',
@@ -214,16 +214,16 @@ export function statusMeta(status: DeviceStatus | string | undefined): StatusMet
 }
 
 export const SEVERITY_META: Record<Severity, { label: string; text: string; bg: string; border: string; dot: string }> = {
-  info: { label: 'اطلاع', text: 'text-brand-700', bg: 'bg-brand-50', border: 'border-brand-200', dot: 'bg-brand-500' },
-  warning: { label: 'هشدار', text: 'text-sun-700', bg: 'bg-sun-50', border: 'border-sun-200', dot: 'bg-sun-500' },
-  critical: { label: 'بحرانی', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500' },
+  info: { label: 'اطلاع', text: 'text-accent', bg: 'bg-brand-50', border: 'border-brand-200', dot: 'bg-brand-500' },
+  warning: { label: 'هشدار', text: 'text-warning', bg: 'bg-sun-50', border: 'border-sun-200', dot: 'bg-sun-500' },
+  critical: { label: 'بحرانی', text: 'text-danger', bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500' },
 };
 
 export const PRIORITY_META: Record<Priority, { label: string; className: string }> = {
   low: { label: 'کم', className: 'text-ink-500 bg-ink-100 border-ink-200' },
-  normal: { label: 'عادی', className: 'text-brand-700 bg-brand-50 border-brand-200' },
-  high: { label: 'بالا', className: 'text-sun-700 bg-sun-50 border-sun-200' },
-  critical: { label: 'بحرانی', className: 'text-red-700 bg-red-50 border-red-200' },
+  normal: { label: 'عادی', className: 'text-accent bg-brand-50 border-brand-200' },
+  high: { label: 'بالا', className: 'text-warning bg-sun-50 border-sun-200' },
+  critical: { label: 'بحرانی', className: 'text-danger bg-red-50 border-red-200' },
 };
 
 export const ALERT_KIND_LABEL: Record<string, string> = {
@@ -251,9 +251,9 @@ export const DEVICE_TYPES = [
 ];
 
 export function healthTone(score: number) {
-  if (score >= 92) return { text: 'text-emerald-600', ring: '#10b981', bg: 'from-emerald-50 to-emerald-100/40' };
-  if (score >= 80) return { text: 'text-brand-600', ring: '#2563eb', bg: 'from-brand-50 to-brand-100/40' };
-  if (score >= 65) return { text: 'text-sun-600', ring: '#f59e0b', bg: 'from-sun-50 to-sun-100/40' };
+  if (score >= 92) return { text: 'text-success', ring: '#10b981', bg: 'from-emerald-50 to-emerald-100/40' };
+  if (score >= 80) return { text: 'text-accent', ring: '#2563eb', bg: 'from-brand-50 to-brand-100/40' };
+  if (score >= 65) return { text: 'text-warning', ring: '#f59e0b', bg: 'from-sun-50 to-sun-100/40' };
   if (score >= 45) return { text: 'text-orange-600', ring: '#f97316', bg: 'from-orange-50 to-orange-100/40' };
-  return { text: 'text-red-600', ring: '#dc2626', bg: 'from-red-50 to-red-100/40' };
+  return { text: 'text-danger', ring: '#dc2626', bg: 'from-red-50 to-red-100/40' };
 }

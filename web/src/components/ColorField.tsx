@@ -103,7 +103,7 @@ export function ColorField({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-ink-200 bg-white p-0.5"
+          className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-ink-200 bg-surface p-0.5"
           value={color}
           disabled={disabled}
           aria-label="انتخاب رنگ"
@@ -176,19 +176,19 @@ export function ColorPickerPopover({
         title={title}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-white/70 px-1.5 py-1 text-[11px] text-ink-500 disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-surface/70 px-1.5 py-1 text-[11px] text-ink-500 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {children}
         <span className="h-4 w-4 rounded border border-black/10" style={{ background: color }} />
         <ChevronDown size={11} />
       </button>
       {open ? (
-        <div className="absolute z-50 mt-1 w-[228px] rounded-card border border-ink-200 bg-white p-2.5 shadow-pop" role="dialog">
+        <div className="absolute z-50 mt-1 w-[228px] rounded-card border border-ink-200 bg-surface p-2.5 shadow-pop" role="dialog">
           <ColorSwatches value={color} onChange={onChange} columns={8} />
           <div className="mt-2 flex items-center gap-2 border-t border-ink-100 pt-2">
             <input
               type="color"
-              className="h-7 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-white p-0.5"
+              className="h-7 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-surface p-0.5"
               value={color}
               aria-label="انتخاب رنگ سفارشی"
               onChange={(e) => onChange(e.target.value.toLowerCase())}

@@ -24,6 +24,16 @@ export interface Group {
   uptime?: number | null;
 }
 
+/** ایستگاه: چند تجهیز هم‌مکان که زیرمجموعهٔ یک گروه نمایش داده می‌شوند */
+export interface Site {
+  id: number;
+  name: string;
+  group_id: number | null;
+  group_name?: string | null;
+  device_count?: number;
+  created_at: number;
+}
+
 /** نوع تجهیز از فهرست مرجع تنظیمات (قابل افزودن/تغییر نام) */
 export interface DeviceType {
   id: number;

@@ -194,12 +194,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             aria-live={t.kind === 'error' ? 'assertive' : 'polite'}
             className={`pointer-events-auto animate-fade-up rounded-soft px-4 py-3 text-sm shadow-pop border max-w-sm ${
               t.kind === 'success'
-                ? 'bg-emerald-50/95 border-emerald-200 text-emerald-800'
+                ? 'bg-emerald-50/95 border-emerald-200 text-success'
                 : t.kind === 'error'
-                  ? 'bg-red-50/95 border-red-200 text-red-700'
+                  ? 'bg-red-50/95 border-red-200 text-danger'
                   : t.kind === 'warning'
-                    ? 'bg-sun-50/95 border-sun-200 text-sun-800'
-                    : 'bg-white/95 border-ink-200 text-ink-700'
+                    ? 'bg-sun-50/95 border-sun-200 text-warning'
+                    : 'bg-surface/95 border-ink-200 text-ink-700'
             }`}
           >
             {t.message}

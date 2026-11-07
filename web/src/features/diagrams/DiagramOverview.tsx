@@ -1,19 +1,37 @@
 /**
  * نقشهٔ ارتباط دیاگرام‌ها
  * ----------------------------------------------------------------
- * نمای کلی همهٔ فایل‌های دیاگرام در یک صفحه:
- * • ساختار درختی (زیرمجموعه‌ها) و پیوندهای دستی، با خطوط منحنی خواناتر
- * • ساخت پیوند با کشیدن از نقطهٔ کنار هر کارت روی کارت مقصد
- * • جابه‌جایی کارت‌ها با کشیدن و انتخاب بین «چیدمان خودکار» و «چیدمان آزاد»
- * • پیوندهای شکسته (مقصد حذف‌شده) با امکان پاک کردن از بوم مبدأ
+ * نمای کلی همهٔ فایل‌های دیاگرام روی یک بوم تعاملی.
  *
- * چیدمان آزاد در همان مرورگر ذخیره می‌شود؛ چیدمان خودکار از عمق درخت و
- * جهت پیوندها ساخته می‌شود. با چرخ ماوس بزرگ‌نمایی و با کشیدن پس‌زمینه
- * جابه‌جا می‌شود. برای باز کردن هر دیاگرام روی آن کلیک کنید.
+ * این بوم روی همان React Flow ساخته شده که بوم خود دیاگرام از آن استفاده
+ * می‌کند؛ بنابراین جابه‌جایی کارت‌ها، کشیدن خط اتصال، پن/زوم و مینی‌مپ با
+ * پیاده‌سازی آزموده‌شدهٔ کتابخانه انجام می‌شود و مشکلات مدیریت دستی pointer
+ * (از دست رفتن pointer capture، هدف کهنه هنگام رها کردن و اختلاف مختصات
+ * صفحه/بوم) دیگر وجود ندارد.
+ *
+ * • ساختار درختی (parentId) با خط‌چین و پیوندهای دستی با نوع/رنگ خودشان.
+ * • اتصال: از هر یک از چهار نقطهٔ کنار کارت به کارت مقصد بکشید؛ اتصال تکراری
+ *   پیش از ارسال به سرور رد می‌شود و bوم هنگام کشیدن به لبه‌ها خودکار پن می‌شود.
+ * • جابه‌جایی: کشیدن کارت در حالت ویرایش؛ اولین کشیدن، چیدمان خودکار را
+ *   «فریز» می‌کند تا بقیهٔ کارت‌ها سر جایشان بمانند. چیدمان آزاد در همین
+ *   مرورگر ذخیره می‌شود.
+ * • بوم: کشیدن پس‌زمینه برای پن، چرخ ماوس برای زوم، «جا دادن» برای برگشت به
+ *   نمای کامل و مینی‌مپ برای پیمایش سریع.
+ * • پیوند شکسته (مقصد حذف‌شده) در یک کارت جمع‌شدنی نمایش داده می‌شود و از
+ *   همان‌جا با یک کلیک پاک می‌شود.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertTriangle,
+  ChevronDown,
   ExternalLink,
   Eye,
   GitBranch,
@@ -31,6 +49,34 @@ import {
   Workflow,
   X,
 } from 'lucide-react';
+import {
+  Background,
+  BackgroundVariant,
+  BaseEdge,
+  ConnectionMode,
+  Controls,
+  EdgeLabelRenderer,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  getSmoothStepPath,
+  useNodesInitialized,
+  useReactFlow,
+} from '@xyflow/react';
+import type {
+  Connection,
+  Edge,
+  EdgeProps,
+  EdgeTypes,
+  Node,
+  NodeChange,
+  NodeProps,
+  NodeTypes,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { api, ApiError } from '../../lib/api';
 import { faDigits, fmtRelative } from '../../lib/format';
 import { CONNECTION_TYPES, HANDLE_SIDES, connectionType } from '../../lib/diagrams';
@@ -42,8 +88,11 @@ import type {
   DiagramGraphItem,
 } from '../../lib/types';
 
+/* ------------------------------------------------------------------ */
+/* انواع و ثابت‌ها                                                     */
+/* ------------------------------------------------------------------ */
+
 interface Placed extends DiagramGraphItem {
-  depth: number;
   x: number;
   y: number;
 }
@@ -55,34 +104,43 @@ interface LayoutPrefs {
   positions: PositionMap;
 }
 
-interface DragState {
-  id: number;
-  sx: number;
-  sy: number;
-  ox: number;
-  oy: number;
-  moved: boolean;
-}
+type OverviewNodeData = {
+  name: string;
+  description: string;
+  nodeCount: number;
+  edgeCount: number;
+  childCount: number;
+  inLinks: number;
+  outLinks: number;
+  brokenLinks: number;
+  updatedAt: number;
+  current: boolean;
+  dimmed: boolean;
+  connectable: boolean;
+};
 
-interface ConnectState {
-  from: number;
-  fromSide: HandleSide;
-  x: number;
-  y: number;
-  target: number | null;
-  targetSide: HandleSide | null;
-}
+type OverviewNode = Node<OverviewNodeData, 'overview'>;
 
-// اندازهٔ کارت‌ها با حداقل اندازهٔ متن رابط (۱۲px) هماهنگ است؛ ارتفاع ۶۸
-// پیکسلی قبلی باعث بریده‌شدن ردیف شمارش/برچسب‌ها می‌شد.
-const NODE_W = 232;
-const NODE_H = 96;
-const COL_GAP = 104;
-const ROW_GAP = 32;
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 2.5;
-const LAYOUT_KEY = 'nw.diagrams.overview.layout';
-const HANDLE_SIZE = 16;
+type OverviewEdgeData = {
+  /** برای یال درختی مقدار ندارد. */
+  kind?: DiagramConnectionKind;
+  label?: string;
+  nodeLabel?: string;
+  tree?: boolean;
+};
+
+type OverviewEdge = Edge<OverviewEdgeData, 'overview'>;
+
+const NODE_W = 240;
+const NODE_H = 118;
+const COL_GAP = 96;
+const ROW_GAP = 28;
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2.2;
+/** نسخهٔ تازه: هندسه/اندازهٔ کارت‌ها عوض شده و چیدمان قدیمی می‌تواند روی هم بیفتد. */
+const LAYOUT_KEY = 'nw.diagrams.overview.layout.v2';
+
+const OverviewUi = createContext<{ open: (id: number) => void }>({ open: () => undefined });
 
 /* ------------------------------------------------------------------ */
 /* ذخیرهٔ چیدمان دستی                                                  */
@@ -99,7 +157,7 @@ function readLayoutPrefs(): LayoutPrefs {
         const x = Number((value as { x?: unknown } | null)?.x);
         const y = Number((value as { y?: unknown } | null)?.y);
         if (Number.isInteger(id) && id > 0 && Number.isFinite(x) && Number.isFinite(y)) {
-          positions[id] = { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) };
+          positions[id] = { x: Math.round(x), y: Math.round(y) };
         }
       }
     }
@@ -121,18 +179,13 @@ function writeLayoutPrefs(prefs: LayoutPrefs) {
 /* چیدمان خودکار                                                       */
 /* ------------------------------------------------------------------ */
 /**
- * چیدمان لایه‌ای با ترتیب‌دهی barycenter.
- *
- * ۱) عمق از ساختار درختی و پیوندهای دستی (مرتب‌سازی توپولوژیک) ساخته می‌شود.
- * ۲) گره‌های هر ستون چند بار بر اساس میانگین جایگاه والدها/فرزندان مرتب
- *    می‌شوند تا خطوط کمتر روی هم بیفتند و فرزندان نزدیک والدشان بمانند.
- * ۳) ستون‌ها از نظر عمودی وسط‌چین می‌شوند و فاصلهٔ ثابت دارند؛ نتیجه هم برای
- *    درخت‌های نامتقارن و هم برای چند ریشهٔ مستقل خواناست.
+ * چیدمان لایه‌ای با ترتیب‌دهی barycenter:
+ * ۱) عمق از ساختار درختی و پیوندهای دستی ساخته می‌شود.
+ * ۲) هر ستون چند بار بر اساس میانگین جایگاه والدها/فرزندان مرتب می‌شود تا
+ *    خطوط کمتر روی هم بیفتند.
+ * ۳) ستون‌ها عمودی وسط‌چین و راست‌به‌چپ مرتب می‌شوند (ریشه در راست).
  */
-function layout(
-  items: DiagramGraphItem[],
-  links: { from: number; to: number }[]
-): { placed: Placed[]; width: number; height: number } {
+function layout(items: DiagramGraphItem[], links: { from: number; to: number }[]): Placed[] {
   const byId = new Map(items.map((item) => [item.id, item]));
   const next = new Map<number, Set<number>>();
   const previous = new Map<number, Set<number>>();
@@ -171,8 +224,8 @@ function layout(
     }
   }
 
-  // چرخه‌ها در مرتب‌سازی توپولوژیک خارج می‌مانند؛ به آن‌ها یک لایه بعد از
-  // والدهای شناخته‌شده می‌دهیم تا از ستون ریشه جدا شوند.
+  // چرخه‌ها در مرتب‌سازی توپولوژیک خارج می‌مانند؛ یک لایه بعد از والدهای
+  // شناخته‌شده می‌گیرند تا از ستون ریشه جدا شوند.
   for (const item of items) {
     if (processed.has(item.id)) continue;
     const known = [...(previous.get(item.id) ?? [])]
@@ -191,20 +244,14 @@ function layout(
   const orderedColumns = [...columns.entries()].sort((a, b) => a[0] - b[0]);
   const maxDepth = Math.max(0, ...orderedColumns.map(([value]) => value));
 
-  // جایگاه هر گره در ستون خودش؛ برای میانگین‌گیری در رفت‌وبرگشت‌ها.
   const positionInColumn = new Map<number, number>();
-  const setOrder = () => {
-    for (const [, list] of orderedColumns) {
-      list.forEach((item, index) => positionInColumn.set(item.id, index));
-    }
-  };
   for (const [, list] of orderedColumns) {
     list.sort((a, b) => {
       if (a.parentId !== b.parentId) return (a.parentId ?? 0) - (b.parentId ?? 0);
       return a.name.localeCompare(b.name, 'fa');
     });
+    list.forEach((item, index) => positionInColumn.set(item.id, index));
   }
-  setOrder();
 
   const barycenter = (item: DiagramGraphItem, neighbors: Map<number, Set<number>>) => {
     let sum = 0;
@@ -218,7 +265,6 @@ function layout(
     return count ? sum / count : positionInColumn.get(item.id) ?? 0;
   };
 
-  // چند رفت‌وبرگشت برای کاهش تقاطع‌ها و نزدیک‌کردن فرزند به والد.
   for (let pass = 0; pass < 6; pass += 1) {
     for (let index = 1; index < orderedColumns.length; index += 1) {
       orderedColumns[index][1].sort(
@@ -240,175 +286,226 @@ function layout(
   for (const [value, list] of orderedColumns) {
     const offsetY = ((maxRows - list.length) * rowStep) / 2;
     list.forEach((item, index) => {
-      // چیدمان راست‌به‌چپ: ریشه در راست و زیرمجموعه/مقصد پیوندها به سمت چپ.
+      // راست‌به‌چپ: ریشه در راست و فرزندان/مقصد پیوندها به سمت چپ.
       placed.push({
         ...item,
-        depth: value,
         x: (maxDepth - value) * (NODE_W + COL_GAP),
         y: offsetY + index * rowStep,
       });
     });
   }
-
-  return {
-    placed,
-    width: Math.max(NODE_W, (maxDepth + 1) * (NODE_W + COL_GAP)) + 16,
-    height: Math.max(NODE_H, maxRows * rowStep) + 16,
-  };
+  return placed;
 }
 
-/* ------------------------------------------------------------------ */
-/* هندسهٔ خطوط                                                        */
-/* ------------------------------------------------------------------ */
-const SIDE_VECTOR: Record<HandleSide, { x: number; y: number }> = {
-  top: { x: 0, y: -1 },
-  right: { x: 1, y: 0 },
-  bottom: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-};
-
-function sidePoint(item: Placed, side: HandleSide): { x: number; y: number } {
-  if (side === 'top') return { x: item.x + NODE_W / 2, y: item.y };
-  if (side === 'bottom') return { x: item.x + NODE_W / 2, y: item.y + NODE_H };
-  if (side === 'left') return { x: item.x, y: item.y + NODE_H / 2 };
-  return { x: item.x + NODE_W, y: item.y + NODE_H / 2 };
-}
-
-function automaticSides(from: Placed, to: Placed): { fromSide: HandleSide; toSide: HandleSide } {
+/** سمت‌های طبیعی اتصال بر اساس موقعیت دو کارت. */
+function automaticSides(
+  from: { x: number; y: number },
+  to: { x: number; y: number }
+): { fromSide: HandleSide; toSide: HandleSide } {
   const dx = to.x + NODE_W / 2 - (from.x + NODE_W / 2);
   const dy = to.y + NODE_H / 2 - (from.y + NODE_H / 2);
   if (Math.abs(dx) >= Math.abs(dy)) {
-    return dx < 0
-      ? { fromSide: 'left', toSide: 'right' }
-      : { fromSide: 'right', toSide: 'left' };
+    return dx < 0 ? { fromSide: 'left', toSide: 'right' } : { fromSide: 'right', toSide: 'left' };
   }
-  return dy < 0
-    ? { fromSide: 'top', toSide: 'bottom' }
-    : { fromSide: 'bottom', toSide: 'top' };
+  return dy < 0 ? { fromSide: 'top', toSide: 'bottom' } : { fromSide: 'bottom', toSide: 'top' };
 }
 
-/** نزدیک‌ترین لبهٔ کارت به نشانگر؛ برای انتخاب سمت مقصد هنگام رها کردن. */
-function nearestSide(item: Placed, x: number, y: number): HandleSide {
-  const distances: Record<HandleSide, number> = {
-    top: Math.abs(y - item.y),
-    bottom: Math.abs(y - (item.y + NODE_H)),
-    left: Math.abs(x - item.x),
-    right: Math.abs(x - (item.x + NODE_W)),
-  };
-  return HANDLE_SIDES.reduce((best, side) => (distances[side] < distances[best] ? side : best), 'top');
+function asSide(value: string | null | undefined): HandleSide | undefined {
+  return (HANDLE_SIDES as readonly string[]).includes(String(value)) ? (value as HandleSide) : undefined;
 }
 
-/**
- * خط منحنی بین دو کارت. اگر سمت‌های اتصال ذخیره شده باشند از همان لبه‌ها
- * خارج می‌شوند؛ پیوندهای قدیمی همچنان سمت خودکار و کوتاه‌ترین مسیر را دارند.
- * `offset` برای جدا کردن چند پیوند هم‌مبدأ/هم‌مقصد است.
- */
-function linkGeometry(
-  from: Placed,
-  to: Placed,
-  offset = 0,
-  fromSide?: HandleSide,
-  toSide?: HandleSide
-) {
-  if (fromSide || toSide) {
-    const auto = automaticSides(from, to);
-    const startSide = fromSide ?? auto.fromSide;
-    const endSide = toSide ?? auto.toSide;
-    const start = sidePoint(from, startSide);
-    const end = sidePoint(to, endSide);
-    const startNormal = SIDE_VECTOR[startSide];
-    const endNormal = SIDE_VECTOR[endSide];
-    const distance = Math.hypot(end.x - start.x, end.y - start.y);
-    const bend = Math.max(42, Math.min(180, distance * 0.35));
-    const startPerp = { x: -startNormal.y, y: startNormal.x };
-    const endPerp = { x: -endNormal.y, y: endNormal.x };
-    const c1x = start.x + startNormal.x * bend + startPerp.x * offset;
-    const c1y = start.y + startNormal.y * bend + startPerp.y * offset;
-    const c2x = end.x + endNormal.x * bend + endPerp.x * offset;
-    const c2y = end.y + endNormal.y * bend + endPerp.y * offset;
-    return {
-      d: `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`,
-      mx: (start.x + 3 * c1x + 3 * c2x + end.x) / 8,
-      my: (start.y + 3 * c1y + 3 * c2y + end.y) / 8,
-    };
-  }
+/* ------------------------------------------------------------------ */
+/* کارت دیاگرام (گرهٔ بوم)                                              */
+/* ------------------------------------------------------------------ */
+const POSITION: Record<HandleSide, Position> = {
+  top: Position.Top,
+  right: Position.Right,
+  bottom: Position.Bottom,
+  left: Position.Left,
+};
 
-  const fromCx = from.x + NODE_W / 2;
-  const fromCy = from.y + NODE_H / 2;
-  const toCx = to.x + NODE_W / 2;
-  const toCy = to.y + NODE_H / 2;
-  const dx = toCx - fromCx;
-  const dy = toCy - fromCy;
+const SIDE_LABEL: Record<HandleSide, string> = {
+  top: 'بالا',
+  right: 'راست',
+  bottom: 'پایین',
+  left: 'چپ',
+};
 
-  let x1: number;
-  let y1: number;
-  let x2: number;
-  let y2: number;
-  let c1x: number;
-  let c1y: number;
-  let c2x: number;
-  let c2y: number;
+function DiagramCard({ id, data, selected }: NodeProps<OverviewNode>) {
+  const { open } = useContext(OverviewUi);
+  return (
+    <div className={`group relative h-full w-full ${data.dimmed ? 'opacity-25' : ''}`} dir="rtl">
+      <div
+        className={`flex h-full w-full flex-col justify-between gap-1 overflow-hidden rounded-2xl border-2 bg-surface p-2.5 text-right shadow-soft transition-shadow hover:shadow-pop ${
+          data.current ? 'border-brand-300' : 'border-ink-200/80'
+        } ${selected ? '!border-sky-400 ring-2 ring-sky-200' : ''}`}
+        onDoubleClick={() => open(Number(id))}
+        title={data.description ? `${data.name}\n${data.description}` : data.name}
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg ${
+              data.current ? 'bg-brand-50 text-accent' : 'bg-ink-50 text-ink-400'
+            }`}
+          >
+            <Workflow size={13} />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink-800">{data.name}</span>
+          {data.current ? (
+            <span className="shrink-0 rounded-pill bg-brand-50 px-1.5 py-0.5 text-[9px] font-semibold text-accent">
+              جاری
+            </span>
+          ) : null}
+          {data.brokenLinks ? (
+            <AlertTriangle
+              size={12}
+              className="shrink-0 text-warning"
+              aria-label={`${faDigits(data.brokenLinks)} پیوند شکسته`}
+            />
+          ) : null}
+        </div>
 
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const goingLeft = dx < 0;
-    x1 = goingLeft ? from.x : from.x + NODE_W;
-    x2 = goingLeft ? to.x + NODE_W : to.x;
-    y1 = fromCy;
-    y2 = toCy;
-    const dir = x2 >= x1 ? 1 : -1;
-    const bend = Math.max(46, Math.abs(x2 - x1) * 0.5);
-    c1x = x1 + dir * bend;
-    c1y = y1 + offset;
-    c2x = x2 - dir * bend;
-    c2y = y2 + offset;
-  } else {
-    const goingUp = dy < 0;
-    x1 = fromCx;
-    x2 = toCx;
-    y1 = goingUp ? from.y : from.y + NODE_H;
-    y2 = goingUp ? to.y + NODE_H : to.y;
-    const dir = y2 >= y1 ? 1 : -1;
-    const bend = Math.max(40, Math.abs(y2 - y1) * 0.5);
-    c1x = x1 + offset;
-    c1y = y1 + dir * bend;
-    c2x = x2 + offset;
-    c2y = y2 - dir * bend;
-  }
+        <div className="num flex items-center gap-1.5 text-[9.5px] text-ink-400">
+          <span>{faDigits(data.nodeCount)} جزء</span>
+          <span aria-hidden>·</span>
+          <span>{faDigits(data.edgeCount)} ارتباط</span>
+          <span className="ms-auto shrink-0">{fmtRelative(data.updatedAt)}</span>
+        </div>
 
-  return {
-    d: `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`,
-    mx: (x1 + 3 * c1x + 3 * c2x + x2) / 8,
-    my: (y1 + 3 * c1y + 3 * c2y + y2) / 8,
-  };
+        <div className="flex min-h-5 flex-wrap items-center gap-1 text-[9px]">
+          {data.childCount ? (
+            <span className="rounded-pill bg-ink-100 px-1.5 text-ink-500">{faDigits(data.childCount)} زیرمجموعه</span>
+          ) : null}
+          {data.inLinks ? (
+            <span className="rounded-pill bg-emerald-50 px-1.5 text-success">{faDigits(data.inLinks)} ورودی</span>
+          ) : null}
+          {data.outLinks ? (
+            <span className="rounded-pill bg-sky-50 px-1.5 text-info">{faDigits(data.outLinks)} خروجی</span>
+          ) : null}
+          {!data.childCount && !data.inLinks && !data.outLinks ? (
+            <span className="rounded-pill bg-ink-50 px-1.5 text-ink-400">بدون ارتباط</span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-between gap-1">
+          <button
+            type="button"
+            data-card-action
+            className="nodrag nopan inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/70 px-1.5 py-0.5 text-[9.5px] font-medium text-info transition hover:border-sky-400 hover:bg-sky-50"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              open(Number(id));
+            }}
+            title={`ورود به دیاگرام «${data.name}»`}
+          >
+            <ExternalLink size={9} />
+            ورود
+          </button>
+          <span className="truncate text-[9px] text-ink-300">
+            {data.connectable ? 'از نقطه‌ها بکشید' : ''}
+          </span>
+        </div>
+      </div>
+
+      {HANDLE_SIDES.map((side) => (
+        <Handle
+          key={side}
+          id={side}
+          type="source"
+          position={POSITION[side]}
+          isConnectable={data.connectable}
+          title={`اتصال از سمت ${SIDE_LABEL[side]} به دیاگرام دیگر`}
+          aria-label={`اتصال از سمت ${SIDE_LABEL[side]} به دیاگرام دیگر`}
+          className={`diagram-handle ${data.connectable ? 'is-active' : ''}`}
+          style={{
+            width: 12,
+            height: 12,
+            background: 'rgb(var(--nw-surface))',
+            borderColor: '#0ea5e9',
+            pointerEvents: data.connectable ? 'all' : 'none',
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
-/** خط پیش‌نمایش از لبهٔ انتخاب‌شدهٔ کارت مبدأ تا نشانگر ماوس */
-function previewGeometry(from: Placed, wx: number, wy: number, fromSide?: HandleSide) {
-  if (fromSide) {
-    const start = sidePoint(from, fromSide);
-    const normal = SIDE_VECTOR[fromSide];
-    const distance = Math.hypot(wx - start.x, wy - start.y);
-    const bend = Math.max(38, Math.min(150, distance * 0.35));
-    return `M ${start.x} ${start.y} C ${start.x + normal.x * bend} ${start.y + normal.y * bend}, ${wx - (wx - start.x) * 0.18} ${wy - (wy - start.y) * 0.18}, ${wx} ${wy}`;
-  }
-  const cx = from.x + NODE_W / 2;
-  const cy = from.y + NODE_H / 2;
-  const dx = wx - cx;
-  const dy = wy - cy;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const x1 = dx < 0 ? from.x : from.x + NODE_W;
-    const y1 = cy;
-    const dir = wx >= x1 ? 1 : -1;
-    const bend = Math.max(40, Math.abs(wx - x1) * 0.5);
-    return `M ${x1} ${y1} C ${x1 + dir * bend} ${y1}, ${wx - dir * 36} ${wy}, ${wx} ${wy}`;
-  }
-  const x1 = cx;
-  const y1 = dy < 0 ? from.y : from.y + NODE_H;
-  const dir = wy >= y1 ? 1 : -1;
-  const bend = Math.max(36, Math.abs(wy - y1) * 0.5);
-  return `M ${x1} ${y1} C ${x1} ${y1 + dir * bend}, ${wx} ${wy - dir * 36}, ${wx} ${wy}`;
+/* ------------------------------------------------------------------ */
+/* یال بوم (ساختار درختی و پیوند دستی)                                 */
+/* ------------------------------------------------------------------ */
+function OverviewLinkEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+  selected,
+  style,
+  markerEnd,
+}: EdgeProps<OverviewEdge>) {
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    borderRadius: 18,
+    offset: 26,
+  });
+  const tree = !!data?.tree;
+  const meta = connectionType(data?.kind);
+  const label = !tree ? data?.nodeLabel || data?.label || '' : '';
+  const width = Number(style?.strokeWidth ?? 2);
+
+  return (
+    <>
+      {!tree && selected ? (
+        <path d={path} fill="none" stroke="rgb(var(--nw-surface))" strokeWidth={width + 6} strokeLinecap="round" opacity={0.95} />
+      ) : null}
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={style}
+        interactionWidth={tree ? 0 : 24}
+      />
+      {label ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-none absolute"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+            dir="rtl"
+          >
+            <span
+              className={`inline-flex max-w-[190px] items-center gap-1 rounded-pill border bg-surface/95 px-1.5 py-0.5 text-[9.5px] font-medium shadow-xs ${
+                selected ? 'ring-2 ring-sky-200' : ''
+              }`}
+              style={{ borderColor: `${meta.color}66`, color: meta.color }}
+              title={`${meta.label} · ${label}`}
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: meta.color }} />
+              <span className="truncate">
+                {meta.label} · {label}
+              </span>
+            </span>
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
 }
 
+const nodeTypes = { overview: DiagramCard } satisfies NodeTypes;
+const edgeTypes = { overview: OverviewLinkEdge } satisfies EdgeTypes;
+
+/* ------------------------------------------------------------------ */
+/* بوم                                                                 */
+/* ------------------------------------------------------------------ */
 export interface DiagramOverviewProps {
   open: boolean;
   graph: DiagramGraph | null;
@@ -424,8 +521,7 @@ export interface DiagramOverviewProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-export default function DiagramOverview({
-  open,
+function OverviewBoard({
   graph,
   loading,
   error,
@@ -437,257 +533,226 @@ export default function DiagramOverview({
   onMutated,
   onNotify,
 }: DiagramOverviewProps) {
+  const { fitView, zoomIn, zoomOut } = useReactFlow<OverviewNode, OverviewEdge>();
+  const nodesInitialized = useNodesInitialized();
   const [initialPrefs] = useState(readLayoutPrefs);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'view' | 'edit'>('view');
-  const [hovered, setHovered] = useState<number | null>(null);
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedLink, setSelectedLink] = useState<string | null>(null);
   const [linkKind, setLinkKind] = useState<DiagramConnectionKind>('fiber');
-  const [cam, setCam] = useState({ x: 24, y: 24, k: 1 });
-  const [size, setSize] = useState({ w: 900, h: 480 });
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [brokenOpen, setBrokenOpen] = useState(false);
   const [sourceId, setSourceId] = useState<number | ''>('');
   const [targetId, setTargetId] = useState<number | ''>('');
   const [linkLabel, setLinkLabel] = useState('');
   const [manual, setManual] = useState<PositionMap>(initialPrefs.positions);
   const [autoLayout, setAutoLayout] = useState(initialPrefs.auto);
-  const [dragging, setDragging] = useState<number | null>(null);
-  const [panning, setPanning] = useState(false);
-  const [connect, setConnect] = useState<ConnectState | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [fitNonce, setFitNonce] = useState(0);
-  const canEdit = canWrite && mode === 'edit';
 
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const panRef = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
-  const camRef = useRef(cam);
   const manualRef = useRef<PositionMap>(manual);
-  const dragRef = useRef<DragState | null>(null);
-  const connectRef = useRef<ConnectState | null>(null);
-  const boardRef = useRef<{ placed: Placed[]; width: number; height: number }>({
-    placed: [],
-    width: 0,
-    height: 0,
-  });
   const placedRef = useRef<Placed[]>([]);
+  const autoRef = useRef(autoLayout);
 
+  const canEdit = canWrite && mode === 'edit';
   const items = useMemo(() => graph?.items ?? [], [graph]);
   const links = useMemo(() => graph?.links ?? [], [graph]);
-  const autoBoard = useMemo(() => layout(items, links), [items, links]);
+  const stats = graph?.stats;
 
-  const placed = useMemo(() => {
-    if (autoLayout) return autoBoard.placed;
-    return autoBoard.placed.map((item) => {
-      const saved = manual[item.id];
-      return saved ? { ...item, x: saved.x, y: saved.y } : item;
-    });
-  }, [autoBoard, autoLayout, manual]);
+  const autoPlaced = useMemo(() => layout(items, links), [items, links]);
+  const placed = useMemo(
+    () =>
+      autoPlaced.map((item) => {
+        const saved = autoLayout ? null : manual[item.id];
+        return saved ? { ...item, x: saved.x, y: saved.y } : item;
+      }),
+    [autoPlaced, autoLayout, manual]
+  );
+  const positions = useMemo(() => new Map(placed.map((item) => [item.id, item])), [placed]);
 
-  const board = useMemo(() => {
-    const maxX = placed.reduce((max, item) => Math.max(max, item.x + NODE_W), 0);
-    const maxY = placed.reduce((max, item) => Math.max(max, item.y + NODE_H), 0);
-    return {
-      placed,
-      width: Math.max(autoBoard.width, maxX + 44),
-      height: Math.max(autoBoard.height, maxY + 44),
-    };
-  }, [autoBoard.height, autoBoard.width, placed]);
-
-  const positions = useMemo(() => new Map(board.placed.map((item) => [item.id, item])), [board]);
-  const selectedLinkData = useMemo(() => {
-    if (!selectedLink) return null;
-    return links.find((link) => `${link.from}:${link.nodeId}` === selectedLink) ?? null;
-  }, [links, selectedLink]);
-
-  // پیوندهای هم‌مبدأ/هم‌مقصد با فاصلهٔ عمودی/افقی جدا رسم می‌شوند تا روی
-  // هم نیفتند و برچسب هرکدام جدا دیده شود.
-  const linkRows = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const link of links) {
-      const key = `${link.from}:${link.to}`;
-      totals.set(key, (totals.get(key) ?? 0) + 1);
-    }
-    const seen = new Map<string, number>();
-    return links.map((link) => {
-      const key = `${link.from}:${link.to}`;
-      const index = seen.get(key) ?? 0;
-      seen.set(key, index + 1);
-      const count = totals.get(key) ?? 1;
-      return { link, offset: (index - (count - 1) / 2) * 20 };
-    });
-  }, [links]);
-
-  // هندلرهای pointer همیشه آخرین مقادیر را می‌خوانند.
   manualRef.current = manual;
-  camRef.current = cam;
   placedRef.current = placed;
-  boardRef.current = board;
+  autoRef.current = autoLayout;
 
-  const persist = useCallback((positions: PositionMap, auto: boolean) => {
-    writeLayoutPrefs({ auto, positions });
+  const persist = useCallback((positionsToSave: PositionMap, auto: boolean) => {
+    writeLayoutPrefs({ auto, positions: positionsToSave });
   }, []);
 
-  const replaceManual = useCallback((next: PositionMap) => {
+  const needle = query.trim();
+  const matchedIds = useMemo(() => {
+    if (!needle) return null;
+    return new Set(
+      placed.filter((item) => item.name.includes(needle) || item.description.includes(needle)).map((item) => item.id)
+    );
+  }, [needle, placed]);
+
+  /* ------------------------------ گره‌ها و یال‌ها ------------------------------ */
+  const nodes = useMemo<OverviewNode[]>(
+    () =>
+      placed.map((item) => ({
+        id: String(item.id),
+        type: 'overview' as const,
+        position: { x: item.x, y: item.y },
+        width: NODE_W,
+        height: NODE_H,
+        style: { width: NODE_W, height: NODE_H },
+        selected: item.id === selectedItem,
+        data: {
+          name: item.name,
+          description: item.description,
+          nodeCount: item.nodeCount,
+          edgeCount: item.edgeCount,
+          childCount: item.childCount,
+          inLinks: item.inLinks,
+          outLinks: item.outLinks,
+          brokenLinks: item.brokenLinks,
+          updatedAt: item.updatedAt,
+          current: item.id === currentId,
+          dimmed: !!matchedIds && !matchedIds.has(item.id),
+          connectable: canEdit,
+        },
+      })),
+    [canEdit, currentId, matchedIds, placed, selectedItem]
+  );
+
+  const edges = useMemo<OverviewEdge[]>(() => {
+    const treeEdges: OverviewEdge[] = [];
+    for (const item of items) {
+      if (item.parentId == null) continue;
+      const from = positions.get(item.parentId);
+      const to = positions.get(item.id);
+      if (!from || !to) continue;
+      const sides = automaticSides(from, to);
+      treeEdges.push({
+        id: `tree-${item.id}`,
+        source: String(item.parentId),
+        target: String(item.id),
+        sourceHandle: sides.fromSide,
+        targetHandle: sides.toSide,
+        type: 'overview',
+        data: { tree: true },
+        selectable: false,
+        focusable: false,
+        style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '5 5', pointerEvents: 'none' },
+      });
+    }
+
+    const linkEdges: OverviewEdge[] = [];
+    for (const link of links) {
+      const from = positions.get(link.from);
+      const to = positions.get(link.to);
+      if (!from || !to) continue;
+      const meta = connectionType(link.kind);
+      const sides = automaticSides(from, to);
+      const active = selectedLink === `${link.from}:${link.nodeId}`;
+      linkEdges.push({
+        id: `${link.from}:${link.nodeId}`,
+        source: String(link.from),
+        target: String(link.to),
+        sourceHandle: link.fromSide ?? sides.fromSide,
+        targetHandle: link.toSide ?? sides.toSide,
+        type: 'overview',
+        selected: active,
+        data: { kind: link.kind, label: link.label, nodeLabel: link.nodeLabel },
+        style: {
+          stroke: meta.color,
+          strokeWidth: active ? meta.width + 1.2 : meta.width,
+          strokeDasharray: meta.dash || undefined,
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, color: meta.color, width: 16, height: 16 },
+      });
+    }
+    return [...treeEdges, ...linkEdges];
+  }, [items, links, positions, selectedLink]);
+
+  /* ------------------------------ اندازه/نما ------------------------------ */
+  const fit = useCallback(() => {
+    if (!items.length) return;
+    void fitView({ padding: 0.22, maxZoom: 1.15, duration: 260 });
+  }, [fitView, items.length]);
+
+  // با باز شدن نقشه، رسیدن داده یا تغییر تعداد دیاگرام‌ها، بوم جا می‌شود.
+  // صبر می‌کنیم تا React Flow ابعاد کارت‌ها را اندازه بگیرد؛ وگرنه fitView
+  // با ابعاد صفر انجام می‌شود و نتیجه درست نیست.
+  // جابه‌جایی کارت‌ها عمداً این اثر را فعال نمی‌کند تا نمای کاربر نپرد.
+  useEffect(() => {
+    if (!nodesInitialized) return;
+    const timer = window.setTimeout(fit, 40);
+    return () => window.clearTimeout(timer);
+  }, [fit, fitNonce, nodesInitialized]);
+
+  const focusMatches = useCallback(() => {
+    if (!matchedIds || !matchedIds.size) return;
+    void fitView({
+      nodes: [...matchedIds].map((id) => ({ id: String(id) })),
+      padding: 0.6,
+      maxZoom: 1.15,
+      duration: 300,
+    });
+  }, [fitView, matchedIds]);
+
+  /* ------------------------------ چیدمان ------------------------------ */
+  const onNodesChange = useCallback((changes: NodeChange<OverviewNode>[]) => {
+    let next: PositionMap | null = null;
+    for (const change of changes) {
+      if (change.type !== 'position' || !change.position) continue;
+      const id = Number(change.id);
+      if (!Number.isInteger(id)) continue;
+      next = {
+        ...(next ?? manualRef.current),
+        [id]: { x: Math.round(change.position.x), y: Math.round(change.position.y) },
+      };
+    }
+    if (!next) return;
     manualRef.current = next;
     setManual(next);
   }, []);
 
-  /* ------------------------------ اندازه و زوم ------------------------------ */
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!open || !el) return;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    observer?.observe(el);
-    window.addEventListener('resize', measure);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [open]);
+  const onNodeDragStart = useCallback(() => {
+    // اولین کشیدن در چیدمان خودکار: جای فعلی همهٔ کارت‌ها عکس گرفته و چیدمان
+    // آزاد می‌شود تا بقیه سر جایشان بمانند.
+    if (!autoRef.current) return;
+    const snapshot: PositionMap = {};
+    for (const item of placedRef.current) snapshot[item.id] = { x: item.x, y: item.y };
+    manualRef.current = snapshot;
+    setManual(snapshot);
+    setAutoLayout(false);
+  }, []);
 
-  const fit = useCallback(() => {
-    const target = boardRef.current;
-    if (!target.placed.length || !size.w || !size.h) return;
-    const k = Math.max(
-      MIN_ZOOM,
-      Math.min((size.w - 40) / target.width, (size.h - 40) / target.height, 1.25)
-    );
-    setCam({
-      k,
-      x: (size.w - target.width * k) / 2,
-      y: (size.h - target.height * k) / 2,
-    });
-  }, [size.h, size.w]);
+  const onNodeDragStop = useCallback(() => {
+    persist(manualRef.current, false);
+  }, [persist]);
 
-  // با باز شدن نقشه، تغییر اندازهٔ کادر یا اضافه/حذف شدن دیاگرام، نقشه جا می‌شود.
-  // جابه‌جایی کارت‌ها عمداً این اثر را فعال نمی‌کند تا نمای کاربر نپرد.
-  useEffect(() => {
-    if (!open) return;
-    fit();
-  }, [board.placed.length, fit, open, size.h, size.w]);
+  const enableAuto = useCallback(() => {
+    setAutoLayout(true);
+    persist(manualRef.current, true);
+    setFitNonce((value) => value + 1);
+  }, [persist]);
 
-  useEffect(() => {
-    if (!open || !fitNonce) return;
-    fit();
-  }, [fit, fitNonce, open]);
+  const enableManual = useCallback(() => {
+    if (!autoRef.current) return;
+    const snapshot: PositionMap = {};
+    for (const item of placedRef.current) snapshot[item.id] = { x: item.x, y: item.y };
+    manualRef.current = snapshot;
+    setManual(snapshot);
+    setAutoLayout(false);
+    persist(snapshot, false);
+  }, [persist]);
 
-  const zoomAt = useCallback(
-    (factor: number, mx?: number, my?: number) => {
-      setCam((current) => {
-        const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current.k * factor));
-        const px = mx ?? size.w / 2;
-        const py = my ?? size.h / 2;
-        const ratio = next / current.k;
-        return { k: next, x: px - (px - current.x) * ratio, y: py - (py - current.y) * ratio };
-      });
-    },
-    [size.h, size.w]
-  );
-
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!open || !el) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = el.getBoundingClientRect();
-      zoomAt(Math.exp(-event.deltaY * 0.0015), event.clientX - rect.left, event.clientY - rect.top);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [open, zoomAt]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, open]);
-
-  // بستن وسط کشیدن/اتصال نباید حالت نیمه‌کاره باقی بگذارد.
-  useEffect(() => {
-    if (open) return;
-    panRef.current = null;
-    dragRef.current = null;
-    connectRef.current = null;
-    setPanning(false);
-    setDragging(null);
-    setConnect(null);
-  }, [open]);
-
-  // خروج از حالت ویرایش نباید اتصال یا کشیدن نیمه‌کاره باقی بگذارد.
-  useEffect(() => {
-    if (mode === 'edit') return;
-    dragRef.current = null;
-    connectRef.current = null;
-    setDragging(null);
-    setConnect(null);
-  }, [mode]);
-
-  useEffect(() => {
-    if (selectedItem != null && !items.some((item) => item.id === selectedItem)) setSelectedItem(null);
-  }, [items, selectedItem]);
-
-  useEffect(() => {
-    if (!open) return;
-    setSourceId((prev) => {
-      if (prev && items.some((item) => item.id === prev)) return prev;
-      if (currentId && items.some((item) => item.id === currentId)) return currentId;
-      return items[0]?.id ?? '';
-    });
-  }, [currentId, items, open]);
-
-  useEffect(() => {
-    setTargetId((prev) => {
-      if (prev && items.some((item) => item.id === prev) && prev !== sourceId) return prev;
-      return items.find((item) => item.id !== sourceId)?.id ?? '';
-    });
-  }, [items, sourceId]);
+  const resetLayout = useCallback(() => {
+    manualRef.current = {};
+    setManual({});
+    setAutoLayout(true);
+    persist({}, true);
+    setFitNonce((value) => value + 1);
+  }, [persist]);
 
   /* ------------------------------ پیوندها ------------------------------ */
-  const relatedIds = useMemo(() => {
-    const set = new Set<number>();
-    if (hovered == null) return set;
-    set.add(hovered);
-    for (const item of items) {
-      if (item.parentId === hovered) set.add(item.id);
-      if (item.id === hovered && item.parentId != null) set.add(item.parentId);
-    }
-    for (const link of links) {
-      if (link.from === hovered) set.add(link.to);
-      if (link.to === hovered) set.add(link.from);
-    }
-    return set;
-  }, [hovered, items, links]);
-
-  const removeLink = useCallback(
-    async (from: number, nodeId: string, title: string) => {
-      if (!canEdit || busy) return;
-      if (
-        !window.confirm(
-          `پیوند «${title}» حذف شود؟ فقط همین جزء پیوند از بوم دیاگرام مبدأ برداشته می‌شود و به بقیهٔ اجزا کاری ندارد.`
-        )
-      ) {
-        return;
-      }
-      setBusy(true);
-      try {
-        await api.diagramDeleteLink(from, nodeId);
-        setSelectedLink(null);
-        onNotify?.('پیوند حذف شد.', 'success');
-        onMutated?.(from);
-        onRefresh();
-      } catch (e) {
-        onNotify?.(e instanceof ApiError ? e.message : 'حذف پیوند ناموفق بود.', 'error');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [busy, canEdit, onMutated, onNotify, onRefresh]
+  const selectedLinkData = useMemo(
+    () => (selectedLink ? links.find((link) => `${link.from}:${link.nodeId}` === selectedLink) ?? null : null),
+    [links, selectedLink]
   );
 
   const addLinkBetween = useCallback(
@@ -725,6 +790,29 @@ export default function DiagramOverview({
     [busy, canEdit, items, onMutated, onNotify, onRefresh]
   );
 
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      const from = Number(connection.source);
+      const to = Number(connection.target);
+      if (!from || !to) return;
+      void addLinkBetween(from, to, undefined, linkKind, asSide(connection.sourceHandle), asSide(connection.targetHandle));
+    },
+    [addLinkBetween, linkKind]
+  );
+
+  // اتصال به خود و اتصال تکراری پیش از رسیدن به سرور رد می‌شود؛ بنابراین
+  // پیام خطای سرور برای این حالت‌ها نمایش داده نمی‌شود.
+  const isValidConnection = useCallback(
+    (connection: Connection | OverviewEdge) => {
+      if (!canEdit || busy) return false;
+      const from = Number(connection.source);
+      const to = Number(connection.target);
+      if (!from || !to || from === to) return false;
+      return !links.some((link) => link.from === from && link.to === to);
+    },
+    [busy, canEdit, links]
+  );
+
   const createLink = useCallback(async () => {
     const source = Number(sourceId);
     const target = Number(targetId);
@@ -737,7 +825,7 @@ export default function DiagramOverview({
       return;
     }
     const created = await addLinkBetween(source, target, linkLabel, linkKind);
-    // فقط وقتی سرور پیوند را پذیرفته فرم بسته می‌شود؛ در خطا (مثلاً تکرار)
+    // فقط وقتی سرور پیوند را پذیرفت فرم بسته می‌شود؛ در خطا (مثلاً تکرار)
     // فرم باز می‌ماند تا کاربر مقصد دیگری انتخاب کند.
     if (created) {
       setLinkLabel('');
@@ -763,803 +851,237 @@ export default function DiagramOverview({
     [busy, canEdit, onMutated, onNotify, onRefresh, selectedLinkData]
   );
 
-  /* --------------------------- جابه‌جایی کارت‌ها --------------------------- */
-  const beginCardDrag = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>, item: Placed) => {
-      if (!canEdit || event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      setSelectedItem(item.id);
-      setSelectedLink(null);
-      const origin = autoLayout
-        ? { x: item.x, y: item.y }
-        : manualRef.current[item.id] ?? { x: item.x, y: item.y };
-      dragRef.current = {
-        id: item.id,
-        sx: event.clientX,
-        sy: event.clientY,
-        ox: origin.x,
-        oy: origin.y,
-        moved: false,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setDragging(item.id);
-    },
-    [autoLayout, canEdit]
-  );
-
-  const moveCard = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const k = camRef.current.k || 1;
-    const dx = (event.clientX - drag.sx) / k;
-    const dy = (event.clientY - drag.sy) / k;
-    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      // اولین حرکت واقعی: چیدمان خودکار «فریز» و به حالت آزاد تبدیل می‌شود
-      // تا بقیهٔ کارت‌ها سر جایشان بمانند.
-      if (autoLayout) {
-        const frozen: PositionMap = {};
-        for (const place of placedRef.current) frozen[place.id] = { x: place.x, y: place.y };
-        manualRef.current = frozen;
-        setAutoLayout(false);
+  const removeLink = useCallback(
+    async (from: number, nodeId: string, title: string) => {
+      if (!canEdit || busy) return;
+      if (
+        !window.confirm(
+          `پیوند «${title}» حذف شود؟ فقط همین جزء پیوند از بوم دیاگرام مبدأ برداشته می‌شود و به بقیهٔ اجزا کاری ندارد.`
+        )
+      ) {
+        return;
       }
-    }
-    const next = {
-      ...manualRef.current,
-      [drag.id]: {
-        x: Math.max(0, Math.round(drag.ox + dx)),
-        y: Math.max(0, Math.round(drag.oy + dy)),
-      },
-    };
-    manualRef.current = next;
-    setManual(next);
-  }, [autoLayout]);
-
-  const endCardDrag = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>, item: Placed) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      dragRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      setDragging(null);
-      if (drag.moved) {
-        persist(manualRef.current, false);
-      } else {
-        setSelectedItem(item.id);
+      setBusy(true);
+      try {
+        await api.diagramDeleteLink(from, nodeId);
         setSelectedLink(null);
+        onNotify?.('پیوند حذف شد.', 'success');
+        onMutated?.(from);
+        onRefresh();
+      } catch (e) {
+        onNotify?.(e instanceof ApiError ? e.message : 'حذف پیوند ناموفق بود.', 'error');
+      } finally {
+        setBusy(false);
       }
     },
-    [persist]
+    [busy, canEdit, onMutated, onNotify, onRefresh]
   );
 
-  const cancelCardDrag = useCallback(() => {
-    const drag = dragRef.current;
-    dragRef.current = null;
-    setDragging(null);
-    if (drag?.moved) persist(manualRef.current, false);
-  }, [persist]);
+  /* ------------------------------ هم‌زمان‌سازی حالت ------------------------------ */
+  useEffect(() => {
+    if (selectedItem != null && !items.some((item) => item.id === selectedItem)) setSelectedItem(null);
+  }, [items, selectedItem]);
 
-  /* --------------------------- اتصال با کشیدن --------------------------- */
-  const beginConnect = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>, item: Placed, side: HandleSide) => {
-      if (!canEdit || busy || event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      const start = sidePoint(item, side);
-      const next: ConnectState = {
-        from: item.id,
-        fromSide: side,
-        x: start.x,
-        y: start.y,
-        target: null,
-        targetSide: null,
-      };
-      connectRef.current = next;
-      setConnect(next);
-      setSelectedItem(item.id);
-      setSelectedLink(null);
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [busy, canEdit]
-  );
+  useEffect(() => {
+    if (selectedLink && !selectedLinkData) setSelectedLink(null);
+  }, [selectedLink, selectedLinkData]);
 
-  const moveConnect = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    const state = connectRef.current;
-    const stage = stageRef.current;
-    if (!state || !stage) return;
-    const rect = stage.getBoundingClientRect();
-    const k = camRef.current.k || 1;
-    const wx = (event.clientX - rect.left - camRef.current.x) / k;
-    const wy = (event.clientY - rect.top - camRef.current.y) / k;
-    const target = placedRef.current.find(
-      (place) =>
-        place.id !== state.from &&
-        wx >= place.x &&
-        wx <= place.x + NODE_W &&
-        wy >= place.y &&
-        wy <= place.y + NODE_H
-    );
-    const next = {
-      ...state,
-      x: wx,
-      y: wy,
-      target: target?.id ?? null,
-      targetSide: target ? nearestSide(target, wx, wy) : null,
+  useEffect(() => {
+    setSourceId((previous) => {
+      if (previous && items.some((item) => item.id === previous)) return previous;
+      if (currentId && items.some((item) => item.id === currentId)) return currentId;
+      return items[0]?.id ?? '';
+    });
+  }, [currentId, items]);
+
+  useEffect(() => {
+    setTargetId((previous) => {
+      if (previous && items.some((item) => item.id === previous) && previous !== sourceId) return previous;
+      return items.find((item) => item.id !== sourceId)?.id ?? '';
+    });
+  }, [items, sourceId]);
+
+  useEffect(() => {
+    if (canEdit) return;
+    setShowCreate(false);
+  }, [canEdit]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (showCreate) {
+        setShowCreate(false);
+        return;
+      }
+      if (selectedLink) {
+        setSelectedLink(null);
+        return;
+      }
+      if (selectedItem != null) {
+        setSelectedItem(null);
+        return;
+      }
+      onClose();
     };
-    connectRef.current = next;
-    setConnect(next);
-  }, []);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, selectedItem, selectedLink, showCreate]);
 
-  const endConnect = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      const state = connectRef.current;
-      connectRef.current = null;
-      setConnect(null);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      if (state?.target != null) {
-        void addLinkBetween(
-          state.from,
-          state.target,
-          undefined,
-          linkKind,
-          state.fromSide,
-          state.targetSide ?? undefined
-        );
-      }
-    },
-    [addLinkBetween, linkKind]
-  );
-
-  const cancelConnect = useCallback((event?: React.PointerEvent<HTMLButtonElement>) => {
-    connectRef.current = null;
-    setConnect(null);
-    if (event && event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
-
-  /* ------------------------------ چیدمان ------------------------------ */
-  const enableAuto = useCallback(() => {
-    setAutoLayout(true);
-    persist(manualRef.current, true);
-    setFitNonce((value) => value + 1);
-  }, [persist]);
-
-  const enableManual = useCallback(() => {
-    if (!autoLayout && Object.keys(manualRef.current).length) return;
-    if (!Object.keys(manualRef.current).length) {
-      const snapshot: PositionMap = {};
-      for (const place of placedRef.current) snapshot[place.id] = { x: place.x, y: place.y };
-      manualRef.current = snapshot;
-      setManual(snapshot);
-      persist(snapshot, false);
-    }
-    setAutoLayout(false);
-    setFitNonce((value) => value + 1);
-  }, [autoLayout, persist]);
-
-  const resetLayout = useCallback(() => {
-    manualRef.current = {};
-    setManual({});
-    setAutoLayout(true);
-    persist({}, true);
-    setFitNonce((value) => value + 1);
-  }, [persist]);
-
-  if (!open) return null;
-
-  const needle = query.trim();
-  const matches = (item: Placed) =>
-    !needle || item.name.includes(needle) || item.description.includes(needle);
-  const stats = graph?.stats;
-  const matchCount = board.placed.filter(matches).length;
-  const connectFrom = connect ? positions.get(connect.from) : null;
+  /* ------------------------------ رندر ------------------------------ */
+  const matchCount = matchedIds ? matchedIds.size : items.length;
+  const broken = graph?.broken ?? [];
 
   return (
-    <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center bg-ink-900/30 p-3 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="نقشهٔ ارتباط دیاگرام‌ها"
-      onClick={onClose}
-    >
+    <OverviewUi.Provider value={{ open: (id: number) => onOpen(id) }}>
       <div
-        className="flex h-full max-h-[94vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-card border border-white/70 bg-white/97 shadow-pop"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[1200] flex items-center justify-center bg-scrim/40 p-2 backdrop-blur-sm sm:p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="نقشهٔ ارتباط دیاگرام‌ها"
+        onClick={onClose}
       >
-        {/* سربرگ */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-ink-100 px-4 py-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-50 text-brand-600">
-            <GitBranch size={16} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold text-ink-800">نقشهٔ ارتباط دیاگرام‌ها</h2>
-            <p className="num text-[10.5px] text-ink-400">
-              {faDigits(stats?.diagrams ?? items.length)} دیاگرام · {faDigits(stats?.links ?? 0)} پیوند ·{' '}
-              {faDigits(stats?.children ?? 0)} زیرمجموعه · {faDigits(stats?.orphans ?? 0)} بدون ارتباط
-            </p>
-          </div>
-          <div
-            className="inline-flex items-center rounded-pill border border-ink-200 bg-white/80 p-0.5"
-            role="group"
-            aria-label="حالت نقشهٔ ارتباط"
-          >
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
-                mode === 'view' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
-              }`}
-              onClick={() => setMode('view')}
-              aria-pressed={mode === 'view'}
-              title="فقط مشاهده و انتخاب کارت‌ها؛ بدون تغییر چیدمان یا پیوند"
-            >
-              <Eye size={11} />
-              نمایش
-            </button>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
-                mode === 'edit' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
-              }`}
-              onClick={() => setMode('edit')}
-              disabled={!canWrite}
-              aria-pressed={mode === 'edit'}
-              title={canWrite ? 'ویرایش چیدمان و پیوندها' : 'برای ویرایش، دسترسی لازم است'}
-            >
-              <Pencil size={11} />
-              ویرایش
-            </button>
-          </div>
-          <div className="relative ms-auto min-w-[170px]">
-            <Search size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
-            <input
-              className="field !rounded-pill !py-1.5 pr-7 text-[11.5px]"
-              placeholder="جست‌وجوی نام یا توضیح…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="جست‌وجوی دیاگرام در نقشهٔ ارتباط"
-            />
-          </div>
-          {needle ? (
-            <span className="num rounded-pill bg-ink-100 px-2 py-0.5 text-[10px] text-ink-600">
-              {faDigits(matchCount)} نتیجه
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className={`btn-ghost btn-xs ${showCreate ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
-            onClick={() => setShowCreate((value) => !value)}
-            disabled={!canEdit || items.length < 2}
-            title={
-              canEdit
-                ? 'ساخت پیوند جدید بین دو دیاگرام'
-                : 'برای ساخت پیوند، حالت ویرایش را فعال کنید'
-            }
-          >
-            <Link2 size={13} />
-            پیوند تازه
-          </button>
-          <button type="button" className="btn-ghost btn-xs" onClick={onRefresh} disabled={loading} title="بازخوانی ارتباط‌ها">
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button type="button" className="btn-ghost btn-xs" onClick={onClose} aria-label="بستن">
-            <X size={15} />
-          </button>
-        </div>
-
-        {/* ساخت پیوند با فرم (علاوه بر کشیدن از دستگیرهٔ کارت‌ها) */}
-        {showCreate && canEdit ? (
-          <div className="flex flex-wrap items-end gap-2 border-b border-ink-100 bg-brand-50/40 px-4 py-2" dir="rtl">
-            <label className="flex min-w-[150px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
-              دیاگرام مبدأ
-              <select
-                className="field !py-1 text-[11.5px]"
-                value={sourceId}
-                onChange={(e) => setSourceId(Number(e.target.value))}
-              >
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex min-w-[150px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
-              دیاگرام مقصد
-              <select
-                className="field !py-1 text-[11.5px]"
-                value={targetId}
-                onChange={(e) => setTargetId(Number(e.target.value))}
-              >
-                {items
-                  .filter((item) => item.id !== sourceId)
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="flex min-w-[160px] flex-[1.4] flex-col gap-0.5 text-[10px] text-ink-500">
-              برچسب روی بوم (اختیاری)
-              <input
-                className="field !py-1 text-[11.5px]"
-                value={linkLabel}
-                placeholder="مثلاً اتصال به مرکز مخابرات"
-                maxLength={120}
-                onChange={(e) => setLinkLabel(e.target.value)}
-              />
-            </label>
-            <label className="flex min-w-[125px] flex-col gap-0.5 text-[10px] text-ink-500">
-              نوع ارتباط
-              <select
-                className="field !py-1 text-[11.5px]"
-                value={linkKind}
-                onChange={(e) => setLinkKind(e.target.value as DiagramConnectionKind)}
-              >
-                {CONNECTION_TYPES.map((type) => (
-                  <option key={type.kind} value={type.kind}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="btn-primary btn-xs" onClick={() => void createLink()} disabled={busy || !targetId}>
-              <Plus size={12} />
-              {busy ? 'در حال ساخت…' : 'ساخت پیوند'}
-            </button>
-            <p className="w-full text-[10px] leading-4 text-ink-400">
-              سریع‌تر: از هر یک از چهار نقطهٔ کنار کارت به سمت کارت مقصد بکشید. نوع ارتباط بعدی از همین فهرست انتخاب
-              می‌شود و پیوند به‌صورت یک جزء مستقل روی بوم مبدأ ساخته می‌شود.
-            </p>
-          </div>
-        ) : null}
-
-        {/* راهنما و ابزار چیدمان/زوم */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-ink-100 px-4 py-1.5 text-[10.5px] text-ink-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0 w-5 border-t-2 border-dashed border-ink-400" aria-hidden />
-            زیرمجموعه
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="h-0.5 w-5"
-              style={{ background: connectionType(linkKind).color }}
-              aria-hidden
-            />
-            {connectionType(linkKind).label}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full border-2 border-brand-500 bg-brand-100" aria-hidden />
-            دیاگرام جاری
-          </span>
-          {stats?.broken ? (
-            <span className="inline-flex items-center gap-1 text-sun-700">
-              <AlertTriangle size={12} />
-              {faDigits(stats.broken)} پیوند شکسته
-            </span>
-          ) : null}
-          {canEdit ? (
-            <label className="inline-flex items-center gap-1 rounded-pill border border-ink-200 bg-white/80 px-2 py-1">
-              <span className="text-[10px] text-ink-400">نوع پیوند</span>
-              <select
-                className="bg-transparent text-[10.5px] font-medium text-ink-700 outline-none"
-                value={linkKind}
-                onChange={(e) => setLinkKind(e.target.value as DiagramConnectionKind)}
-                aria-label="نوع ارتباط پیوند جدید"
-              >
-                {CONNECTION_TYPES.map((type) => (
-                  <option key={type.kind} value={type.kind}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {canEdit ? <span className="flex items-center gap-0.5 rounded-pill bg-ink-50 p-0.5" dir="rtl">
-            <button
-              type="button"
-              className={`btn-ghost btn-xs ${autoLayout ? '!border-brand-300 !bg-white !text-brand-700 shadow-soft' : ''}`}
-              onClick={enableAuto}
-              title="چیدمان خودکار بر اساس ساختار درخت و جهت پیوندها"
-              aria-pressed={autoLayout}
-            >
-              <LayoutGrid size={12} />
-              خودکار
-            </button>
-            <button
-              type="button"
-              className={`btn-ghost btn-xs ${!autoLayout ? '!border-sky-300 !bg-white !text-sky-700 shadow-soft' : ''}`}
-              onClick={enableManual}
-              title="چیدمان آزاد: کارت‌ها را با کشیدن جابه‌جا کنید"
-              aria-pressed={!autoLayout}
-            >
-              <Move size={12} />
-              آزاد
-            </button>
-            <button
-              type="button"
-              className="btn-ghost btn-xs"
-              onClick={resetLayout}
-              title="بازگشت به چیدمان خودکار و پاک کردن جابه‌جایی‌ها"
-              aria-label="بازنشانی چیدمان"
-            >
-              <RotateCcw size={12} />
-            </button>
-          </span> : null}
-          <span className="ms-auto flex items-center gap-1">
-            <button type="button" className="btn-ghost btn-xs" onClick={() => zoomAt(1.2)} title="بزرگ‌نمایی" aria-label="بزرگ‌نمایی">
-              <Plus size={12} />
-            </button>
-            <button type="button" className="btn-ghost btn-xs" onClick={() => zoomAt(1 / 1.2)} title="کوچک‌نمایی" aria-label="کوچک‌نمایی">
-              <Minus size={12} />
-            </button>
-            <button
-              type="button"
-              className="btn-ghost btn-xs"
-              onClick={() => setFitNonce((value) => value + 1)}
-              title="جا دادن نقشه در کادر"
-            >
-              <Maximize2 size={12} />
-              جا دادن
-            </button>
-            <span className="num ms-1 text-[10px] text-ink-400">{faDigits(Math.round(cam.k * 100))}٪</span>
-          </span>
-        </div>
-
-        {/* بوم */}
         <div
-          ref={stageRef}
-          className="relative min-h-0 flex-1 touch-none overflow-hidden bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:22px_22px]"
-          style={{ cursor: panning ? 'grabbing' : connect ? 'crosshair' : 'grab' }}
-          onPointerDown={(e) => {
-            if ((e.target as HTMLElement).closest('[data-no-pan]')) return;
-            setSelectedItem(null);
-            setSelectedLink(null);
-            panRef.current = { x: e.clientX, y: e.clientY, vx: camRef.current.x, vy: camRef.current.y };
-            setPanning(true);
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            const pan = panRef.current;
-            if (!pan) return;
-            setCam((current) => ({ ...current, x: pan.vx + (e.clientX - pan.x), y: pan.vy + (e.clientY - pan.y) }));
-          }}
-          onPointerUp={() => {
-            panRef.current = null;
-            setPanning(false);
-          }}
-          onPointerCancel={() => {
-            panRef.current = null;
-            setPanning(false);
-          }}
+          className="flex h-full max-h-[95vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-surface shadow-pop"
+          onClick={(event) => event.stopPropagation()}
         >
-          {loading && !graph ? (
-            <p className="py-20 text-center text-[12px] text-ink-400">در حال خواندن ارتباط دیاگرام‌ها…</p>
-          ) : error && !graph ? (
-            <div className="grid h-full place-items-center p-6 text-center">
-              <div>
-                <AlertTriangle size={26} className="mx-auto text-red-500" />
-                <p className="mt-2 text-[12.5px] text-ink-600">{error}</p>
-                <button type="button" className="btn-ghost btn-xs mt-3" onClick={onRefresh}>
-                  <RefreshCw size={12} />
-                  تلاش دوباره
+          {/* سربرگ */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-ink-100 px-3 py-2">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-accent">
+              <GitBranch size={16} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[13.5px] font-semibold text-ink-800">نقشهٔ ارتباط دیاگرام‌ها</h2>
+              <p className="num text-[10px] text-ink-400">
+                {faDigits(stats?.diagrams ?? items.length)} دیاگرام · {faDigits(stats?.links ?? 0)} پیوند ·{' '}
+                {faDigits(stats?.children ?? 0)} زیرمجموعه · {faDigits(stats?.orphans ?? 0)} بدون ارتباط
+              </p>
+            </div>
+
+            <div className="ms-auto flex flex-wrap items-center gap-1.5">
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400"
+                />
+                <input
+                  className="field !w-[190px] !rounded-pill !py-1.5 pr-7 text-[11.5px]"
+                  placeholder="جست‌وجوی نام یا توضیح…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  aria-label="جست‌وجوی دیاگرام در نقشهٔ ارتباط"
+                />
+              </div>
+              {needle ? (
+                <button
+                  type="button"
+                  className="btn-ghost btn-xs"
+                  onClick={focusMatches}
+                  disabled={!matchCount}
+                  title="نمایش فقط نتایج جست‌وجو روی بوم"
+                >
+                  <span className="num text-[10px]">{faDigits(matchCount)} نتیجه</span>
+                </button>
+              ) : null}
+
+              <div
+                className="inline-flex items-center rounded-pill border border-ink-200 bg-surface p-0.5"
+                role="group"
+                aria-label="حالت نقشهٔ ارتباط"
+              >
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
+                    mode === 'view' ? 'bg-brand-50 text-accent' : 'text-ink-500'
+                  }`}
+                  onClick={() => setMode('view')}
+                  aria-pressed={mode === 'view'}
+                  title="فقط مشاهده و کاوش؛ پیوند و جابه‌جایی غیرفعال است"
+                >
+                  <Eye size={11} />
+                  نمایش
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
+                    mode === 'edit' ? 'bg-brand-50 text-accent' : 'text-ink-500'
+                  }`}
+                  onClick={() => setMode('edit')}
+                  disabled={!canWrite}
+                  aria-pressed={mode === 'edit'}
+                  title={canWrite ? 'ویرایش چیدمان و پیوندها' : 'برای ویرایش، دسترسی لازم است'}
+                >
+                  <Pencil size={11} />
+                  ویرایش
                 </button>
               </div>
+
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={onRefresh}
+                disabled={loading}
+                title="بازخوانی ارتباط‌ها"
+                aria-label="بازخوانی ارتباط‌ها"
+              >
+                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              </button>
+              <button type="button" className="btn-ghost btn-xs" onClick={onClose} aria-label="بستن">
+                <X size={15} />
+              </button>
             </div>
-          ) : board.placed.length === 0 ? (
-            <p className="py-20 text-center text-[12px] text-ink-400">هنوز دیاگرامی ساخته نشده است.</p>
-          ) : (
-            <div
-              className="absolute origin-top-left"
-              style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`, width: board.width, height: board.height }}
-              dir="rtl"
-            >
-              <svg width={board.width} height={board.height} className="absolute inset-0 overflow-visible" aria-hidden>
-                <defs>
-                  {CONNECTION_TYPES.map((type) => (
-                    <marker
-                      key={type.kind}
-                      id={`nw-diagram-arrow-${type.kind}`}
-                      markerWidth="9"
-                      markerHeight="9"
-                      refX="8"
-                      refY="4.5"
-                      orient="auto"
-                    >
-                      <path d="M0,0 L9,4.5 L0,9 z" fill={type.color} />
-                    </marker>
-                  ))}
-                </defs>
+          </div>
 
-                {/* ساختار درختی */}
-                {board.placed.map((item) => {
-                  const parent = item.parentId != null ? positions.get(item.parentId) : null;
-                  if (!parent) return null;
-                  const dim = hovered != null && !(relatedIds.has(item.id) && relatedIds.has(parent.id));
-                  return (
-                    <path
-                      key={`p-${item.id}`}
-                      d={linkGeometry(parent, item).d}
-                      fill="none"
-                      stroke="#94a3b8"
-                      strokeWidth={1.5}
-                      strokeDasharray="5 5"
-                      strokeLinecap="round"
-                      opacity={dim ? 0.18 : 0.9}
-                    />
-                  );
-                })}
+          {/* نوار ابزار */}
+          <div
+            className="flex flex-wrap items-center gap-2 border-b border-ink-100 bg-ink-50/40 px-3 py-1.5 text-[10.5px] text-ink-500"
+            dir="rtl"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-0 w-5 border-t-2 border-dashed border-ink-400" aria-hidden />
+              زیرمجموعه
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="h-0.5 w-5 rounded"
+                style={{ background: connectionType(linkKind).color }}
+                aria-hidden
+              />
+              ارتباط
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full border-2 border-brand-500 bg-brand-100" aria-hidden />
+              دیاگرام جاری
+            </span>
+            {broken.length ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-pill border border-sun-200 bg-sun-50 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                onClick={() => setBrokenOpen((value) => !value)}
+                aria-expanded={brokenOpen}
+                title="پیوندهای شکسته را ببینید و پاک کنید"
+              >
+                <AlertTriangle size={11} />
+                {faDigits(broken.length)} پیوند شکسته
+                <ChevronDown size={11} className={brokenOpen ? 'rotate-180' : ''} />
+              </button>
+            ) : null}
 
-                {/* پیوندهای دستی */}
-                {linkRows.map(({ link, offset }) => {
-                  const from = positions.get(link.from);
-                  const to = positions.get(link.to);
-                  if (!from || !to) return null;
-                  const meta = connectionType(link.kind);
-                  const geo = linkGeometry(from, to, offset, link.fromSide, link.toSide);
-                  const active = selectedLink === `${link.from}:${link.nodeId}`;
-                  const dim = hovered != null && !(relatedIds.has(link.from) && relatedIds.has(link.to));
-                  return (
-                    <g key={`l-${link.from}-${link.nodeId}`} opacity={dim ? 0.15 : 1}>
-                      {/* هالهٔ سفید برای خوانایی روی شبکهٔ نقطه‌چین */}
-                      <path d={geo.d} fill="none" stroke="#ffffff" strokeWidth={active ? 8 : 5.5} strokeLinecap="round" />
-                      <path
-                        d={geo.d}
-                        fill="none"
-                        stroke={meta.color}
-                        strokeWidth={active ? meta.width + 1.2 : meta.width}
-                        strokeDasharray={meta.dash || undefined}
-                        strokeLinecap="round"
-                        markerEnd={`url(#nw-diagram-arrow-${meta.kind})`}
-                      />
-                      <path
-                        d={geo.d}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth={18}
-                        style={{ cursor: 'pointer' }}
-                        data-no-pan
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedItem(null);
-                          setSelectedLink(`${link.from}:${link.nodeId}`);
-                        }}
-                      />
-                    </g>
-                  );
-                })}
+            <span className="mx-0.5 h-4 w-px bg-ink-200" aria-hidden />
 
-                {/* پیش‌نمایش اتصال در حال کشیدن */}
-                {connect && connectFrom ? (
-                  <g className="pointer-events-none">
-                    <path
-                      d={previewGeometry(connectFrom, connect.x, connect.y, connect.fromSide)}
-                      fill="none"
-                      stroke={connectionType(linkKind).color}
-                      strokeWidth={2.4}
-                      strokeDasharray={connectionType(linkKind).dash || '7 5'}
-                      strokeLinecap="round"
-                      markerEnd={`url(#nw-diagram-arrow-${connectionType(linkKind).kind})`}
-                    />
-                    <circle
-                      cx={connect.x}
-                      cy={connect.y}
-                      r={connect.target != null ? 7 : 5}
-                      fill={connect.target != null ? '#059669' : '#0ea5e9'}
-                      stroke="#ffffff"
-                      strokeWidth={2.5}
-                    />
-                  </g>
-                ) : null}
-              </svg>
-
-              {/* کارت دیاگرام‌ها */}
-              {board.placed.map((item) => {
-                const active = item.id === currentId;
-                const selectedCard = item.id === selectedItem;
-                const dim = !matches(item) || (hovered != null && !relatedIds.has(item.id));
-                const isTarget = connect?.target === item.id;
-                return (
-                  <React.Fragment key={item.id}>
-                    <button
-                      type="button"
-                      data-no-pan
-                      onPointerDown={(event) => beginCardDrag(event, item)}
-                      onPointerMove={moveCard}
-                      onPointerUp={(event) => endCardDrag(event, item)}
-                      onPointerCancel={cancelCardDrag}
-                      onMouseEnter={() => setHovered(item.id)}
-                      onMouseLeave={() => setHovered((value) => (value === item.id ? null : value))}
-                      onClick={(event) => {
-                        // در حالت ویرایش، کلیک ماوس در pointerup مدیریت می‌شود؛
-                        // فقط کلیک صفحه‌کلید یا حالت نمایش باید انتخاب کند.
-                        if (event.detail === 0 || !canEdit) {
-                          setSelectedItem(item.id);
-                          setSelectedLink(null);
-                        }
-                      }}
-                      className={`absolute flex flex-col items-start justify-center gap-1 overflow-hidden rounded-xl border bg-white px-3 pe-12 py-2 text-right transition ${
-                        active ? 'border-brand-400 ring-2 ring-brand-200' : 'border-ink-200'
-                      } ${selectedCard ? '!border-sky-500 ring-2 ring-sky-200' : ''} ${
-                        isTarget ? '!border-emerald-500 ring-2 ring-emerald-300' : ''
-                      } ${
-                        dragging === item.id
-                          ? 'z-20 cursor-grabbing shadow-pop'
-                          : canEdit
-                            ? 'cursor-grab shadow-soft hover:shadow-pop'
-                            : 'cursor-pointer shadow-soft hover:shadow-pop'
-                      } ${dim ? 'opacity-30' : ''}`}
-                      style={{ left: item.x, top: item.y, width: NODE_W, height: NODE_H }}
-                      title={`${item.name} — کلیک برای انتخاب${
-                        canEdit ? ' · برای جابه‌جایی بکشید' : ' · برای ورود از دکمهٔ ورود استفاده کنید'
-                      }`}
-                      aria-label={`انتخاب دیاگرام ${item.name}`}
-                      aria-pressed={selectedCard}
-                    >
-                      <span className="flex w-full items-center gap-1">
-                        <Workflow size={12} className={active ? 'text-brand-600' : 'text-ink-400'} />
-                        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink-800">{item.name}</span>
-                        {item.brokenLinks ? <AlertTriangle size={11} className="shrink-0 text-sun-600" /> : null}
-                      </span>
-                      <span className="num flex w-full items-center gap-1.5 text-[9.5px] text-ink-400">
-                        <span>{faDigits(item.nodeCount)} جزء</span>
-                        <span aria-hidden>·</span>
-                        <span>{faDigits(item.edgeCount)} ارتباط</span>
-                        <span className="ms-auto truncate">{fmtRelative(item.updatedAt)}</span>
-                      </span>
-                      <span className="flex w-full items-center gap-1 text-[9px]">
-                        {item.childCount ? (
-                          <span className="rounded-pill bg-ink-100 px-1.5 text-ink-500">{faDigits(item.childCount)} زیرمجموعه</span>
-                        ) : null}
-                        {item.outLinks ? (
-                          <span className="rounded-pill bg-sky-50 px-1.5 text-sky-700">{faDigits(item.outLinks)} خروجی</span>
-                        ) : null}
-                        {item.inLinks ? (
-                          <span className="rounded-pill bg-emerald-50 px-1.5 text-emerald-700">{faDigits(item.inLinks)} ورودی</span>
-                        ) : null}
-                        {!item.childCount && !item.inLinks && !item.outLinks && item.parentId == null ? (
-                          <span className="rounded-pill bg-ink-50 px-1.5 text-ink-400">بدون ارتباط</span>
-                        ) : null}
-                      </span>
-                    </button>
-
-                    {/* دکمهٔ ورود مستقل از انتخاب کارت؛ کلیک روی بدنه فقط انتخاب می‌کند. */}
-                    <button
-                      type="button"
-                      data-no-pan
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onOpen(item.id);
-                      }}
-                      className="absolute z-20 inline-flex items-center gap-0.5 rounded-md border border-sky-200 bg-white/95 px-1 py-0.5 text-[9px] font-medium text-sky-700 shadow-soft transition hover:border-sky-400 hover:bg-sky-50"
-                      style={{ left: item.x + 5, top: item.y + 5 }}
-                      title={`ورود به دیاگرام «${item.name}»`}
-                      aria-label={`ورود به دیاگرام ${item.name}`}
-                    >
-                      <ExternalLink size={9} />
-                      ورود
-                    </button>
-
-                    {/* چهار دستگیرهٔ اتصال؛ هر سمت را می‌توان به کارت مقصد کشید. */}
-                    {canEdit && items.length > 1
-                      ? HANDLE_SIDES.map((side) => {
-                          const point = sidePoint(item, side);
-                          const sourceActive = connect?.from === item.id && connect.fromSide === side;
-                          return (
-                            <button
-                              key={`${item.id}-${side}`}
-                              type="button"
-                              data-no-pan
-                              title={`اتصال از سمت ${side === 'top' ? 'بالا' : side === 'right' ? 'راست' : side === 'bottom' ? 'پایین' : 'چپ'} به دیاگرام دیگر`}
-                              aria-label={`اتصال دیاگرام ${item.name} از سمت ${side} به دیاگرام دیگر`}
-                              onPointerDown={(event) => beginConnect(event, item, side)}
-                              onPointerMove={moveConnect}
-                              onPointerUp={endConnect}
-                              onPointerCancel={cancelConnect}
-                              onClick={(event) => event.stopPropagation()}
-                              className={`absolute z-10 grid place-items-center rounded-full border-2 border-white shadow-soft transition hover:scale-125 ${
-                                sourceActive ? 'ring-2 ring-sky-300' : ''
-                              }`}
-                              style={{
-                                left: point.x - HANDLE_SIZE / 2,
-                                top: point.y - HANDLE_SIZE / 2,
-                                width: HANDLE_SIZE,
-                                height: HANDLE_SIZE,
-                                background: connectionType(linkKind).color,
-                              }}
-                            >
-                              <span className="h-1 w-1 rounded-full bg-white" aria-hidden />
-                            </button>
-                          );
-                        })
-                      : null}
-                  </React.Fragment>
-                );
-              })}
-
-              {/* برچسب روی پیوندها */}
-              {linkRows.map(({ link, offset }) => {
-                const from = positions.get(link.from);
-                const to = positions.get(link.to);
-                if (!from || !to) return null;
-                const meta = connectionType(link.kind);
-                const geo = linkGeometry(from, to, offset, link.fromSide, link.toSide);
-                const active = selectedLink === `${link.from}:${link.nodeId}`;
-                const dim = hovered != null && !(relatedIds.has(link.from) && relatedIds.has(link.to));
-                return (
-                  <button
-                    key={`label-${link.from}:${link.nodeId}`}
-                    type="button"
-                    data-no-pan
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedItem(null);
-                      setSelectedLink(`${link.from}:${link.nodeId}`);
-                    }}
-                    className={`absolute max-w-[210px] truncate rounded-pill border px-2 py-0.5 text-[10px] shadow-soft transition ${
-                      active ? 'text-white' : 'bg-white hover:brightness-[0.98]'
-                    } ${dim ? 'opacity-30' : ''}`}
-                    style={{
-                      left: geo.mx,
-                      top: geo.my,
-                      transform: 'translate(-50%, -50%)',
-                      ...(active
-                        ? { background: meta.color, borderColor: meta.color }
-                        : { borderColor: `${meta.color}66`, color: meta.color }),
-                    }}
-                    title={`${meta.label} · ${link.nodeLabel || 'پیوند'} — برای مدیریت کلیک کنید`}
-                  >
-                    {meta.label} · {link.nodeLabel || 'پیوند'}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* مدیریت پیوند انتخاب‌شده */}
-          {selectedLinkData ? (
-            <div
-              data-no-pan
-              className="absolute inset-x-2 bottom-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-white/97 px-2.5 py-1.5 shadow-pop"
-              style={{ borderColor: `${connectionType(selectedLinkData.kind).color}66` }}
-            >
-              <span className="flex items-center gap-1 text-[11px] text-ink-600">
-                <Link2 size={12} className="text-sky-600" />
-                <strong className="font-semibold text-ink-800">
-                  {positions.get(selectedLinkData.from)?.name ?? `#${selectedLinkData.from}`}
-                </strong>
-                به
-                <strong className="font-semibold text-ink-800">
-                  {positions.get(selectedLinkData.to)?.name ?? `#${selectedLinkData.to}`}
-                </strong>
-                {selectedLinkData.nodeLabel ? (
-                  <span className="text-ink-400">({selectedLinkData.nodeLabel})</span>
-                ) : null}
-              </span>
-              {canEdit ? (
-                <label className="inline-flex items-center gap-1 rounded-pill border border-ink-200 bg-white px-1.5 py-0.5">
+            {canEdit ? (
+              <>
+                <label className="inline-flex items-center gap-1 rounded-pill border border-ink-200 bg-surface px-1.5 py-0.5">
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ background: connectionType(selectedLinkData.kind).color }}
+                    style={{ background: connectionType(linkKind).color }}
                     aria-hidden
                   />
-                  <span className="text-[9.5px] text-ink-400">نوع</span>
+                  <span className="text-[9.5px] text-ink-400">نوع اتصال</span>
                   <select
-                    className="bg-transparent text-[10.5px] font-medium text-ink-700 outline-none"
-                    value={selectedLinkData.kind}
-                    disabled={busy}
-                    onChange={(e) => void changeLinkKind(e.target.value as DiagramConnectionKind)}
-                    aria-label="نوع ارتباط این پیوند"
+                    className="max-w-[120px] bg-transparent text-[10.5px] font-medium text-ink-700 outline-none"
+                    value={linkKind}
+                    onChange={(event) => setLinkKind(event.target.value as DiagramConnectionKind)}
+                    aria-label="نوع ارتباط پیوند جدید"
                   >
                     {CONNECTION_TYPES.map((type) => (
                       <option key={type.kind} value={type.kind}>
@@ -1568,100 +1090,443 @@ export default function DiagramOverview({
                     ))}
                   </select>
                 </label>
-              ) : (
-                <span
-                  className="rounded-pill px-2 py-0.5 text-[10px] font-medium"
-                  style={{
-                    color: connectionType(selectedLinkData.kind).color,
-                    background: `${connectionType(selectedLinkData.kind).color}12`,
-                  }}
+                <button
+                  type="button"
+                  className={`btn-ghost btn-xs ${showCreate ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
+                  onClick={() => setShowCreate((value) => !value)}
+                  disabled={items.length < 2}
+                  aria-expanded={showCreate}
+                  title="ساخت پیوند با انتخاب مبدأ و مقصد"
                 >
-                  {connectionType(selectedLinkData.kind).label}
+                  <Link2 size={12} />
+                  پیوند تازه
+                </button>
+                <span className="mx-0.5 h-4 w-px bg-ink-200" aria-hidden />
+                <span className="flex items-center gap-0.5 rounded-pill bg-surface p-0.5">
+                  <button
+                    type="button"
+                    className={`btn-ghost btn-xs ${autoLayout ? '!border-brand-300 !text-accent shadow-soft' : ''}`}
+                    onClick={enableAuto}
+                    title="چیدمان خودکار بر اساس ساختار درخت و جهت پیوندها"
+                    aria-pressed={autoLayout}
+                  >
+                    <LayoutGrid size={12} />
+                    خودکار
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-ghost btn-xs ${!autoLayout ? '!border-sky-300 !text-info shadow-soft' : ''}`}
+                    onClick={enableManual}
+                    title="چیدمان آزاد: کارت‌ها را با کشیدن جابه‌جا کنید"
+                    aria-pressed={!autoLayout}
+                  >
+                    <Move size={12} />
+                    آزاد
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost btn-xs"
+                    onClick={resetLayout}
+                    title="بازگشت به چیدمان خودکار و پاک کردن جابه‌جایی‌ها"
+                    aria-label="بازنشانی چیدمان"
+                  >
+                    <RotateCcw size={12} />
+                  </button>
                 </span>
-              )}
-              <span className="ms-auto flex items-center gap-1">
-                <button
-                  type="button"
-                  className="btn-ghost btn-xs"
-                  onClick={() => onOpen(selectedLinkData.from, selectedLinkData.nodeId)}
-                  title="باز کردن دیاگرام مبدأ روی همین جزء پیوند"
-                >
-                  <ExternalLink size={12} />
-                  باز کردن مبدأ
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost btn-xs hover:!border-red-200 hover:!text-red-600"
-                  disabled={!canEdit || busy}
-                  onClick={() =>
-                    void removeLink(
-                      selectedLinkData.from,
-                      selectedLinkData.nodeId,
-                      selectedLinkData.nodeLabel || selectedLinkData.label || 'پیوند'
-                    )
-                  }
-                >
-                  <Trash2 size={12} />
-                  حذف پیوند
-                </button>
-                <button type="button" className="btn-ghost btn-xs" onClick={() => setSelectedLink(null)} aria-label="بستن">
-                  <X size={12} />
-                </button>
-              </span>
-            </div>
-          ) : null}
+              </>
+            ) : null}
 
-          {/* پیوندهای شکسته */}
-          {(graph?.broken?.length ?? 0) > 0 ? (
+            <span className="ms-auto flex items-center gap-1">
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={() => void zoomOut({ duration: 160 })}
+                title="کوچک‌نمایی"
+                aria-label="کوچک‌نمایی"
+              >
+                <Minus size={12} />
+              </button>
+              <span className="num w-9 text-center text-[10px] text-ink-400">{faDigits(Math.round(zoom * 100))}٪</span>
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={() => void zoomIn({ duration: 160 })}
+                title="بزرگ‌نمایی"
+                aria-label="بزرگ‌نمایی"
+              >
+                <Plus size={12} />
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={() => setFitNonce((value) => value + 1)}
+                title="جا دادن همهٔ کارت‌ها در کادر"
+              >
+                <Maximize2 size={12} />
+                جا دادن
+              </button>
+            </span>
+          </div>
+
+          {/* فرم ساخت پیوند */}
+          {showCreate && canEdit ? (
             <div
-              data-no-pan
-              className="absolute inset-x-2 top-2 z-10 max-h-28 overflow-auto rounded-xl border border-sun-200 bg-sun-50/95 px-2.5 py-1.5 shadow-soft"
+              className="flex flex-wrap items-end gap-2 border-b border-ink-100 bg-brand-50/40 px-3 py-2"
+              dir="rtl"
             >
-              <p className="flex items-center gap-1 text-[10.5px] font-semibold text-sun-800">
-                <AlertTriangle size={12} />
-                پیوند به دیاگرام حذف‌شده
-              </p>
-              <ul className="mt-1 space-y-1">
-                {(graph?.broken ?? []).map((link: DiagramGraphBrokenLink) => (
-                  <li key={`${link.from}:${link.nodeId}`} className="flex flex-wrap items-center gap-1.5 text-[10px] text-sun-900">
-                    <span className="font-semibold">{link.fromName}</span>
-                    <span className="text-sun-700">→ دیاگرام #{faDigits(link.to)}</span>
-                    {link.nodeLabel ? <span className="text-sun-600">({link.nodeLabel})</span> : null}
-                    <button
-                      type="button"
-                      className="btn-ghost btn-xs ms-auto !py-0.5 hover:!border-red-200 hover:!text-red-600"
-                      disabled={!canEdit || busy}
-                      onClick={() => void removeLink(link.from, link.nodeId, link.nodeLabel || link.fromName)}
-                    >
-                      <Trash2 size={10} />
-                      پاک کردن
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <label className="flex min-w-[140px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
+                دیاگرام مبدأ
+                <select
+                  className="field !py-1 text-[11.5px]"
+                  value={sourceId}
+                  onChange={(event) => setSourceId(Number(event.target.value))}
+                >
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-[140px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
+                دیاگرام مقصد
+                <select
+                  className="field !py-1 text-[11.5px]"
+                  value={targetId}
+                  onChange={(event) => setTargetId(Number(event.target.value))}
+                >
+                  {items
+                    .filter((item) => item.id !== sourceId)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="flex min-w-[150px] flex-[1.4] flex-col gap-0.5 text-[10px] text-ink-500">
+                برچسب (اختیاری)
+                <input
+                  className="field !py-1 text-[11.5px]"
+                  value={linkLabel}
+                  placeholder="مثلاً اتصال به مرکز مخابرات"
+                  maxLength={120}
+                  onChange={(event) => setLinkLabel(event.target.value)}
+                />
+              </label>
+              <label className="flex min-w-[110px] flex-col gap-0.5 text-[10px] text-ink-500">
+                نوع ارتباط
+                <select
+                  className="field !py-1 text-[11.5px]"
+                  value={linkKind}
+                  onChange={(event) => setLinkKind(event.target.value as DiagramConnectionKind)}
+                >
+                  {CONNECTION_TYPES.map((type) => (
+                    <option key={type.kind} value={type.kind}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn-primary btn-xs"
+                onClick={() => void createLink()}
+                disabled={busy || !targetId}
+              >
+                <Plus size={12} />
+                {busy ? 'در حال ساخت…' : 'ساخت پیوند'}
+              </button>
+              <button type="button" className="btn-ghost btn-xs" onClick={() => setShowCreate(false)}>
+                انصراف
+              </button>
             </div>
           ) : null}
-        </div>
 
-        {/* پابرگ */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-4 py-2 text-[10.5px] text-ink-400">
-          <span>
-            {connect
-              ? 'نشانگر را روی کارت مقصد رها کنید تا پیوند ساخته شود.'
-              : canEdit
-                ? 'کلیک روی کارت: انتخاب · دکمهٔ ورود: باز کردن دیاگرام · کشیدن از چهار نقطه: اتصال · چرخ ماوس: بزرگ‌نمایی'
-                : 'کلیک روی کارت: انتخاب · دکمهٔ ورود: باز کردن دیاگرام · کشیدن پس‌زمینه: جابه‌جایی · چرخ ماوس: بزرگ‌نمایی'}
-          </span>
-          <span className="num">
-            حالت: {mode === 'edit' ? 'ویرایش' : 'نمایش'} · چیدمان: {autoLayout ? 'خودکار' : 'آزاد'} ·{' '}
-            {faDigits(items.length)} کارت
-          </span>
-          <button type="button" className="btn-ghost btn-xs" onClick={onClose}>
-            بستن
-          </button>
+          {/* بوم */}
+          <div className="relative min-h-0 flex-1 bg-surface" dir="ltr">
+            {loading && !graph ? (
+              <div className="grid h-full place-items-center">
+                <p className="text-[12px] text-ink-400">در حال خواندن ارتباط دیاگرام‌ها…</p>
+              </div>
+            ) : error && !graph ? (
+              <div className="grid h-full place-items-center p-6 text-center">
+                <div>
+                  <AlertTriangle size={26} className="mx-auto text-danger" />
+                  <p className="mt-2 text-[12.5px] text-ink-600">{error}</p>
+                  <button type="button" className="btn-ghost btn-xs mt-3" onClick={onRefresh}>
+                    <RefreshCw size={12} />
+                    تلاش دوباره
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <ReactFlow<OverviewNode, OverviewEdge>
+                  nodes={nodes}
+                  edges={edges}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  onNodesChange={onNodesChange}
+                  onNodeDragStart={onNodeDragStart}
+                  onNodeDragStop={onNodeDragStop}
+                  onNodeClick={(_event, node) => {
+                    setSelectedLink(null);
+                    setSelectedItem(Number(node.id));
+                  }}
+                  onNodeDoubleClick={(_event, node) => onOpen(Number(node.id))}
+                  onEdgeClick={(event, edge) => {
+                    if (edge.data?.tree) return;
+                    event.stopPropagation();
+                    setSelectedItem(null);
+                    setSelectedLink(edge.id);
+                  }}
+                  onPaneClick={() => {
+                    setSelectedItem(null);
+                    setSelectedLink(null);
+                  }}
+                  onConnect={handleConnect}
+                  isValidConnection={isValidConnection}
+                  nodesDraggable={canEdit}
+                  nodesConnectable={canEdit}
+                  elementsSelectable
+                  edgesFocusable={false}
+                  edgesReconnectable={false}
+                  deleteKeyCode={null}
+                  multiSelectionKeyCode={null}
+                  connectionMode={ConnectionMode.Loose}
+                  // شعاع بزرگ‌تر از نیم‌عرض/نیم‌ارتفاع کارت: رها کردن هر جای کارت
+                  // مقصد، به نزدیک‌ترین نقطهٔ اتصال وصل می‌شود.
+                  connectionRadius={80}
+                  zoomOnDoubleClick={false}
+                  minZoom={MIN_ZOOM}
+                  maxZoom={MAX_ZOOM}
+                  panOnDrag
+                  zoomOnScroll
+                  autoPanOnNodeDrag
+                  autoPanOnConnect
+                  onMove={(_event, viewport) => setZoom(viewport.zoom)}
+                  className={canEdit ? 'cursor-grab' : ''}
+                >
+                  <Background variant={BackgroundVariant.Dots} gap={22} size={1.15} color="rgb(var(--nw-ink-300))" />
+                  <Controls position="bottom-left" showInteractive={false} />
+                  <MiniMap
+                    pannable
+                    zoomable
+                    position="bottom-right"
+                    className="!m-2.5 !hidden overflow-hidden !rounded-xl !border !border-ink-200 !bg-surface sm:!block"
+                    style={{ width: 148, height: 92 }}
+                    nodeColor={(node) => (node.id === String(currentId) ? 'rgb(var(--nw-brand-300))' : 'rgb(var(--nw-ink-200))')}
+                    nodeStrokeColor="rgb(var(--nw-ink-400))"
+                    nodeStrokeWidth={2}
+                    nodeBorderRadius={4}
+                    maskColor="rgb(var(--nw-ink-100) / 0.55)"
+                  />
+                </ReactFlow>
+
+                {/* وضعیت خالی */}
+                {!items.length ? (
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center p-6" dir="rtl">
+                    <div className="max-w-sm rounded-2xl border border-dashed border-ink-200 bg-surface/85 px-6 py-5 text-center backdrop-blur">
+                      <p className="text-sm font-semibold text-ink-700">هنوز دیاگرامی ساخته نشده است</p>
+                      <p className="mt-1 text-[11.5px] leading-5 text-ink-500">
+                        پس از ساخت دیاگرام در بخش دیاگرام‌ها، همهٔ فایل‌ها و ارتباط‌هایشان روی این بوم دیده می‌شود.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* شمارش نتایج جست‌وجو */}
+                {needle && matchedIds ? (
+                  <div
+                    className="pointer-events-none absolute left-1/2 top-2.5 z-10 -translate-x-1/2 rounded-pill border border-ink-200 bg-surface/95 px-2.5 py-1 text-[10.5px] text-ink-600 shadow-soft"
+                    dir="rtl"
+                  >
+                    {faDigits(matchCount)} از {faDigits(items.length)} دیاگرام با «{needle}» مطابق است
+                  </div>
+                ) : null}
+
+                {/* پیوندهای شکسته */}
+                {brokenOpen && broken.length ? (
+                  <div
+                    className="absolute right-2.5 top-2.5 z-20 max-h-[45%] w-[min(340px,calc(100%-20px))] overflow-auto rounded-xl border border-sun-200 bg-sun-50/97 p-2 shadow-pop"
+                    dir="rtl"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle size={12} className="shrink-0 text-warning" />
+                      <p className="flex-1 text-[10.5px] font-semibold text-warning">
+                        پیوند به دیاگرام حذف‌شده ({faDigits(broken.length)})
+                      </p>
+                      <button
+                        type="button"
+                        className="grid h-5 w-5 place-items-center rounded-md text-warning transition hover:bg-surface/70"
+                        onClick={() => setBrokenOpen(false)}
+                        aria-label="بستن فهرست پیوندهای شکسته"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                    <ul className="mt-1 space-y-1">
+                      {broken.map((link: DiagramGraphBrokenLink) => (
+                        <li
+                          key={`${link.from}:${link.nodeId}`}
+                          className="flex flex-wrap items-center gap-1.5 rounded-lg bg-surface/70 px-1.5 py-1 text-[10px] text-warning"
+                        >
+                          <span className="font-semibold">{link.fromName}</span>
+                          <span className="text-warning">→ دیاگرام #{faDigits(link.to)}</span>
+                          {link.nodeLabel ? <span className="text-warning">({link.nodeLabel})</span> : null}
+                          <button
+                            type="button"
+                            className="btn-ghost btn-xs ms-auto !py-0.5 hover:!border-red-200 hover:!text-danger"
+                            disabled={!canEdit || busy}
+                            onClick={() => void removeLink(link.from, link.nodeId, link.nodeLabel || link.fromName)}
+                            title={canEdit ? 'پاک کردن این پیوند از بوم مبدأ' : 'برای پاک کردن، حالت ویرایش را فعال کنید'}
+                          >
+                            <Trash2 size={10} />
+                            پاک کردن
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {/* مدیریت پیوند انتخاب‌شده */}
+                {selectedLinkData ? (
+                  <div
+                    className="absolute bottom-3 left-1/2 z-20 flex w-[min(620px,calc(100%-24px))] -translate-x-1/2 flex-wrap items-center gap-2 rounded-xl border bg-surface/97 px-2.5 py-1.5 shadow-pop"
+                    dir="rtl"
+                    style={{ borderColor: `${connectionType(selectedLinkData.kind).color}66` }}
+                  >
+                    <span className="flex min-w-0 items-center gap-1 text-[11px] text-ink-600">
+                      <Link2 size={12} className="shrink-0 text-info" />
+                      <strong className="truncate font-semibold text-ink-800">
+                        {positions.get(selectedLinkData.from)?.name ?? `#${selectedLinkData.from}`}
+                      </strong>
+                      <span className="shrink-0 text-ink-400">به</span>
+                      <strong className="truncate font-semibold text-ink-800">
+                        {positions.get(selectedLinkData.to)?.name ?? `#${selectedLinkData.to}`}
+                      </strong>
+                      {selectedLinkData.nodeLabel ? (
+                        <span className="hidden truncate text-ink-400 sm:inline">({selectedLinkData.nodeLabel})</span>
+                      ) : null}
+                    </span>
+                    {canEdit ? (
+                      <label className="inline-flex items-center gap-1 rounded-pill border border-ink-200 bg-surface px-1.5 py-0.5">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: connectionType(selectedLinkData.kind).color }}
+                          aria-hidden
+                        />
+                        <span className="text-[9.5px] text-ink-400">نوع</span>
+                        <select
+                          className="bg-transparent text-[10.5px] font-medium text-ink-700 outline-none"
+                          value={selectedLinkData.kind}
+                          disabled={busy}
+                          onChange={(event) => void changeLinkKind(event.target.value as DiagramConnectionKind)}
+                          aria-label="نوع ارتباط این پیوند"
+                        >
+                          {CONNECTION_TYPES.map((type) => (
+                            <option key={type.kind} value={type.kind}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <span
+                        className="rounded-pill px-2 py-0.5 text-[10px] font-medium"
+                        style={{
+                          color: connectionType(selectedLinkData.kind).color,
+                          background: `${connectionType(selectedLinkData.kind).color}12`,
+                        }}
+                      >
+                        {connectionType(selectedLinkData.kind).label}
+                      </span>
+                    )}
+                    <span className="ms-auto flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn-ghost btn-xs"
+                        onClick={() => onOpen(selectedLinkData.from, selectedLinkData.nodeId)}
+                        title="باز کردن دیاگرام مبدأ روی همین جزء پیوند"
+                      >
+                        <ExternalLink size={12} />
+                        <span className="hidden sm:inline">باز کردن مبدأ</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-xs hover:!border-red-200 hover:!text-danger"
+                        disabled={!canEdit || busy}
+                        onClick={() =>
+                          void removeLink(
+                            selectedLinkData.from,
+                            selectedLinkData.nodeId,
+                            selectedLinkData.nodeLabel || selectedLinkData.label || 'پیوند'
+                          )
+                        }
+                        title={canEdit ? 'حذف پیوند' : 'برای حذف، حالت ویرایش را فعال کنید'}
+                      >
+                        <Trash2 size={12} />
+                        <span className="hidden sm:inline">حذف پیوند</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-xs"
+                        onClick={() => setSelectedLink(null)}
+                        aria-label="بستن جزئیات پیوند"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* راهنمای تعاملی حالت ویرایش */}
+                {canEdit && !selectedLinkData ? (
+                  <div
+                    className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 rounded-pill border border-ink-200 bg-surface/95 px-3 py-1 text-[10.5px] text-ink-500 shadow-soft md:block"
+                    dir="rtl"
+                  >
+                    کارت را بکشید تا جابه‌جا شود · از نقطه‌های کنار کارت به کارت دیگر بکشید تا متصل شود
+                  </div>
+                ) : null}
+
+                {error && graph ? (
+                  <div
+                    className="absolute left-2.5 top-2.5 z-10 flex items-center gap-1 rounded-pill border border-sun-200 bg-sun-50 px-2 py-1 text-[10px] text-warning"
+                    dir="rtl"
+                  >
+                    <AlertTriangle size={11} />
+                    {error}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          {/* پابرگ */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-3 py-1.5 text-[10.5px] text-ink-400">
+            <span>
+              {mode === 'edit'
+                ? 'جابه‌جایی: کشیدن کارت · اتصال: کشیدن از نقطه‌های کنار کارت و رها کردن روی کارت مقصد · جزئیات پیوند: کلیک روی خط'
+                : 'کلیک روی کارت: انتخاب · دوبار کلیک: باز کردن دیاگرام · کلیک روی خط پیوند: جزئیات · کشیدن پس‌زمینه: جابه‌جایی بوم'}
+            </span>
+            <span className="num">
+              {faDigits(items.length)} کارت · {faDigits(links.length)} پیوند · {autoLayout ? 'چیدمان خودکار' : 'چیدمان آزاد'}
+            </span>
+          </div>
         </div>
       </div>
-    </div>
+    </OverviewUi.Provider>
   );
 }
 
+export default function DiagramOverview(props: DiagramOverviewProps) {
+  if (!props.open) return null;
+  return (
+    <ReactFlowProvider>
+      <OverviewBoard {...props} />
+    </ReactFlowProvider>
+  );
+}

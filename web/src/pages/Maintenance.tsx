@@ -202,7 +202,7 @@ export default function Maintenance() {
                     {data.items.map((m) => (
                       <tr key={m.id}>
                         <td>
-                          <Link to={`/devices/${m.deviceId}`} className="block font-medium text-ink-800 hover:text-brand-700">
+                          <Link to={`/devices/${m.deviceId}`} className="block font-medium text-ink-800 hover:text-accent">
                             {m.deviceName}
                           </Link>
                           <span className="num block text-[10.5px] text-ink-400">{m.deviceIp}</span>
@@ -215,7 +215,7 @@ export default function Maintenance() {
                           <Badge tone="brand">{m.action}</Badge>
                         </td>
                         <td className="num text-[11.5px]">{fmtDateTime(m.startedAt, tzOffset)}</td>
-                        <td className="num">{m.endedAt ? fmtDuration(m.downtimeSec) : <span className="text-red-600">در جریان</span>}</td>
+                        <td className="num">{m.endedAt ? fmtDuration(m.downtimeSec) : <span className="text-danger">در جریان</span>}</td>
                         <td>{m.technician || '—'}</td>
                         <td>{m.status === 'open' ? <Badge tone="red">باز</Badge> : <Badge tone="emerald">بسته‌شده</Badge>}</td>
                         <td>
@@ -307,7 +307,7 @@ export default function Maintenance() {
             <EmptyState title="پنجره تعمیراتی تعریف نشده" description="پنجره تعمیرات از ثبت هشدار در زمان انجام سرویس جلوگیری می‌کند." icon={<CalendarClock size={22} />} />
           ) : (
             (windows?.items ?? []).map((w) => (
-              <div key={w.id} className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-white/70 p-3">
+              <div key={w.id} className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-surface/70 p-3">
                 <div className="min-w-0">
                   <p className="text-[12.5px] font-semibold text-ink-700">{w.title}</p>
                   <p className="num mt-1 text-[11px] text-ink-500">
@@ -355,15 +355,15 @@ export default function Maintenance() {
       <Card>
         <CardHeader title="راهنمای ثبت صحیح سوابق" subtitle="الزامات سند برای سوابق نگهداری" icon={<Wrench size={18} />} />
         <div className="mt-3 grid gap-3 md:grid-cols-3 text-[11.5px] leading-relaxed text-ink-600">
-          <div className="rounded-soft border border-ink-200 bg-white/70 p-3">
+          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
             <p className="mb-1 font-semibold text-ink-700">علت خرابی</p>
             <p>مشکلات زیرساخت فیبر نوری، مشکلات شبکه، قطعی برق، هنگ کردن سوئیچ، سوختن یا خرابی تجهیز و سایر دلایل قابل تعریف توسط کاربر.</p>
           </div>
-          <div className="rounded-soft border border-ink-200 bg-white/70 p-3">
+          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
             <p className="mb-1 font-semibold text-ink-700">اقدام انجام‌شده</p>
             <p>تعویض تجهیز، تعمیر تجهیز، تعویض قطعه، اصلاح زیرساخت، رفع مشکل شبکه و سایر اقدامات قابل ثبت.</p>
           </div>
-          <div className="rounded-soft border border-ink-200 bg-white/70 p-3">
+          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
             <p className="mb-1 font-semibold text-ink-700">اطلاعات تکمیلی</p>
             <p>تاریخ و زمان شروع و پایان، مدت قطعی، تکنسین مسئول، هزینه و توضیحات تکمیلی برای هر سابقه.</p>
           </div>

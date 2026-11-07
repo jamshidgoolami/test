@@ -24,7 +24,7 @@ export { fmtClock, fmtDayLabel, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRangeL
 /* --------------------------- Tooltip --------------------------- */
 function TooltipShell({ title, rows }: { title: React.ReactNode; rows: { label: string; value: React.ReactNode; color?: string }[] }) {
   return (
-    <div className="rounded-soft border border-ink-200 bg-white/97 px-3 py-2 shadow-pop backdrop-blur">
+    <div className="rounded-soft border border-ink-200 bg-surface/97 px-3 py-2 shadow-pop backdrop-blur">
       <p className="mb-1 text-[11px] font-medium text-ink-500">{title}</p>
       <div className="flex flex-col gap-1">
         {rows.map((r, i) => (
@@ -41,7 +41,7 @@ function TooltipShell({ title, rows }: { title: React.ReactNode; rows: { label: 
   );
 }
 
-const tickStyle = { fontSize: 10, fill: '#94a3b8' };
+const tickStyle = { fontSize: 10, fill: 'var(--chart-tick)' };
 
 /* ------------------------ Latency area chart ------------------------ */
 export function LatencyAreaChart({
@@ -78,7 +78,7 @@ export function LatencyAreaChart({
             <stop offset="100%" stopColor={accent} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} unit="" />
         {threshold ? <ReferenceLine y={threshold} stroke="#f59e0b" strokeDasharray="4 4" strokeOpacity={0.8} /> : null}
@@ -147,7 +147,7 @@ export function LossAreaChart({
             <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} domain={[0, (max: number) => Math.max(5, Math.ceil(max))]} />
         <Tooltip
@@ -181,7 +181,7 @@ export function AvailabilityBars({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} barCategoryGap={1}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis domain={[Math.max(0, threshold - 12), 100]} tick={tickStyle} tickLine={false} axisLine={false} width={46} />
         <Tooltip
@@ -225,7 +225,7 @@ export function StatusTimeline({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} barCategoryGap={1}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} />
         <Tooltip
@@ -335,7 +335,7 @@ export function TopBarList({
           >
             <span className="num w-5 shrink-0 text-[11px] text-ink-400">{idx + 1}</span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12.5px] text-ink-700 group-hover:text-brand-700">{label}</span>
+              <span className="block truncate text-[12.5px] text-ink-700 group-hover:text-accent">{label}</span>
               <span className="mt-1 block h-1.5 w-full overflow-hidden rounded-pill bg-ink-100">
                 <span
                   className="block h-full rounded-pill transition-all duration-700"
@@ -429,7 +429,7 @@ export function LatencySpark({
         <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} hide />
         <YAxis hide domain={[0, Math.ceil(peak * 1.12)]} />
         <Tooltip
-          cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }}
+          cursor={{ stroke: 'var(--chart-guide)', strokeDasharray: '3 3' }}
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const point = payload[0].payload as { t: number; rtt: number | null; loss: number };
@@ -505,7 +505,7 @@ export function FlapChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={{ top: 8, right: 10, left: -18, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
         <Tooltip
@@ -573,7 +573,7 @@ export function SimultaneousChart({
             <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
         <Tooltip
@@ -625,7 +625,7 @@ export function OutageGantt({
           <button
             type="button"
             onClick={() => onSelect?.(d.deviceId)}
-            className="w-40 shrink-0 truncate text-right text-[11.5px] text-ink-600 hover:text-brand-700"
+            className="w-40 shrink-0 truncate text-right text-[11.5px] text-ink-600 hover:text-accent"
             title={`${d.name} — ${d.ip}`}
           >
             {d.name}
@@ -669,7 +669,7 @@ export function TrendLineChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={points} margin={{ top: 8, right: 10, left: -18, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={20} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} domain={yDomain} />
         <Tooltip
@@ -714,7 +714,7 @@ export function GroupStatusBar({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }} barCategoryGap={12}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" horizontal={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" horizontal={false} />
         <XAxis type="number" tick={tickStyle} tickLine={false} axisLine={false} allowDecimals={false} />
         <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} width={112} />
         <Tooltip
@@ -768,7 +768,7 @@ export function OfflineTrendChart({
             <stop offset="100%" stopColor="#dc2626" stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={24} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
         <Tooltip
@@ -814,7 +814,7 @@ export function DailyBars({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 6" stroke="#e8eef5" vertical={false} />
+        <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={10} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
         <Tooltip
@@ -848,7 +848,7 @@ export const CHART_ZOOM_LEVELS = [1, 1.5, 2, 3];
 export function ChartZoomControls({ zoom, onChange }: { zoom: number; onChange: (z: number) => void }) {
   const idx = CHART_ZOOM_LEVELS.reduce((best, z, i) => (Math.abs(z - zoom) < Math.abs(CHART_ZOOM_LEVELS[best] - zoom) ? i : best), 0);
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-white/70 px-1 py-0.5" role="group" aria-label="زوم نمودار">
+    <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-surface/70 px-1 py-0.5" role="group" aria-label="زوم نمودار">
       <button
         type="button"
         className="rounded-md px-1.5 text-[12px] text-ink-500 hover:bg-ink-100 disabled:opacity-40"

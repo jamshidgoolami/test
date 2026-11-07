@@ -294,24 +294,24 @@ export function WidgetShell({
       {editMode ? (
         <div className="mb-1 flex flex-wrap items-center gap-1.5 rounded-soft border border-dashed border-brand-300 bg-brand-50/70 px-2 py-1.5">
           <GripVertical size={14} className="cursor-grab text-brand-500" />
-          <span className="text-[11.5px] font-medium text-brand-800">{def.title}</span>
+          <span className="text-[11.5px] font-medium text-accent">{def.title}</span>
           <span className="ms-auto flex items-center gap-1">
             {SIZES.map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => onSize(s)}
-                className={`rounded-md px-1.5 py-0.5 text-[10px] transition ${item.size === s ? 'bg-brand-500 text-white' : 'bg-white text-ink-500 hover:text-ink-700'}`}
+                className={`rounded-md px-1.5 py-0.5 text-[10px] transition ${item.size === s ? 'bg-brand-500 text-white' : 'bg-surface text-ink-500 hover:text-ink-700'}`}
               >
                 {SIZE_LABEL[s]}
               </button>
             ))}
             <span className="mx-0.5 h-4 w-px bg-brand-200" aria-hidden />
-            <span className="num inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] text-brand-700" title="ارتفاع فعلی؛ برای تغییر، لبهٔ پایین ویجت را بکشید">
+            <span className="num inline-flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-accent" title="ارتفاع فعلی؛ برای تغییر، لبهٔ پایین ویجت را بکشید">
               <GripHorizontal size={11} />
               {faDigits(liveHeight)} px
             </span>
-            <button type="button" onClick={onHide} className="rounded-md bg-white px-1.5 py-0.5 text-[10px] text-red-500 hover:bg-red-50" title="حذف از نمایش">
+            <button type="button" onClick={onHide} className="rounded-md bg-surface px-1.5 py-0.5 text-[10px] text-danger hover:bg-red-50" title="حذف از نمایش">
               <X size={11} />
             </button>
           </span>
@@ -349,7 +349,7 @@ export function WidgetShell({
         >
           <span
             className={`pointer-events-none flex h-4 items-center gap-1 rounded-pill border px-2 text-[10px] shadow-soft transition ${
-              resizing ? 'border-brand-400 bg-brand-500 text-white' : 'border-brand-200 bg-white/95 text-brand-600 group-hover:bg-brand-50'
+              resizing ? 'border-brand-400 bg-brand-500 text-white' : 'border-brand-200 bg-surface/95 text-accent group-hover:bg-brand-50'
             }`}
           >
             <GripHorizontal size={12} />
@@ -394,7 +394,7 @@ export function LayoutToolbar({
         <button type="button" className="btn-ghost btn-xs" onClick={() => setPickerOpen(true)}>
           <Plus size={13} />
           افزودن ویجت
-          {hidden.length ? <span className="num rounded-pill bg-brand-50 px-1.5 text-[10px] text-brand-700">{faDigits(hidden.length)}</span> : null}
+          {hidden.length ? <span className="num rounded-pill bg-brand-50 px-1.5 text-[10px] text-accent">{faDigits(hidden.length)}</span> : null}
         </button>
       ) : null}
       {editMode ? (
@@ -414,13 +414,13 @@ export function LayoutToolbar({
                 key={d.id}
                 type="button"
                 onClick={() => onAdd(d.id)}
-                className="flex w-full items-center justify-between gap-2 rounded-soft border border-ink-200 bg-white/80 px-3 py-2 text-right transition hover:border-brand-300 hover:bg-brand-50/50"
+                className="flex w-full items-center justify-between gap-2 rounded-soft border border-ink-200 bg-surface/80 px-3 py-2 text-right transition hover:border-brand-300 hover:bg-brand-50/50"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-[12.5px] font-medium text-ink-700">{d.title}</span>
                   {d.description ? <span className="block text-[10.5px] text-ink-400">{d.description}</span> : null}
                 </span>
-                <span className="inline-flex items-center gap-1 text-[11px] text-brand-600">
+                <span className="inline-flex items-center gap-1 text-[11px] text-accent">
                   <Plus size={12} />
                   افزودن
                 </span>
@@ -487,7 +487,7 @@ export function WidgetVisibilityRow({
         const sourceId = event.dataTransfer.getData(WIDGET_DRAG_MIME);
         if (sourceId && sourceId !== item.id) onMove(sourceId, item.id);
       }}
-      className={`flex flex-wrap items-center justify-between gap-2 rounded-soft border bg-white/70 p-3 transition ${
+      className={`flex flex-wrap items-center justify-between gap-2 rounded-soft border bg-surface/70 p-3 transition ${
         dragging ? 'opacity-50' : ''
       } ${over && !dragging ? 'border-brand-300 ring-2 ring-brand-200/60' : 'border-ink-200'}`}
     >

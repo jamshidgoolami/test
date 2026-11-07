@@ -41,7 +41,7 @@ export function CardHeader({
     <div className={`flex items-start justify-between gap-3 ${className}`}>
       <div className="flex items-start gap-3 min-w-0">
         {icon ? (
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-soft bg-brand-50 text-brand-600 border border-brand-100">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-soft bg-brand-50 text-accent border border-brand-100">
             {icon}
           </span>
         ) : null}
@@ -74,10 +74,10 @@ export function StatCard({
   delay?: number;
 }) {
   const tones: Record<string, string> = {
-    brand: 'bg-brand-50 text-brand-600 border-brand-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    sun: 'bg-sun-50 text-sun-600 border-sun-100',
-    red: 'bg-red-50 text-red-600 border-red-100',
+    brand: 'bg-brand-50 text-accent border-brand-100',
+    emerald: 'bg-emerald-50 text-success border-emerald-100',
+    sun: 'bg-sun-50 text-warning border-sun-100',
+    red: 'bg-red-50 text-danger border-red-100',
     violet: 'bg-violet-50 text-violet-600 border-violet-100',
     ink: 'bg-ink-100 text-ink-500 border-ink-200',
   };
@@ -144,10 +144,10 @@ export function Badge({
 }) {
   const tones: Record<string, string> = {
     ink: 'bg-ink-100 text-ink-600 border-ink-200',
-    brand: 'bg-brand-50 text-brand-700 border-brand-200',
-    sun: 'bg-sun-50 text-sun-700 border-sun-200',
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    red: 'bg-red-50 text-red-600 border-red-200',
+    brand: 'bg-brand-50 text-accent border-brand-200',
+    sun: 'bg-sun-50 text-warning border-sun-200',
+    emerald: 'bg-emerald-50 text-success border-emerald-200',
+    red: 'bg-red-50 text-danger border-red-200',
     violet: 'bg-violet-50 text-violet-700 border-violet-200',
   };
   return <span className={`chip ${tones[tone]} ${className}`}>{children}</span>;
@@ -224,7 +224,7 @@ export function Modal({
   // وسط صفحه است.
   return createPortal(
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-ink-900/30 p-4 sm:p-6"
+      className="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-scrim/30 p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -233,7 +233,7 @@ export function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`relative my-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden ${widths[size]} animate-fade-up rounded-card bg-white shadow-pop border border-ink-200`}
+        className={`relative my-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden ${widths[size]} animate-fade-up rounded-card bg-surface shadow-pop border border-ink-200`}
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-ink-100 p-5">
           <div className="min-w-0">
@@ -292,13 +292,13 @@ export function Field({
     <div className={className}>
       {label ? (
         <label className="label" htmlFor={inputId}>
-          {label} {required ? <span className="text-red-500" aria-hidden>*</span> : null}
+          {label} {required ? <span className="text-danger" aria-hidden>*</span> : null}
           {required ? <span className="sr-only"> (الزامی)</span> : null}
         </label>
       ) : null}
       {child}
       {error ? (
-        <p id={errorId} className="mt-1 text-[12px] text-red-600" role="alert">{error}</p>
+        <p id={errorId} className="mt-1 text-[12px] text-danger" role="alert">{error}</p>
       ) : hint ? (
         <p id={hintId} className="mt-1 text-[12px] text-ink-400">{hint}</p>
       ) : null}
@@ -332,7 +332,7 @@ export function Toggle({
         aria-label={label ?? 'تغییر وضعیت'}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all duration-200 ${
             checked ? 'right-0.5' : 'right-[22px]'
           }`}
         />
@@ -396,12 +396,12 @@ export function Tabs<T extends string>({
           }}
           className={`inline-flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
             size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-[13px]'
-          } ${value === t.value ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500 hover:text-ink-700'}`}
+          } ${value === t.value ? 'bg-surface text-accent shadow-soft' : 'text-ink-500 hover:text-ink-700'}`}
         >
           {t.icon}
           {t.label}
           {t.count != null ? (
-            <span className={`num rounded-pill px-1.5 py-0.5 text-[10px] ${value === t.value ? 'bg-brand-50 text-brand-700' : 'bg-ink-200/70 text-ink-500'}`}>
+            <span className={`num rounded-pill px-1.5 py-0.5 text-[10px] ${value === t.value ? 'bg-brand-50 text-accent' : 'bg-ink-200/70 text-ink-500'}`}>
               {t.count}
             </span>
           ) : null}
@@ -450,7 +450,7 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-ink-200 bg-white/60 px-6 py-14 text-center ${className}`}>
+    <div className={`flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-ink-200 bg-surface/60 px-6 py-14 text-center ${className}`}>
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-50 text-brand-500 border border-brand-100">
         {icon ?? <Inbox size={22} />}
       </span>
@@ -466,8 +466,8 @@ export function EmptyState({
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-card border border-red-100 bg-red-50/60 px-6 py-12 text-center">
-      <AlertTriangle className="text-red-500" size={24} />
-      <p className="text-sm text-red-700">{message}</p>
+      <AlertTriangle className="text-danger" size={24} />
+      <p className="text-sm text-danger">{message}</p>
       {onRetry ? (
         <button type="button" className="btn-ghost btn-xs" onClick={onRetry}>
           تلاش دوباره
@@ -520,7 +520,7 @@ export function Pagination({
             type="button"
             onClick={() => onPage(n)}
             className={`num h-8 w-8 rounded-xl text-xs font-medium transition ${
-              n === page ? 'bg-brand-500 text-white shadow-glow' : 'bg-white text-ink-600 border border-ink-200 hover:border-brand-200'
+              n === page ? 'bg-brand-500 text-white shadow-glow' : 'bg-surface text-ink-600 border border-ink-200 hover:border-brand-200'
             }`}
           >
             {n.toLocaleString('fa-IR')}

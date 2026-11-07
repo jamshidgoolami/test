@@ -328,7 +328,7 @@ export function StatusBands({
       {ticks
         .filter((tk) => tk.dayStart)
         .map((tk) => (
-          <span key={`d-${tk.t}`} className="pointer-events-none absolute inset-y-0 w-px bg-ink-900/15" style={{ left: xOf(tk.t) }} />
+          <span key={`d-${tk.t}`} className="pointer-events-none absolute inset-y-0 w-px bg-scrim/15" style={{ left: xOf(tk.t) }} />
         ))}
     </div>
   );
@@ -353,7 +353,7 @@ export function StatusBands({
         <span className="ms-auto inline-flex items-center gap-1">
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-white text-[13px] text-ink-600 disabled:opacity-40"
+            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-surface text-[13px] text-ink-600 disabled:opacity-40"
             onClick={() => applyZoom(zoomFactor / 1.5)}
             disabled={innerZoom <= 1}
             aria-label="کوچک‌نمایی"
@@ -364,7 +364,7 @@ export function StatusBands({
           <span className="num min-w-[30px] text-center text-[10px] text-ink-500">{faDigits(Number(zoomFactor.toFixed(1)))}×</span>
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-white text-[13px] text-ink-600 disabled:opacity-40"
+            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-surface text-[13px] text-ink-600 disabled:opacity-40"
             onClick={() => applyZoom(zoomFactor * 1.5)}
             disabled={zoomFactor >= 15.99}
             aria-label="بزرگ‌نمایی"
@@ -374,7 +374,7 @@ export function StatusBands({
           </button>
           <button
             type="button"
-            className="ms-1 rounded-md border border-ink-200 bg-white px-2 py-1 text-[10px] text-ink-500 hover:text-ink-700"
+            className="ms-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[10px] text-ink-500 hover:text-ink-700"
             onClick={() => {
               setInnerZoom(1);
               const el = scrollRef.current;

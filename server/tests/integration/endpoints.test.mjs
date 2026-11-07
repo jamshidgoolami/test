@@ -81,6 +81,9 @@ test('device endpoints including imports, exports, map and history', async () =>
   await call('GET', '/api/devices/export?format=csv');
   await call('GET', '/api/devices/template?format=csv');
   await call('GET', '/api/devices/export/geo?format=csv');
+  // انتخاب چندگروهی دیالوگ نقشه: فهرست گروه‌ها و حالت «هیچ گروهی»
+  await call('GET', '/api/devices/export/geo?format=csv&groups=QA-Import,QA-Other');
+  await call('GET', '/api/devices/export/geo?format=csv&groups=__none_selected__');
   await call('GET', '/api/devices/sparklines?ids=' + deviceA);
   await call('GET', '/api/devices/map');
 
@@ -126,6 +129,11 @@ test('inventory endpoints: groups, tags, layers, tiles and mbtiles', async () =>
   groupId = group.data.id;
   await call('PUT', `/api/groups/${groupId}`, { description: 'updated' });
   await call('POST', `/api/devices/bulk`, { ids: [deviceA], action: 'group', payload: { group: group.data.name } });
+
+  await call('GET', '/api/sites');
+  const site = await call('POST', '/api/sites', { name: `QA-Site-${Date.now()}`, group_id: groupId, device_ids: [deviceA] }, 201);
+  await call('PUT', `/api/sites/${site.data.id}`, { name: 'QA Site' });
+  await call('DELETE', `/api/sites/${site.data.id}`);
 
   await call('GET', '/api/tags');
   const tag = await call('POST', '/api/tags', { name: `QA-Tag-${Date.now()}`, color: '#123456' }, 201);
@@ -323,6 +331,10 @@ test('every registered route was exercised at least once', () => {
     'POST /api/groups',
     'PUT /api/groups/:id',
     'DELETE /api/groups/:id',
+    'GET /api/sites',
+    'POST /api/sites',
+    'PUT /api/sites/:id',
+    'DELETE /api/sites/:id',
     'GET /api/tags',
     'POST /api/tags',
     'PUT /api/tags/:id',

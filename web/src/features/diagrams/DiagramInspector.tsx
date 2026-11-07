@@ -105,7 +105,7 @@ function CommentsSection({
                 {editing ? (
                   <button
                     type="button"
-                    className="ms-auto shrink-0 rounded p-0.5 text-ink-400 transition hover:bg-white hover:text-red-600"
+                    className="ms-auto shrink-0 rounded p-0.5 text-ink-400 transition hover:bg-surface hover:text-danger"
                     onClick={() => onChange(safeComments.filter((item) => item.id !== comment.id))}
                     title="حذف کامنت"
                     aria-label="حذف کامنت"
@@ -547,8 +547,8 @@ export default function DiagramInspector({
                       onClick={() => onPatchData(node.id, { shape })}
                       className={`flex items-center justify-center gap-1.5 rounded-soft border px-2 py-1.5 text-[11.5px] transition ${
                         data.shape === shape
-                          ? 'border-brand-300 bg-brand-50 text-brand-700'
-                          : 'border-ink-200 bg-white text-ink-500 hover:border-ink-300'
+                          ? 'border-brand-300 bg-brand-50 text-accent'
+                          : 'border-ink-200 bg-surface text-ink-500 hover:border-ink-300'
                       }`}
                     >
                       {shape === 'circle' ? <Circle size={13} /> : <Square size={13} />}
@@ -674,7 +674,7 @@ export default function DiagramInspector({
                 </select>
               </Field>
               {data.diagramId && !diagrams.some((item) => item.id === Number(data.diagramId)) ? (
-                <p className="rounded-soft border border-sun-200 bg-sun-50 p-2 text-[10.5px] leading-5 text-sun-800">
+                <p className="rounded-soft border border-sun-200 bg-sun-50 p-2 text-[10.5px] leading-5 text-warning">
                   دیاگرام مقصد حذف شده است؛ این پیوند در «نقشهٔ ارتباط» به‌عنوان پیوند شکسته نشان داده می‌شود.
                 </p>
               ) : null}

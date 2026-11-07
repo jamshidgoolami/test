@@ -42,7 +42,7 @@ const DB_EXISTED = (() => {
 })();
 
 /** نسخهٔ ساختار داده؛ با هر Migration افزایش می‌یابد (PRAGMA user_version) */
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 /* ------------------------------------------------------------------ */
 /* سیاست دوام و WAL                                                  */
@@ -637,6 +637,14 @@ CREATE TABLE IF NOT EXISTS map_layers (
   created_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sites (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  group_id    INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sites_group ON sites(group_id);
+
 CREATE TABLE IF NOT EXISTS devices (
   id                        INTEGER PRIMARY KEY AUTOINCREMENT,
   name                      TEXT NOT NULL,
@@ -644,6 +652,7 @@ CREATE TABLE IF NOT EXISTS devices (
   hostname                  TEXT DEFAULT '',
   device_type               TEXT DEFAULT 'سوئیچ',
   group_id                  INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+  site_id                   INTEGER REFERENCES sites(id) ON DELETE SET NULL,
   location                  TEXT DEFAULT '',
   building                  TEXT DEFAULT '',
   rack                      TEXT DEFAULT '',
@@ -1246,7 +1255,31 @@ const MIGRATIONS = [
   { version: 17, name: 'diagram-attachments', up: applyDiagramAttachmentsMigration },
   { version: 18, name: 'device-identity-and-types', up: applyDeviceIdentityMigration },
   { version: 19, name: 'device-credentials', up: applyDeviceCredentialsMigration },
+  { version: 20, name: 'device-sites', up: applySitesMigration },
 ];
+
+/**
+ * گام ۲۰: ایستگاه.
+ *
+ * تجهیزاتی که در یک مکان جغرافیایی مشترک قرار دارند در یک «ایستگاه» زیرمجموعهٔ
+ * گروه جمع می‌شوند تا روی نقشه یک نشانگر (با فهرست تجهیزاتش) داشته باشند.
+ * هر تجهیز حداکثر عضو یک ایستگاه است؛ `site_id` با حذف ایستگاه خالی می‌شود.
+ */
+function applySitesMigration() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sites (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      group_id   INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sites_group ON sites(group_id);
+  `);
+  if (!hasColumn('devices', 'site_id')) {
+    db.exec('ALTER TABLE devices ADD COLUMN site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id)');
+}
 
 /**
  * گام ۱۹: اعتبارنامهٔ دسترسی تجهیز (نام کاربری و رمز عبور).

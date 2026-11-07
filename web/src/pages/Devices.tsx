@@ -521,13 +521,13 @@ export default function Devices() {
             </button>
 
             {activeFilters.map((f) => (
-              <button key={f.key} type="button" className="chip shrink-0 border-brand-200 bg-brand-50 text-brand-700" onClick={() => setParam(f.key, '')}>
+              <button key={f.key} type="button" className="chip shrink-0 border-brand-200 bg-brand-50 text-accent" onClick={() => setParam(f.key, '')}>
                 {f.label}
                 <X size={11} />
               </button>
             ))}
             {activeFilters.length ? (
-              <button type="button" className="shrink-0 text-[11px] text-ink-400 underline hover:text-red-500" onClick={() => resetParams()}>
+              <button type="button" className="shrink-0 text-[11px] text-ink-400 underline hover:text-danger" onClick={() => resetParams()}>
                 پاک کردن همه
               </button>
             ) : null}
@@ -541,7 +541,7 @@ export default function Devices() {
 
           {/* ردیف ۲: نحوهٔ نمایش و حالت وصل/قطع/همه */}
           <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2">
-            <div className="inline-flex items-center rounded-pill border border-ink-200 bg-white/70 p-0.5">
+            <div className="inline-flex items-center rounded-pill border border-ink-200 bg-surface/70 p-0.5">
               {STATUS_SEGMENTS.map((s) => (
                 <button
                   key={s.value || 'all'}
@@ -567,7 +567,7 @@ export default function Devices() {
                   type="button"
                   onClick={() => setParam('status', 'high_latency')}
                   className={`inline-flex items-center gap-1 rounded-pill px-3 py-1.5 text-[12px] font-medium transition ${
-                    query.status === 'high_latency' ? 'bg-sun-500 text-white' : 'text-sun-600 hover:text-sun-700'
+                    query.status === 'high_latency' ? 'bg-sun-500 text-white' : 'text-warning hover:text-warning'
                   }`}
                 >
                   <Activity size={12} />
@@ -591,14 +591,14 @@ export default function Devices() {
                   <TagIcon size={14} />
                   تگ روی کارت
                   {cardTags.length || cardBadges.priority || cardBadges.geo ? (
-                    <span className="num chip border-brand-200 bg-brand-50 px-1.5 py-0 text-[10px] text-brand-700">
+                    <span className="num chip border-brand-200 bg-brand-50 px-1.5 py-0 text-[10px] text-accent">
                       {faDigits(cardTags.length + (cardBadges.priority ? 1 : 0) + (cardBadges.geo ? 1 : 0))}
                     </span>
                   ) : null}
                 </button>
                 {tagDisplayOpen ? <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label="بستن انتخاب تگ" onClick={() => setTagDisplayOpen(false)} /> : null}
                 {tagDisplayOpen ? (
-                  <div className="absolute left-0 z-30 mt-1 w-64 rounded-soft border border-ink-200 bg-white p-2 shadow-pop" role="dialog" aria-label="تگ‌های نمایشی روی کارت">
+                  <div className="absolute left-0 z-30 mt-1 w-64 rounded-soft border border-ink-200 bg-surface p-2 shadow-pop" role="dialog" aria-label="تگ‌های نمایشی روی کارت">
                     <p className="px-1 pb-1 text-[10.5px] text-ink-400">تگ‌هایی که روی کارت تجهیزات دیده شوند؛ این انتخاب با فیلتر تگ تفاوت دارد.</p>
                     <div className="max-h-56 space-y-0.5 overflow-auto">
                       {(meta?.tags ?? []).length === 0 ? (
@@ -657,7 +657,7 @@ export default function Devices() {
               </div>
 
               {view === 'cards' ? (
-                <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-white/70 px-1.5 py-1" title="تعداد کارت‌های هر ردیف">
+                <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-surface/70 px-1.5 py-1" title="تعداد کارت‌های هر ردیف">
                   <Grid2X2 size={13} className="ms-0.5 me-1 text-ink-400" />
                   {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                     <button
@@ -679,7 +679,7 @@ export default function Devices() {
                   type="button"
                   onClick={() => setView('cards')}
                   className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-medium transition ${
-                    view === 'cards' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
+                    view === 'cards' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
                   }`}
                 >
                   <Grid2X2 size={14} />
@@ -689,7 +689,7 @@ export default function Devices() {
                   type="button"
                   onClick={() => setView('table')}
                   className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-medium transition ${
-                    view === 'table' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
+                    view === 'table' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
                   }`}
                 >
                   <List size={14} />
@@ -723,7 +723,7 @@ export default function Devices() {
                   ) : null}
                   {columnsOpen ? (
                     <div
-                      className="absolute left-0 z-30 mt-1 w-60 rounded-soft border border-ink-200 bg-white p-2 shadow-pop"
+                      className="absolute left-0 z-30 mt-1 w-60 rounded-soft border border-ink-200 bg-surface p-2 shadow-pop"
                       role="dialog"
                       aria-label="ستون‌های نمای جدول"
                     >
@@ -794,7 +794,7 @@ export default function Devices() {
                   خروجی
                 </button>
                 {exportOpen ? <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label="بستن منوی خروجی" onClick={() => setExportOpen(false)} /> : null}
-                <div className={exportOpen ? 'absolute left-0 z-30 mt-1 w-52 rounded-soft border border-ink-200 bg-white p-1.5 shadow-pop' : 'hidden'}>
+                <div className={exportOpen ? 'absolute left-0 z-30 mt-1 w-52 rounded-soft border border-ink-200 bg-surface p-1.5 shadow-pop' : 'hidden'}>
                   <a className="block rounded-lg px-3 py-2 text-[12px] text-ink-600 hover:bg-brand-50" href={downloadUrl('/devices/export', { format: 'xlsx' })} onClick={() => setExportOpen(false)}>
                     خروجی Excel از تجهیزات
                   </a>
@@ -829,9 +829,9 @@ export default function Devices() {
 
       {/* نوار عملیات گروهی */}
       {canWrite && selected.length > 0 ? (
-        <div className="sticky top-[68px] z-[700] animate-fade-up rounded-card border border-brand-100 bg-white/95 p-3 shadow-pop backdrop-blur">
+        <div className="sticky top-[68px] z-[700] animate-fade-up rounded-card border border-brand-100 bg-surface/95 p-3 shadow-pop backdrop-blur">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="chip border-brand-200 bg-brand-50 text-brand-700">
+            <span className="chip border-brand-200 bg-brand-50 text-accent">
               {faDigits(selected.length)} تجهیز انتخاب شده
             </span>
             <button type="button" className="btn-ghost btn-xs" disabled={busy} onClick={() => runBulk('ping', {}, 'Ping برای تجهیزات انتخاب‌شده در صف قرار گرفت')}>
@@ -1127,7 +1127,7 @@ function GroupRow({
       type="button"
       onClick={onClick}
       className={`w-full rounded-soft border px-2.5 py-2 text-right transition ${
-        active ? 'border-brand-300 bg-brand-50/70' : 'border-ink-100 bg-white/70 hover:border-brand-200'
+        active ? 'border-brand-300 bg-brand-50/70' : 'border-ink-100 bg-surface/70 hover:border-brand-200'
       }`}
     >
       <span className="flex items-center gap-2">
@@ -1138,10 +1138,10 @@ function GroupRow({
         <span className="text-ink-400">
           کل: <span className="num font-medium text-ink-600">{faDigits(total)}</span>
         </span>
-        <span className="text-emerald-600">
+        <span className="text-success">
           وصل: <span className="num font-medium">{faDigits(online)}</span>
         </span>
-        <span className="text-red-600">
+        <span className="text-danger">
           قطع: <span className="num font-medium">{faDigits(offline)}</span>
         </span>
         <span className="text-ink-400">
@@ -1216,7 +1216,7 @@ function DeviceCard({
               type="button"
               onClick={onSelect}
               className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
-                selected ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-white text-transparent hover:border-brand-300'
+                selected ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-surface text-transparent hover:border-brand-300'
               }`}
               aria-label="انتخاب"
             >
@@ -1224,12 +1224,12 @@ function DeviceCard({
             </button>
           ) : null}
           <div className="min-w-0">
-            <button type="button" onClick={() => navigate(`/devices/${device.id}`)} className="block truncate text-right text-[13.5px] font-semibold text-ink-800 hover:text-brand-700">
+            <button type="button" onClick={() => navigate(`/devices/${device.id}`)} className="block truncate text-right text-[13.5px] font-semibold text-ink-800 hover:text-accent">
               {device.name}
             </button>
             <p className="num mt-0.5 text-[11px] text-ink-400">{device.ip}</p>
             {device.statusReason && status !== 'online' ? (
-              <p className="mt-1 line-clamp-2 text-[10.5px] leading-relaxed text-sun-700" title={device.statusReason}>
+              <p className="mt-1 line-clamp-2 text-[10.5px] leading-relaxed text-warning" title={device.statusReason}>
                 {device.statusReason}
               </p>
             ) : null}
@@ -1267,7 +1267,7 @@ function DeviceCard({
         ))}
       </div>
 
-      <div className="mt-2 rounded-soft bg-gradient-to-b from-ink-50/70 to-white px-1.5 py-1">
+      <div className="mt-2 rounded-soft bg-gradient-to-b from-ink-50/70 to-surface px-1.5 py-1">
         {points.length ? (
           <LatencySpark points={points} threshold={threshold} height={52} />
         ) : (
@@ -1393,7 +1393,7 @@ function DeviceTable({
             {columns.map((c) => (
               <th key={c.key} className={c.className}>
                 {c.sortable ? (
-                  <button type="button" className="inline-flex items-center gap-1 hover:text-brand-600" onClick={() => onSort(c.key)}>
+                  <button type="button" className="inline-flex items-center gap-1 hover:text-accent" onClick={() => onSort(c.key)}>
                     {c.label}
                     <ArrowUpDown size={11} className={sort === c.key ? 'text-brand-500' : 'text-ink-300'} />
                     {sort === c.key ? <span className="text-[9px] text-brand-500">{order === 'asc' ? '▲' : '▼'}</span> : null}

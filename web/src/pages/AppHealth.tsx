@@ -35,7 +35,7 @@ function tone(value: number, warn: number, down: number): 'ok' | 'warn' | 'down'
   return 'ok';
 }
 
-const TONE_TEXT = { ok: 'text-emerald-600', warn: 'text-sun-600', down: 'text-red-600' } as const;
+const TONE_TEXT = { ok: 'text-success', warn: 'text-warning', down: 'text-danger' } as const;
 
 export default function AppHealth() {
   const { tzOffset } = useApp();
@@ -144,7 +144,7 @@ export default function AppHealth() {
         </div>
 
         {!data.ok ? (
-          <p className="mt-3 rounded-soft border border-sun-200 bg-sun-50/70 px-3 py-2 text-[12px] text-sun-800" role="status">
+          <p className="mt-3 rounded-soft border border-sun-200 bg-sun-50/70 px-3 py-2 text-[12px] text-warning" role="status">
             یکی از آستانه‌های سلامت برنامه رد شده است؛ جزئیات در جدول‌های پایین آمده است.
           </p>
         ) : null}
@@ -248,7 +248,7 @@ export default function AppHealth() {
                       </td>
                       <td className="num">{faDigits(r.count)}</td>
                       <td className="num">{fmtMs(r.p50)}</td>
-                      <td className={`num ${r.p95 > 300 ? 'text-red-600' : r.p95 > 100 ? 'text-sun-600' : ''}`}>{fmtMs(r.p95)}</td>
+                      <td className={`num ${r.p95 > 300 ? 'text-danger' : r.p95 > 100 ? 'text-warning' : ''}`}>{fmtMs(r.p95)}</td>
                       <td className="num">{fmtMs(r.p99)}</td>
                       <td className="num">{fmtMs(r.max)}</td>
                     </tr>
@@ -290,7 +290,7 @@ export default function AppHealth() {
                       </td>
                       <td className="num">{faDigits(q.count)}</td>
                       <td className="num">{fmtMs(q.avgMs)}</td>
-                      <td className={`num ${q.maxMs > 100 ? 'text-red-600' : ''}`}>{fmtMs(q.maxMs)}</td>
+                      <td className={`num ${q.maxMs > 100 ? 'text-danger' : ''}`}>{fmtMs(q.maxMs)}</td>
                     </tr>
                   ))
                 ) : (
@@ -309,7 +309,7 @@ export default function AppHealth() {
       <Card>
         <CardHeader title="چرخه‌های نگهداری و پشتیبان" subtitle="آخرین اجرای موفق، وضعیت WAL و صف کارها" icon={<GaugeIcon />} />
         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-soft border border-ink-100 bg-white p-3">
+          <div className="rounded-soft border border-ink-100 bg-surface p-3">
             <p className="text-[11px] text-ink-500">آخرین پشتیبان موفق</p>
             <p className="num mt-1 text-sm font-semibold text-ink-800">
               {data.backup?.lastBackupAt ? fmtRelative(data.backup.lastBackupAt) : '—'}
@@ -318,7 +318,7 @@ export default function AppHealth() {
               {data.backup?.enabled ? `هر ${faDigits(data.backup.intervalHours ?? 0)} ساعت · ${faDigits(data.backup.count)} نسخه` : 'غیرفعال'}
             </p>
           </div>
-          <div className="rounded-soft border border-ink-100 bg-white p-3">
+          <div className="rounded-soft border border-ink-100 bg-surface p-3">
             <p className="text-[11px] text-ink-500">آخرین نگهداشت داده</p>
             <p className="num mt-1 text-sm font-semibold text-ink-800">
               {data.retention?.lastFinishedAt ? fmtRelative(data.retention.lastFinishedAt) : data.retention?.lastStatus ?? '—'}
@@ -327,12 +327,12 @@ export default function AppHealth() {
               {faDigits(data.retention?.lastDeletedRows ?? 0)} ردیف حذف‌شده · وضعیت {data.retention?.lastStatus ?? '—'}
             </p>
           </div>
-          <div className="rounded-soft border border-ink-100 bg-white p-3">
+          <div className="rounded-soft border border-ink-100 bg-surface p-3">
             <p className="text-[11px] text-ink-500">WAL</p>
             <p className="num mt-1 text-sm font-semibold text-ink-800">{fmtBytes(data.db.walBytes)}</p>
             <p className="mt-1 text-[10.5px] text-ink-400">Checkpoint خودکار فعال · بدون قفل باقی‌مانده</p>
           </div>
-          <div className="rounded-soft border border-ink-100 bg-white p-3">
+          <div className="rounded-soft border border-ink-100 bg-surface p-3">
             <p className="text-[11px] text-ink-500">کارهای پس‌زمینه</p>
             <p className="num mt-1 text-sm font-semibold text-ink-800">
               {faDigits(data.jobs.queued)} در صف · {faDigits(data.jobs.running)} در اجرا

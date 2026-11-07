@@ -91,7 +91,7 @@ function JalaliCalendarPanel({ value, anchor, anchorRef, onSelect, onClose }: Pa
       dir="rtl"
       role="dialog"
       aria-label="تقویم شمسی"
-      className="fixed z-[1200] w-[300px] rounded-card border border-ink-200 bg-white p-3 shadow-pop"
+      className="fixed z-[1200] w-[300px] rounded-card border border-ink-200 bg-surface p-3 shadow-pop"
       style={{ top, left }}
     >
       <div className="flex items-center justify-between gap-1">
@@ -159,7 +159,7 @@ function JalaliCalendarPanel({ value, anchor, anchorRef, onSelect, onClose }: Pa
                 selected
                   ? 'bg-brand-500 font-semibold text-white shadow-soft'
                   : isToday
-                    ? 'border border-brand-300 bg-brand-50 text-brand-700'
+                    ? 'border border-brand-300 bg-brand-50 text-accent'
                     : 'text-ink-600 hover:bg-ink-100'
               }`}
             >
@@ -271,7 +271,7 @@ export default function JalaliDateInput({
         disabled={disabled}
         aria-label="باز کردن تقویم شمسی"
         title="انتخاب از تقویم"
-        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded p-1 text-ink-400 transition hover:bg-brand-50 hover:text-brand-600 disabled:opacity-50"
+        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded p-1 text-ink-400 transition hover:bg-brand-50 hover:text-accent disabled:opacity-50"
       >
         <CalendarDays size={15} />
       </button>
@@ -295,14 +295,14 @@ export default function JalaliDateInput({
         }}
       />
       <div className="absolute left-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
-        <button type="button" className="rounded px-1.5 py-1 text-[10px] text-brand-600 hover:bg-brand-50" onClick={setToday} tabIndex={-1}>
+        <button type="button" className="rounded px-1.5 py-1 text-[10px] text-accent hover:bg-brand-50" onClick={setToday} tabIndex={-1}>
           امروز
         </button>
         {allowClear && value ? (
           <button
             type="button"
             aria-label="پاک کردن تاریخ"
-            className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-red-500"
+            className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-danger"
             onClick={() => {
               setText('');
               setInvalid(false);
@@ -314,7 +314,7 @@ export default function JalaliDateInput({
           </button>
         ) : null}
       </div>
-      {invalid ? <p className="mt-1 text-[10.5px] text-red-600">تاریخ شمسی را به شکل ۱۴۰۵/۰۷/۲۹ وارد کنید.</p> : null}
+      {invalid ? <p className="mt-1 text-[10.5px] text-danger">تاریخ شمسی را به شکل ۱۴۰۵/۰۷/۲۹ وارد کنید.</p> : null}
       {value ? <p className="mt-1 text-[10px] text-ink-400">میلادی ذخیره‌شده: {value}</p> : null}
       {calendar ? (
         <JalaliCalendarPanel

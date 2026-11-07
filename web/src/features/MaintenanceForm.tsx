@@ -123,7 +123,7 @@ export default function MaintenanceForm({
       subtitle="علت خرابی، اقدام انجام‌شده و توضیحات تکمیلی را ثبت کنید."
       footer={
         <>
-          {error ? <p className="me-auto text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
           <button type="button" className="btn-ghost" onClick={onClose}>
             انصراف
           </button>

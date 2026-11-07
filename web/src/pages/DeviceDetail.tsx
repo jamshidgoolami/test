@@ -212,11 +212,11 @@ export default function DeviceDetail() {
                         type="button"
                         onClick={copyPassword}
                         disabled={passwordBusy}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-2 py-1 text-[11px] text-ink-600 transition hover:border-brand-300 hover:text-brand-700 disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[11px] text-ink-600 transition hover:border-brand-300 hover:text-accent disabled:opacity-60"
                         title="کلیک برای کپی رمز عبور"
                       >
                         <span className="num" dir="ltr">{revealedPassword || '••••••••'}</span>
-                        {revealedPassword ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                        {revealedPassword ? <Check size={12} className="text-success" /> : <Copy size={12} />}
                       </button>
                     ) : (
                       <span className="num">••••••••</span>
@@ -249,13 +249,13 @@ export default function DeviceDetail() {
               <MetricBox label="کمترین تأخیر" value={fmtMs(device.minRtt)} />
               <MetricBox label="بیشترین تأخیر" value={fmtMs(device.maxRtt)} />
               <MetricBox label="میانگین تأخیر" value={fmtMs(device.avgRtt)} />
-              <MetricBox label="افت بسته" value={fmtPct(device.lossPct, 2)} tone={device.lossPct > 5 ? 'text-sun-600' : undefined} />
-              <MetricBox label="پاسخ‌های موفق" value={fmtNumber(device.successCount)} tone="text-emerald-600" />
-              <MetricBox label="پاسخ‌های ناموفق" value={fmtNumber(device.failCount)} tone={device.failCount ? 'text-red-600' : undefined} />
-              <MetricBox label="شکست‌های متوالی" value={fmtNumber(device.consecutiveFailures)} tone={device.consecutiveFailures ? 'text-red-600' : undefined} />
-              <MetricBox label="دسترس‌پذیری" value={fmtPct(device.uptimePct, 2)} tone={(device.uptimePct ?? 100) < 98 ? 'text-sun-600' : 'text-emerald-600'} />
+              <MetricBox label="افت بسته" value={fmtPct(device.lossPct, 2)} tone={device.lossPct > 5 ? 'text-warning' : undefined} />
+              <MetricBox label="پاسخ‌های موفق" value={fmtNumber(device.successCount)} tone="text-success" />
+              <MetricBox label="پاسخ‌های ناموفق" value={fmtNumber(device.failCount)} tone={device.failCount ? 'text-danger' : undefined} />
+              <MetricBox label="شکست‌های متوالی" value={fmtNumber(device.consecutiveFailures)} tone={device.consecutiveFailures ? 'text-danger' : undefined} />
+              <MetricBox label="دسترس‌پذیری" value={fmtPct(device.uptimePct, 2)} tone={(device.uptimePct ?? 100) < 98 ? 'text-warning' : 'text-success'} />
               <MetricBox label="زمان آخرین قطعی" value={fmtDateTime(device.lastOutageAt, tzOffset)} small />
-              <MetricBox label="مدت قطعی فعلی" value={device.currentOutageStartedAt ? fmtDuration(currentOutageSec) : '—'} tone={device.currentOutageStartedAt ? 'text-red-600' : undefined} />
+              <MetricBox label="مدت قطعی فعلی" value={device.currentOutageStartedAt ? fmtDuration(currentOutageSec) : '—'} tone={device.currentOutageStartedAt ? 'text-danger' : undefined} />
               <MetricBox label="MTBF" value={health?.mtbfSec ? fmtDuration(health.mtbfSec) : '—'} small />
               <MetricBox label="MTTR" value={health?.mttrSec ? fmtDuration(health.mttrSec) : '—'} small />
               <MetricBox label="تعداد کل بررسی‌ها" value={fmtNumber(device.totalChecks)} />
@@ -268,7 +268,7 @@ export default function DeviceDetail() {
                     <Percent size={11} className="inline" /> آستانه‌های مؤثر
                   </span>
                 </div>
-                <div className="space-y-2 rounded-soft border border-ink-200 bg-white/70 p-3 text-[11.5px]">
+                <div className="space-y-2 rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11.5px]">
                   <Row label="آستانه تأخیر" value={`${faDigits(eff?.latencyThreshold ?? 0)} ms`} />
                   <Row label="آستانه افت بسته" value={`${faDigits(eff?.lossThreshold ?? 0)}٪`} />
                   <Row label="زمان انتظار پاسخ" value={`${faDigits(eff?.timeoutMs ?? 0)} ms`} />
@@ -280,7 +280,7 @@ export default function DeviceDetail() {
                 <div className="mb-1.5 text-[11px] text-ink-500">
                   <Package size={11} className="inline" /> آخرین نمونه‌های ثبت‌شده
                 </div>
-                <div className="min-h-[120px] flex-1 overflow-auto rounded-soft border border-ink-200 bg-white/70">
+                <div className="min-h-[120px] flex-1 overflow-auto rounded-soft border border-ink-200 bg-surface/70">
                   <table className="table">
                     <thead>
                       <tr>
@@ -407,14 +407,14 @@ export default function DeviceDetail() {
 
             {outages?.open ? (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-soft border border-red-200 bg-red-50/70 p-3">
-                <div className="flex items-center gap-2 text-[12px] text-red-700">
+                <div className="flex items-center gap-2 text-[12px] text-danger">
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-70 animate-pulse-ring" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                   </span>
                   قطعی در جریان است — شروع {fmtDateTime(outages.open.started_at, tzOffset)}
                 </div>
-                <span className="num text-[12px] font-semibold text-red-700">مدت: {fmtDuration(outages.open.durationSec)}</span>
+                <span className="num text-[12px] font-semibold text-danger">مدت: {fmtDuration(outages.open.durationSec)}</span>
               </div>
             ) : null}
 
@@ -438,7 +438,7 @@ export default function DeviceDetail() {
                       {outages.items.map((o: Outage) => (
                         <tr key={o.id}>
                           <td className="num text-[12px]">{fmtDateTime(o.startedAt, tzOffset)}</td>
-                          <td className="num text-[12px]">{o.open ? <span className="text-red-600">در جریان</span> : fmtDateTime(o.endedAt, tzOffset)}</td>
+                          <td className="num text-[12px]">{o.open ? <span className="text-danger">در جریان</span> : fmtDateTime(o.endedAt, tzOffset)}</td>
                           <td className="num">{fmtDuration(o.durationSec)}</td>
                           <td>
                             <span className="chip border-ink-200 bg-ink-50 text-ink-600">{o.cause}</span>
@@ -475,7 +475,7 @@ export default function DeviceDetail() {
               ) : (
                 <div className="space-y-3">
                   {maint.items.map((m) => (
-                    <div key={m.id} className="rounded-soft border border-ink-200/70 bg-white/70 p-3">
+                    <div key={m.id} className="rounded-soft border border-ink-200/70 bg-surface/70 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-[12.5px] font-semibold text-ink-700">{m.title || m.action}</p>
                         <span className="flex items-center gap-2">
@@ -553,7 +553,7 @@ export default function DeviceDetail() {
                 ))}
               </div>
               {device.statusReason ? (
-                <p className="mt-2 inline-flex items-center gap-1.5 rounded-soft bg-sun-50 px-2.5 py-1 text-[11px] text-sun-800">
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-soft bg-sun-50 px-2.5 py-1 text-[11px] text-warning">
                   <AlertTriangle size={12} />
                   {device.statusReason}
                 </p>
@@ -628,7 +628,7 @@ export default function DeviceDetail() {
           <MiniStat
             label="مدت قطعی فعلی"
             value={device.currentOutageStartedAt ? fmtDuration(currentOutageSec) : '—'}
-            tone={device.currentOutageStartedAt ? 'text-red-600' : 'text-emerald-600'}
+            tone={device.currentOutageStartedAt ? 'text-danger' : 'text-success'}
             icon={<Timer size={15} />}
           />
           <MiniStat label="آخرین قطعی" value={fmtRelative(device.lastOutageAt)} hint={fmtDateTime(device.lastOutageAt, tzOffset)} icon={<ShieldAlert size={15} />} />
@@ -638,7 +638,7 @@ export default function DeviceDetail() {
       <DataFreshness updatedAt={updatedAt} intervalMs={20000} onRefresh={refresh} />
 
       {editMode ? (
-        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-brand-800">
+        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-accent">
           حالت شخصی‌سازی فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا ترتیبشان تغییر کند، اندازه را انتخاب کنید یا آن‌ها را مخفی سازید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
         </div>
       ) : null}
@@ -811,7 +811,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
       ) : (
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((att) => (
-            <div key={att.id} className="overflow-hidden rounded-soft border border-ink-200 bg-white/70">
+            <div key={att.id} className="overflow-hidden rounded-soft border border-ink-200 bg-surface/70">
               {att.kind === 'image' ? (
                 <button type="button" className="block h-28 w-full overflow-hidden bg-ink-100" onClick={() => setPreview(att)} aria-label={`نمایش ${att.fileName}`}>
                   <img src={att.downloadUrl} alt={att.fileName} className="h-full w-full object-cover" loading="lazy" />
@@ -835,7 +835,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
                     <FileDown size={12} /> دانلود
                   </a>
                   {canWrite ? (
-                    <button type="button" className="btn-ghost btn-xs ms-auto text-red-600" onClick={() => remove(att)}>
+                    <button type="button" className="btn-ghost btn-xs ms-auto text-danger" onClick={() => remove(att)}>
                       <Trash2 size={12} />
                     </button>
                   ) : null}
@@ -862,7 +862,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
                 </p>
                 <button
                   type="button"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-pill border border-white/25 bg-white/10 px-3 py-1.5 text-[12px] text-white transition hover:border-red-300/60 hover:bg-red-500/80"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-pill border border-white/25 bg-surface/10 px-3 py-1.5 text-[12px] text-white transition hover:border-red-300/60 hover:bg-red-500/80"
                   onClick={() => setPreview(null)}
                   aria-label="بستن پیش‌نمایش"
                 >
@@ -874,7 +874,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
               {/* کادر تصویر: قاب مشخص + دکمهٔ بستن گوشهٔ کادر */}
               <div className="flex min-h-0 flex-1 items-center justify-center" onClick={() => setPreview(null)}>
                 <figure
-                  className="relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl border-2 border-white/25 bg-ink-900/70 p-2 shadow-[0_25px_70px_-12px_rgba(0,0,0,0.9)]"
+                  className="relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl border-2 border-white/25 bg-scrim/70 p-2 shadow-[0_25px_70px_-12px_rgba(0,0,0,0.9)]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
@@ -910,7 +910,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
 /* ------------------------------ helpers ------------------------------ */
 function MiniStat({ label, value, hint, icon, tone = 'text-ink-700' }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode; tone?: string }) {
   return (
-    <div className="rounded-soft border border-white/70 bg-white/70 p-3 backdrop-blur">
+    <div className="rounded-soft border border-white/70 bg-surface/70 p-3 backdrop-blur">
       <div className="flex items-center gap-1.5 text-[10.5px] text-ink-400">
         {icon}
         {label}
@@ -953,7 +953,7 @@ function InfoRow({ label, value, sub }: { label: string; value: React.ReactNode;
 
 function MetricBox({ label, value, tone = 'text-ink-800', small }: { label: string; value: React.ReactNode; tone?: string; small?: boolean }) {
   return (
-    <div className="rounded-soft border border-ink-200/70 bg-white/70 px-3 py-2.5">
+    <div className="rounded-soft border border-ink-200/70 bg-surface/70 px-3 py-2.5">
       <p className="text-[10.5px] text-ink-400">{label}</p>
       <p className={`mt-1 font-semibold ${small ? 'text-[11.5px]' : 'num text-[15px]'} ${tone}`}>{value}</p>
     </div>

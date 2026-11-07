@@ -32,9 +32,9 @@ function saveStatusPanelOpen(open: boolean) {
 type Tone = 'ok' | 'warn' | 'down' | 'wait';
 
 const TONE: Record<Tone, { dot: string; text: string; ring: string }> = {
-  ok: { dot: 'bg-emerald-500', text: 'text-emerald-700', ring: 'bg-emerald-400' },
-  warn: { dot: 'bg-sun-500', text: 'text-sun-700', ring: 'bg-sun-400' },
-  down: { dot: 'bg-red-500', text: 'text-red-600', ring: 'bg-red-400' },
+  ok: { dot: 'bg-emerald-500', text: 'text-success', ring: 'bg-emerald-400' },
+  warn: { dot: 'bg-sun-500', text: 'text-warning', ring: 'bg-sun-400' },
+  down: { dot: 'bg-red-500', text: 'text-danger', ring: 'bg-red-400' },
   wait: { dot: 'bg-ink-300', text: 'text-ink-500', ring: 'bg-ink-300' },
 };
 
@@ -246,7 +246,7 @@ export default function StatusPanel({ collapsed = false }: { collapsed?: boolean
         </p>
       </div>
 
-      <Link to="/settings" className={`mt-2 block text-center text-[10.5px] text-brand-600 hover:text-brand-700 ${collapsed ? 'lg:hidden' : ''}`}>
+      <Link to="/settings" className={`mt-2 block text-center text-[10.5px] text-accent hover:text-accent ${collapsed ? 'lg:hidden' : ''}`}>
         مدیریت تنظیمات موتور
       </Link>
       </div>

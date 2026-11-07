@@ -8,27 +8,190 @@
 @source "../index.html";
 @source "./**/*.{ts,tsx}";
 
+/* تم تاریک با کلاس `.dark` روی <html> فعال می‌شود (نه فقط ترجیح سیستم) تا
+   کاربر بتواند بین روشن/تاریک/هم‌سیستم جابه‌جا شود. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ */
+/* پالت رنگی تم — تنها منبع رنگ‌ها                                    */
+/* ------------------------------------------------------------------ */
+/* مقادیر به‌صورت «کانال‌های RGB» ذخیره می‌شوند تا مودیفایر شفافیت
+   (`bg-ink-50/70`، `border-brand-200/60`) در هر دو تم کار کند. اسامی
+   در tailwind.config.js به همین متغیرها وصل شده‌اند. */
 @layer base {
   :root {
     --bg: 248 250 252;
     --ring: 37 99 235;
+
+    /* سطح‌ها */
+    --nw-page: 246 248 251;
+    --nw-surface: 255 255 255;
+    --nw-scrim: 15 23 42;
+
+    /* خنثی */
+    --nw-ink-50: 248 250 252;
+    --nw-ink-100: 241 245 249;
+    --nw-ink-200: 226 232 240;
+    --nw-ink-300: 203 213 225;
+    --nw-ink-400: 148 163 184;
+    --nw-ink-500: 100 116 139;
+    --nw-ink-600: 71 85 105;
+    --nw-ink-700: 51 65 85;
+    --nw-ink-800: 30 41 59;
+    --nw-ink-900: 15 23 42;
+
+    /* برند */
+    --nw-brand-50: 239 246 255;
+    --nw-brand-100: 219 234 254;
+    --nw-brand-200: 191 219 254;
+    --nw-brand-300: 147 197 253;
+    --nw-brand-400: 96 165 250;
+    --nw-brand-500: 59 130 246;
+    --nw-brand-600: 37 99 235;
+    --nw-brand-700: 29 78 216;
+    --nw-brand-800: 30 64 175;
+    --nw-brand-900: 30 58 138;
+    --nw-brand-950: 23 37 84;
+
+    /* هشدار/آفتاب */
+    --nw-sun-50: 255 251 235;
+    --nw-sun-100: 254 243 199;
+    --nw-sun-200: 253 230 138;
+    --nw-sun-300: 252 211 77;
+    --nw-sun-400: 251 191 36;
+    --nw-sun-500: 245 158 11;
+    --nw-sun-600: 217 119 6;
+    --nw-sun-700: 180 83 9;
+    --nw-sun-800: 146 64 14;
+
+    /* وضعیت‌ها */
+    --nw-red-50: 254 242 242;
+    --nw-red-100: 254 226 226;
+    --nw-red-200: 254 202 202;
+    --nw-red-300: 252 165 165;
+    --nw-emerald-50: 236 253 245;
+    --nw-emerald-100: 209 250 229;
+    --nw-emerald-200: 167 243 208;
+    --nw-emerald-300: 110 231 183;
+    --nw-sky-200: 186 230 253;
+    --nw-violet-50: 245 243 255;
+    --nw-violet-200: 221 214 254;
+    --nw-violet-600: 124 58 237;
+    --nw-violet-700: 109 40 217;
+
+    /* متن‌های معنایی */
+    --nw-accent: 29 78 216;
+    --nw-danger: 220 38 38;
+    --nw-success: 4 120 87;
+    --nw-warning: 180 83 9;
+    --nw-info: 3 105 161;
+
+    /* نمودارها و نقشه */
+    --chart-grid: #e8eef5;
+    --chart-tick: #94a3b8;
+    --chart-guide: #94a3b8;
+    --chart-dot-ring: #ffffff;
+    --map-canvas: #eef2f7;
+    --nw-shimmer: rgba(255, 255, 255, 0.75);
+    --nw-grid-line: rgba(148, 163, 184, 0.16);
   }
+
+  /* ------------------------------------------------------------------ */
+  /* تم تاریک — آبی‌خاکستری عمیق، سطح‌های چندلایه و متن کم‌کنتراست‌نشده */
+  /* ------------------------------------------------------------------ */
+  .dark {
+    --bg: 9 13 20;
+    --ring: 96 165 250;
+
+    --nw-page: 9 13 20;
+    --nw-surface: 22 29 43;
+    --nw-scrim: 3 6 11;
+
+    --nw-ink-50: 12 16 25;
+    --nw-ink-100: 18 24 36;
+    --nw-ink-200: 33 43 60;
+    --nw-ink-300: 52 66 88;
+    --nw-ink-400: 118 133 156;
+    --nw-ink-500: 146 160 182;
+    --nw-ink-600: 175 188 207;
+    --nw-ink-700: 203 213 228;
+    --nw-ink-800: 228 234 243;
+    --nw-ink-900: 246 249 253;
+
+    --nw-brand-50: 21 34 58;
+    --nw-brand-100: 29 47 79;
+    --nw-brand-200: 42 67 111;
+    --nw-brand-300: 78 116 176;
+    --nw-brand-400: 96 165 250;
+    --nw-brand-500: 59 130 246;
+    --nw-brand-600: 47 111 237;
+    --nw-brand-700: 37 99 235;
+    --nw-brand-800: 29 78 216;
+    --nw-brand-900: 30 58 138;
+    --nw-brand-950: 23 37 84;
+
+    --nw-sun-50: 45 33 12;
+    --nw-sun-100: 60 44 15;
+    --nw-sun-200: 92 68 20;
+    --nw-sun-300: 150 105 25;
+    --nw-sun-400: 251 191 36;
+    --nw-sun-500: 245 158 11;
+    --nw-sun-600: 217 119 6;
+    --nw-sun-700: 180 83 9;
+    --nw-sun-800: 146 64 14;
+
+    --nw-red-50: 45 20 26;
+    --nw-red-100: 62 26 34;
+    --nw-red-200: 94 38 47;
+    --nw-red-300: 135 55 65;
+    --nw-emerald-50: 16 40 33;
+    --nw-emerald-100: 20 52 42;
+    --nw-emerald-200: 30 76 60;
+    --nw-emerald-300: 45 110 87;
+    --nw-sky-200: 27 60 88;
+    --nw-violet-50: 38 32 60;
+    --nw-violet-200: 74 62 110;
+    --nw-violet-600: 167 139 250;
+    --nw-violet-700: 196 181 253;
+
+    --nw-accent: 125 175 255;
+    --nw-danger: 252 165 165;
+    --nw-success: 74 222 128;
+    --nw-warning: 251 191 36;
+    --nw-info: 125 211 252;
+
+    --chart-grid: #222c3d;
+    --chart-tick: #8593a8;
+    --chart-guide: #5a6a80;
+    --chart-dot-ring: #161d2b;
+    --map-canvas: #0f141c;
+    --nw-shimmer: rgba(148, 163, 184, 0.16);
+    --nw-grid-line: rgba(148, 163, 184, 0.10);
+
+    color-scheme: dark;
+  }
+
 
   html {
     @apply antialiased;
     text-rendering: optimizeLegibility;
+    /* پس‌زمینه روی خودِ html هم ست می‌شود تا هنگام overscroll یا بارگذاری،
+       نواری سفید در تم تاریک دیده نشود. */
+    background-color: rgb(var(--nw-page));
   }
 
   body {
     @apply bg-ink-50 text-ink-800 font-sans;
     margin: 0;
     min-height: 100vh;
-    background-color: #f6f8fb;
+    background-color: rgb(var(--nw-page));
+    /* تغییر تم نرم باشد، نه پرش ناگهانی رنگ‌ها */
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
+    scrollbar-color: rgb(var(--nw-ink-300)) transparent;
   }
 
   ::-webkit-scrollbar {
@@ -36,13 +199,13 @@
     height: 9px;
   }
   ::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
+    background: rgb(var(--nw-ink-300));
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    background: rgb(var(--nw-ink-400));
     background-clip: content-box;
   }
   ::-webkit-scrollbar-track {
@@ -102,7 +265,7 @@
   select,
   textarea,
   progress {
-    accent-color: #2563eb;
+    accent-color: rgb(var(--nw-brand-500));
   }
 
   /* ---- Autofill ----
@@ -113,16 +276,16 @@
   input:-webkit-autofill:focus,
   textarea:-webkit-autofill,
   select:-webkit-autofill {
-    -webkit-text-fill-color: #1e293b;
-    -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
-    box-shadow: 0 0 0 1000px #ffffff inset;
+    -webkit-text-fill-color: rgb(var(--nw-ink-800));
+    -webkit-box-shadow: 0 0 0 1000px rgb(var(--nw-surface)) inset;
+    box-shadow: 0 0 0 1000px rgb(var(--nw-surface)) inset;
     transition: background-color 9999s ease-out 0s;
   }
   input:autofill,
   textarea:autofill,
   select:autofill {
-    box-shadow: 0 0 0 1000px #ffffff inset;
-    color: #1e293b;
+    box-shadow: 0 0 0 1000px rgb(var(--nw-surface)) inset;
+    color: rgb(var(--nw-ink-800));
   }
 
   /* ---- Select بومی ----
@@ -140,6 +303,15 @@
     padding-inline-start: 0.75rem;
     cursor: pointer;
   }
+  /* فلش Select در تم تاریک روشن‌تر دیده می‌شود */
+  .dark select.field {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a7b4c8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  /* آیکون تقویم بومی ورودی تاریخ (JalaliDateInput از input[type=date] استفاده نمی‌کند) */
+  .dark input[type='date']::-webkit-calendar-picker-indicator,
+  .dark input[type='time']::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+  }
   select.field::-ms-expand {
     display: none;
   }
@@ -147,7 +319,7 @@
 /* در Tailwind 4 کلاس‌های سفارشی با @utility تعریف می‌شوند تا بتوان در @apply
    به آن‌ها ارجاع داد؛ کلاس‌های داخل @layer components چنین قابلیتی ندارند. */
 @utility surface {
-  @apply bg-white border border-ink-200/70 shadow-card;
+  @apply bg-surface border border-ink-200/70 shadow-card;
 }
 
 @utility btn {
@@ -161,37 +333,41 @@
   }
 
   .card-flat {
-    @apply bg-white border border-ink-200/70 rounded-card shadow-soft;
+    @apply bg-surface border border-ink-200/70 rounded-card shadow-soft;
   }
 
   .btn-primary {
     @apply btn bg-brand-600 text-white shadow-soft hover:bg-brand-700;
+  }
+  /* سایهٔ دکمهٔ اصلی روی زمینهٔ تیره به‌جای سایهٔ خاکستری، هالهٔ آبی می‌شود */
+  .dark .btn-primary {
+    box-shadow: 0 8px 22px -14px rgb(var(--nw-brand-500) / 0.9);
   }
   .btn-primary:hover:not(:disabled) {
     filter: brightness(1.06);
     transform: translateY(-1px);
   }
   .btn-ghost {
-    @apply btn bg-white/70 text-ink-600 border border-ink-200 hover:bg-white hover:text-ink-800 hover:border-ink-300;
+    @apply btn bg-surface/70 text-ink-600 border border-ink-200 hover:bg-surface hover:text-ink-800 hover:border-ink-300;
   }
   .btn-soft {
-    @apply btn bg-brand-50 text-brand-700 border border-brand-100 hover:bg-brand-100;
+    @apply btn bg-brand-50 text-accent border border-brand-100 hover:bg-brand-100;
   }
   .btn-warn {
-    @apply btn bg-sun-50 text-sun-700 border border-sun-200 hover:bg-sun-100;
+    @apply btn bg-sun-50 text-warning border border-sun-200 hover:bg-sun-100;
   }
   .btn-danger {
-    @apply btn bg-red-50 text-red-600 border border-red-200 hover:bg-red-100;
+    @apply btn bg-red-50 text-danger border border-red-200 hover:bg-red-100;
   }
   .btn-xs {
     @apply px-2.5 py-1.5 text-xs rounded-xl gap-1.5;
   }
   .nav-arrow {
-    @apply grid h-6 w-6 shrink-0 place-items-center rounded-md border border-ink-200 bg-white text-ink-500 transition hover:bg-ink-50 hover:text-ink-700 disabled:opacity-40;
+    @apply grid h-6 w-6 shrink-0 place-items-center rounded-md border border-ink-200 bg-surface text-ink-500 transition hover:bg-ink-50 hover:text-ink-700 disabled:opacity-40;
   }
 
   .field {
-    @apply w-full rounded-soft border border-ink-200 bg-white/90 px-3 py-2 text-sm text-ink-800
+    @apply w-full rounded-soft border border-ink-200 bg-surface/90 px-3 py-2 text-sm text-ink-800
       placeholder:text-ink-400 transition shadow-xs focus:border-brand-400 focus:ring-4 focus:ring-brand-500/10 focus:outline-hidden;
   }
   .label {
@@ -203,7 +379,7 @@
   }
 
   .table-wrap {
-    @apply overflow-auto rounded-card border border-ink-200/70 bg-white;
+    @apply overflow-auto rounded-card border border-ink-200/70 bg-surface;
   }
   .table {
     @apply w-full text-sm border-collapse;
@@ -227,7 +403,11 @@
   }
 
   .glass {
-    @apply bg-white/60 backdrop-blur-xl border border-white/60;
+    @apply bg-surface/60 backdrop-blur-xl border border-white/60;
+  }
+  .dark .glass {
+    border-color: rgb(var(--nw-ink-200) / 0.8);
+    background-color: rgb(var(--nw-surface) / 0.72);
   }
 
   .skeleton {
@@ -236,15 +416,15 @@
   .skeleton::after {
     content: '';
     @apply absolute inset-0 animate-shimmer;
-    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+    background-image: linear-gradient(90deg, transparent, var(--nw-shimmer), transparent);
   }
 
   .nav-item {
     @apply flex items-center gap-3 rounded-soft px-3 py-2.5 text-sm font-medium text-ink-500
-      transition-all duration-200 hover:bg-white hover:text-ink-800 hover:shadow-soft;
+      transition-all duration-200 hover:bg-surface hover:text-ink-800 hover:shadow-soft;
   }
   .nav-item-active {
-    @apply bg-white text-brand-700 shadow-soft border border-brand-100/80;
+    @apply bg-surface text-accent shadow-soft border border-brand-100/80;
   }
 
   .section-title {
@@ -266,10 +446,19 @@
     unicode-bidi: embed;
   }
   .grid-lines {
-    background-image: linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(148, 163, 184, 0.16) 1px, transparent 1px);
+    background-image: linear-gradient(to right, var(--nw-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--nw-grid-line) 1px, transparent 1px);
     background-size: 28px 28px;
   }
+}
+
+/* سایه‌های تم روشن روی زمینهٔ تیره دیده نمی‌شوند؛ به‌جای آن یک حاشیهٔ روشن
+   بسیار کم‌رنگ و سایهٔ مشکی عمیق‌تر، کارت‌ها را از هم جدا می‌کند. این قاعده
+   بیرون از لایه‌ها است تا بر `shadow-card` (لایهٔ utilities) اولویت داشته باشد. */
+.dark .card,
+.dark .card-flat,
+.dark .surface {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.95);
 }
 
 .recharts-wrapper,
@@ -340,11 +529,44 @@
 
 .leaflet-container {
   font-family: Vazirmatn, Tahoma, sans-serif;
-  background: #eef2f7;
+  background: var(--map-canvas);
 }
 .leaflet-popup-content-wrapper {
   border-radius: 14px;
   box-shadow: 0 18px 40px -20px rgba(15, 23, 42, 0.4);
+}
+
+/* ------------------------------------------------------------------ */
+/* تم تاریک — نقشه                                                    */
+/* ------------------------------------------------------------------ */
+/* کاشی‌های برداری/شبکه‌ای نقشهٔ آفلاین یک نسخهٔ روشن دارند. در تم تاریک با
+   وارون‌سازی رنگ بوم، به نقشهٔ شبانه تبدیل می‌شوند؛ نشانگرها و کنترل‌ها در
+   لایهٔ DOM هستند و از این فیلتر اثر نمی‌گیرند. */
+.dark .maplibregl-canvas,
+.dark img.leaflet-tile {
+  filter: invert(0.92) hue-rotate(180deg) saturate(0.75) brightness(0.92) contrast(1.05);
+}
+.dark .leaflet-control-attribution,
+.dark .maplibregl-ctrl-attrib {
+  background: rgb(var(--nw-surface) / 0.8) !important;
+  color: rgb(var(--nw-ink-400)) !important;
+}
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip,
+.dark .maplibregl-popup-content,
+.dark .maplibregl-popup-tip {
+  background: rgb(var(--nw-surface));
+  color: rgb(var(--nw-ink-800));
+}
+.dark .leaflet-bar a,
+.dark .maplibregl-ctrl-group {
+  background: rgb(var(--nw-surface));
+  color: rgb(var(--nw-ink-700));
+  border-color: rgb(var(--nw-ink-200));
+}
+.dark .leaflet-bar a:hover,
+.dark .maplibregl-ctrl-group button:hover {
+  background: rgb(var(--nw-ink-100));
 }
 .leaflet-popup-content {
   margin: 12px 14px;
@@ -378,8 +600,8 @@
 .diagram-handle {
   width: 9px;
   height: 9px;
-  border: 2px solid #94a3b8;
-  background: #fff;
+  border: 2px solid rgb(var(--nw-ink-400));
+  background: rgb(var(--nw-surface));
   opacity: 0;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
@@ -388,7 +610,39 @@
 }
 .diagram-handle.is-active:hover {
   transform: scale(1.35);
-  background: #dbeafe;
+  background: rgb(var(--nw-brand-200));
+}
+
+/* بوم React Flow در تم تاریک: پس‌زمینهٔ نقطه‌چین، کنترل‌ها و مینی‌مپ */
+.dark .react-flow__controls {
+  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.9);
+}
+.dark .react-flow__controls-button {
+  background: rgb(var(--nw-surface));
+  border-bottom: 1px solid rgb(var(--nw-ink-200));
+  color: rgb(var(--nw-ink-600));
+  fill: rgb(var(--nw-ink-600));
+}
+.dark .react-flow__controls-button:hover {
+  background: rgb(var(--nw-ink-100));
+}
+.dark .react-flow__minimap {
+  background: rgb(var(--nw-ink-100));
+  border: 1px solid rgb(var(--nw-ink-200));
+  border-radius: 10px;
+}
+.dark .react-flow__minimap-mask {
+  fill: rgb(var(--nw-ink-200) / 0.55);
+}
+.dark .react-flow__edge-textbg {
+  fill: rgb(var(--nw-surface));
+}
+.dark .react-flow__handle {
+  border-color: rgb(var(--nw-ink-300));
+}
+.dark .react-flow__attribution {
+  background: transparent;
+  color: rgb(var(--nw-ink-400));
 }
 
 .diagram-resize-line {

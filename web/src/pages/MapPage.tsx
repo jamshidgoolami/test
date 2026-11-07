@@ -3,14 +3,17 @@ import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import {
   Camera,
+  Check,
   Circle,
   ChevronDown,
   ChevronLeft,
   CirclePlus,
   Crosshair,
+  Building2,
   Download,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   Flag,
   Hammer,
   HardHat,
@@ -40,7 +43,7 @@ import { useApp, useAsync, useSubmitGuard, useToast } from '../lib/store';
 import { faDigits, fmtRelative, statusMeta } from '../lib/format';
 import { useUrlParams } from '../lib/params';
 import { buildVectorStyle, LABEL_ANCHOR_LAYER } from '../lib/mapStyle';
-import { Badge, Card, EmptyState, ErrorState, Field, Modal, StatusPill, Toggle } from '../components/ui';
+import { Card, EmptyState, ErrorState, Field, Modal, StatusPill, Toggle } from '../components/ui';
 import type { MapLayer, MapMarker, MarkerType } from '../lib/types';
 import { VirtualList } from '../components/VirtualList';
 import { ColorField } from '../components/ColorField';
@@ -91,10 +94,29 @@ type MapDevice = {
   longitude: number | null;
   deviceType: string;
   groupName: string | null;
+  siteId: number | null;
+  siteName: string | null;
   lastRtt: number | null;
   priority: string;
   location: string;
   mapLayerId: number | null;
+};
+
+/** ایستگاه: چند تجهیز هم‌مکان؛ موقعیتش میانگین موقعیت تجهیزات عضو است. */
+type MapSite = {
+  id: number;
+  name: string;
+  groupName: string | null;
+  devices: MapDevice[];
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/** نمای قابل‌کنترل پاپ‌آپ ایستگاه: فهرست تجهیزات یا جزئیات یک تجهیز. */
+type SitePopupView = {
+  element: HTMLElement;
+  showDevice: (deviceId: number) => void;
+  showList: () => void;
 };
 
 function escapeHtml(s: string) {
@@ -122,6 +144,18 @@ function markerPinIcon(marker: MapMarker, showLabel: boolean) {
     iconSize: [20, 26],
     iconAnchor: [10, 26],
     popupAnchor: [0, -22],
+  });
+}
+
+/** نشان ایستگاه کمی بزرگ‌تر از نشان تجهیز منفرد و با شمار تجهیزات عضو */
+function siteMarkerIcon(site: MapSite, showLabel: boolean) {
+  const label = showLabel ? `<span class="nw-map-label">${escapeHtml(site.name)}</span>` : '';
+  const count = site.devices.length.toLocaleString('fa-IR');
+  return L.divIcon({
+    className: 'nw-site-marker',
+    html: `<span class="nw-site"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg><span class="nw-site-count">${count}</span>${label}</span>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
   });
 }
 
@@ -375,6 +409,9 @@ export default function MapPage() {
   const markers = useRef<Map<number, L.Marker>>(new Map());
   const markerPins = useRef<Map<number, L.Marker>>(new Map());
   const deviceLayer = useRef<L.LayerGroup | null>(null);
+  const siteLayer = useRef<L.LayerGroup | null>(null);
+  const siteMarkers = useRef<Map<number, L.Marker>>(new Map());
+  const sitePopupViews = useRef<Map<number, SitePopupView>>(new Map());
   // نگاشت لایهٔ برداری → نقشهٔ MapLibre همان لایه، برای خواندن نام شهرها
   const vectorMaps = useRef<Map<number, GlMap>>(new Map());
   const [vectorMapsTick, setVectorMapsTick] = useState(0);
@@ -384,8 +421,27 @@ export default function MapPage() {
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState<{ id: number; latitude: number; longitude: number } | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
+  // دیالوگ خروجی مختصات: گروه تجهیزات و انواع علامت‌های حاضر در فایل را تعیین می‌کند.
+  const [exportOpen, setExportOpen] = useState(false);
+  // مرکز/زوم فعلی برای نمای بندانگشتی پنل لایه‌ها؛ روی هر جابه‌جایی نقشه تازه می‌شود.
+  const [center, setCenter] = useState<[number, number]>(() => settings?.map_default_center ?? [35.6892, 51.389]);
+  const layersOpenRef = useRef(false);
+  layersOpenRef.current = layersOpen;
   const [placingDevice, setPlacingDevice] = useState<number | null>(null);
   const [sideOpen, setSideOpen] = useState(true);
+  // عرض فهرست کنار نقشه با کشیدن لبهٔ مجاور نقشه تغییر می‌کند و در مرورگر
+  // نگه داشته می‌شود تا بعد از بازگشت هم همان اندازه باشد.
+  const [sideWidth, setSideWidth] = useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('nw-map-side-width'));
+      return Number.isFinite(saved) && saved >= 240 ? Math.min(560, saved) : 324;
+    } catch {
+      return 324;
+    }
+  });
+  const sideWidthRef = useRef(sideWidth);
+  sideWidthRef.current = sideWidth;
+  const resizeState = useRef<{ startX: number; startWidth: number } | null>(null);
   const [sideTab, setSideTab] = useState<'devices' | 'markers'>('devices');
   const [armedType, setArmedType] = useState<{ typeId: number; typeName: string; typeColor: string; typeIcon: string } | null>(null);
   // ابزار اندازه‌گیری نقشه؛ نتیجه فقط در همین نشست می‌ماند و ذخیره نمی‌شود.
@@ -411,6 +467,10 @@ export default function MapPage() {
   // فهرست نقشه همیشه همهٔ تجهیزات/علامت‌ها را دارد؛ این دو مجموعه فقط نمایش
   // گروه‌ها و انواع را روی نقشه و فهرست کنترل می‌کنند.
   const [hiddenGroups, setHiddenGroups] = useState<string[]>([]);
+  // ایستگاه‌ها هم مثل گروه‌ها قابل مخفی کردن هستند؛ تجهیزات عضو ایستگاه
+  // نشانگر مستقل ندارند و با ایستگاهشان پنهان می‌شوند.
+  const [hiddenSiteIds, setHiddenSiteIds] = useState<number[]>([]);
+  const [siteFormOpen, setSiteFormOpen] = useState(false);
   const [hiddenTypeIds, setHiddenTypeIds] = useState<number[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   // سطح زوم فعلی: نمایش خوشه‌ای/تکی نشانگرها و برچسب نام به آن وابسته است.
@@ -439,19 +499,78 @@ export default function MapPage() {
   );
   const { data: layersData, refresh: refreshLayers } = useAsync((signal) => api.layers(signal), []);
   const { data: markersData, refresh: refreshMarkers } = useAsync((signal) => api.markers({}, signal), []);
+  const { data: sitesData, refresh: refreshSites } = useAsync((signal) => api.sites(signal), []);
   const devices = useMemo(() => (mapData?.items ?? []) as MapDevice[], [mapData]);
   devicesRef.current = devices;
+  // refresh در هر رندر تابع تازه است؛ افکت‌های نقشه نباید با آن بی‌دلیل بازسازی شوند.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const layers = layersData?.items ?? [];
   const mapMarkers = markersData?.items ?? [];
   const markerTypes = markersData?.types ?? [];
+  const sites = useMemo(() => sitesData?.items ?? [], [sitesData]);
+  // هر ایستگاه با تجهیزات عضو و موقعیت میانگینش ساخته می‌شود تا هم نقشه و
+  // هم فهرست کنار نقشه از یک منبع بخوانند.
+  const mapSites = useMemo<MapSite[]>(() => {
+    const bySite = new Map<number, MapSite>();
+    for (const s of sites) {
+      bySite.set(s.id, { id: s.id, name: s.name, groupName: s.group_name ?? null, devices: [], latitude: null, longitude: null });
+    }
+    for (const d of devices) {
+      if (d.siteId == null) continue;
+      const site = bySite.get(d.siteId);
+      if (!site) continue;
+      site.devices.push(d);
+      if (!site.groupName) site.groupName = d.groupName ?? null;
+    }
+    for (const site of bySite.values()) {
+      site.devices.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+      const located = site.devices.filter((d) => d.latitude != null && d.longitude != null);
+      if (!located.length) continue;
+      site.latitude = located.reduce((sum, d) => sum + Number(d.latitude), 0) / located.length;
+      site.longitude = located.reduce((sum, d) => sum + Number(d.longitude), 0) / located.length;
+    }
+    return [...bySite.values()].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+  }, [sites, devices]);
+  const mapSitesRef = useRef<MapSite[]>([]);
+  mapSitesRef.current = mapSites;
+  /**
+   * جابه‌جایی تجهیز روی نقشه. اگر تجهیز عضو یک ایستگاه باشد، کل ایستگاه به همان
+   * نقطه می‌رود؛ مختصات همهٔ اعضا یکسان می‌شود تا میانگین ایستگاه دقیقاً همان
+   * نقطه باشد و نشان ایستگاه روی محل جدید بماند.
+   */
+  const moveDevice = useCallback(async (id: number, latitude: number, longitude: number) => {
+    const device = devicesRef.current.find((d) => d.id === id);
+    const site =
+      device?.siteId != null ? mapSitesRef.current.find((s) => s.id === device.siteId) : undefined;
+    const ids = site?.devices.length ? site.devices.map((d) => d.id) : [id];
+    await api.positions(ids.map((deviceId) => ({ id: deviceId, latitude, longitude })));
+    return site;
+  }, []);
   const groupNames = useMemo(() => {
     const names = new Set<string>();
     for (const d of devices) names.add(d.groupName || '__none__');
+    for (const s of mapSites) names.add(s.groupName || '__none__');
     return [...names].sort((a, b) => a.localeCompare(b, 'fa'));
-  }, [devices]);
+  }, [devices, mapSites]);
+  // گزینه‌های گروه در دیالوگ خروجی از فهرست کامل گروه‌ها می‌آید (نه فیلتر فعلی صفحه).
+  const exportGroups = useMemo(() => [...(meta?.groups ?? []).map((g) => g.name), '__none__'], [meta]);
+  // تجهیزات عضو ایستگاه نشانگر و ردیف مستقل ندارند؛ ایستگاه جای آن‌ها را می‌گیرد.
+  const individualDevices = useMemo(() => devices.filter((d) => d.siteId == null), [devices]);
   const visibleDevices = useMemo(
-    () => devices.filter((d) => !hiddenGroups.includes(d.groupName || '__none__')),
-    [devices, hiddenGroups]
+    () => individualDevices.filter((d) => !hiddenGroups.includes(d.groupName || '__none__')),
+    [individualDevices, hiddenGroups]
+  );
+  const visibleSites = useMemo(
+    () =>
+      mapSites.filter(
+        (s) =>
+          !hiddenGroups.includes(s.groupName || '__none__') &&
+          !hiddenSiteIds.includes(s.id) &&
+          s.latitude != null &&
+          s.longitude != null
+      ),
+    [mapSites, hiddenGroups, hiddenSiteIds]
   );
   const visibleMarkers = useMemo(
     () => mapMarkers.filter((m) => m.typeId == null || !hiddenTypeIds.includes(m.typeId)),
@@ -461,6 +580,22 @@ export default function MapPage() {
   const missingGeo = mapData?.missingGeo ?? 0;
   const totalDevices = mapData?.total ?? 0;
   const withGeo = mapData?.withGeo ?? 0;
+
+  /**
+   * انتخاب نقشهٔ پایه از پنل شناور لایه‌ها.
+   * در هر لحظه فقط یک نقشه فعال است؛ بقیه مخفی می‌شوند تا چند لایه روی هم
+   * نیفتند. مدیریت و بارگذاری نقشهٔ جدید در تنظیمات برنامه انجام می‌شود.
+   */
+  const selectLayer = async (layer: MapLayer) => {
+    if (layer.visible && layers.filter((l) => l.visible).length <= 1) return;
+    try {
+      await Promise.all(layers.map((l) => api.updateLayer(l.id, { visible: l.id === layer.id ? 1 : 0 })));
+      refreshLayers();
+      refreshMeta();
+    } catch (e) {
+      push((e as Error).message, 'error');
+    }
+  };
 
   /* ------------------------- init map ------------------------- */
   useEffect(() => {
@@ -477,17 +612,30 @@ export default function MapPage() {
     L.control.scale({ position: 'bottomright', imperial: false }).addTo(map);
     mapRef.current = map;
     deviceLayer.current = L.layerGroup().addTo(map);
+    siteLayer.current = L.layerGroup().addTo(map);
     setZoom(map.getZoom());
-    const onZoom = () => setZoom(map.getZoom());
-    map.on('zoomend', onZoom);
+    // مرکز نقشه فقط وقتی در state نگه داشته می‌شود که پنل لایه‌ها باز باشد؛
+    // تا جابه‌جایی‌های عادی صفحه را بی‌دلیل رندر نکنند.
+    const onView = () => {
+      setZoom(map.getZoom());
+      if (layersOpenRef.current) {
+        const c = map.getCenter();
+        setCenter([c.lat, c.lng]);
+      }
+    };
+    map.on('zoomend', onView);
+    map.on('moveend', onView);
     setReady(true);
     return () => {
       for (const id of flyTimers.current) window.clearTimeout(id);
       flyTimers.current = [];
-      map.off('zoomend', onZoom);
+      map.off('zoomend', onView);
+      map.off('moveend', onView);
       map.remove();
       mapRef.current = null;
       deviceLayer.current = null;
+      siteLayer.current = null;
+      siteMarkers.current.clear();
       markers.current.clear();
       markerPins.current.clear();
       tileLayers.current = {};
@@ -505,6 +653,7 @@ export default function MapPage() {
     if (!map) return;
     const center = settings?.map_default_center ?? [35.6892, 51.389];
     map.setView(L.latLng(center[0], center[1]), settings?.map_default_zoom ?? 6);
+    setCenter([center[0], center[1]]);
   }, [settings?.map_default_center, settings?.map_default_zoom]);
 
   /* ------------------- تمام‌صفحه کردن نقشه ------------------- */
@@ -815,7 +964,7 @@ export default function MapPage() {
         const latitude = Number(latlng.lat.toFixed(6));
         const longitude = Number(latlng.lng.toFixed(6));
         try {
-          await api.positions([{ id: device.id, latitude, longitude }]);
+          await moveDevice(device.id, latitude, longitude);
           push(`موقعیت «${device.name}» به‌روزرسانی شد`, 'success');
           refresh();
         } catch (e) {
@@ -825,7 +974,59 @@ export default function MapPage() {
       });
       markers.current.set(device.id, marker);
     }
-  }, [visibleDevices, ready, editing, settings?.map_show_labels, zoom]);
+  }, [visibleDevices, ready, editing, settings?.map_show_labels, zoom, moveDevice]);
+
+  /* --------------------------- نشانگر ایستگاه‌ها --------------------------- */
+  // نشان ایستگاه بزرگ‌تر از تجهیز منفرد است و با کلیک، فهرست تجهیزات عضو را
+  // باز می‌کند؛ کلیک روی هر ردیف، جزئیات همان تجهیز را در همان پاپ‌آپ نشان می‌دهد.
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = siteLayer.current;
+    if (!map || !ready || !layer) return;
+
+    layer.clearLayers();
+    siteMarkers.current.clear();
+    sitePopupViews.current.clear();
+    const showLabel = zoom >= 12 || !!settings?.map_show_labels;
+
+    for (const site of visibleSites) {
+      const lat = Number(site.latitude);
+      const lng = Number(site.longitude);
+      // فهرست و جزئیات هر دو در همین عنصر ساخته می‌شوند و کلیک ردیف‌ها مستقیم
+      // به همان عنصر وصل می‌شود؛ نیازی به بازنویسی محتوای پاپ‌آپ نیست.
+      const view = sitePopupElement(site);
+      const marker = L.marker([lat, lng], {
+        icon: siteMarkerIcon(site, showLabel),
+        riseOnHover: true,
+        zIndexOffset: 400,
+        // ایستگاه هم مثل تجهیز و علامت در حالت جابه‌جایی کشیدنی است؛ کشیدن آن
+        // همهٔ تجهیزات عضو را یک‌جا به همان نقطه می‌برد.
+        draggable: editing,
+      }).addTo(layer);
+      siteMarkers.current.set(site.id, marker);
+      sitePopupViews.current.set(site.id, view);
+      marker.bindPopup(view.element, { closeButton: true, minWidth: 240, maxHeight: 320 });
+      // با بسته شدن پاپ‌آپ، دفعهٔ بعد دوباره فهرست تجهیزات دیده می‌شود.
+      marker.on('popupclose', view.showList);
+      marker.on('click', () => {
+        marker.openPopup();
+        map.panTo([lat, lng]);
+      });
+      marker.on('dragend', async () => {
+        const latlng = marker.getLatLng();
+        const latitude = Number(latlng.lat.toFixed(6));
+        const longitude = Number(latlng.lng.toFixed(6));
+        try {
+          await api.positions(site.devices.map((d) => ({ id: d.id, latitude, longitude })));
+          push(`ایستگاه «${site.name}» به محل جدید منتقل شد`, 'success');
+          refreshRef.current();
+        } catch (e) {
+          push((e as Error).message, 'error');
+          marker.setLatLng([lat, lng]);
+        }
+      });
+    }
+  }, [visibleSites, ready, editing, settings?.map_show_labels, zoom, push]);
 
   /* --------------------------- map markers (علامت‌ها) --------------------------- */
   useEffect(() => {
@@ -1196,8 +1397,13 @@ export default function MapPage() {
     const device = devices.find((d) => d.id === id);
     void runGuarded(async () => {
       try {
-        await api.positions([{ id, latitude, longitude }]);
-        push(`موقعیت «${device?.name ?? `#${id}`}» روی نقشه ثبت شد`, 'success');
+        const site = await moveDevice(id, latitude, longitude);
+        push(
+          site
+            ? `ایستگاه «${site.name}» به محل جدید منتقل شد`
+            : `موقعیت «${device?.name ?? `#${id}`}» روی نقشه ثبت شد`,
+          'success'
+        );
         refresh();
       } catch (err) {
         push((err as Error).message, 'error');
@@ -1209,8 +1415,8 @@ export default function MapPage() {
     if (!pending) return;
     void runGuarded(async () => {
       try {
-        await api.positions([{ id: pending.id, latitude: pending.latitude, longitude: pending.longitude }]);
-        push('موقعیت تجهیز ذخیره شد', 'success');
+        const site = await moveDevice(pending.id, pending.latitude, pending.longitude);
+        push(site ? `ایستگاه «${site.name}» به محل جدید منتقل شد` : 'موقعیت تجهیز ذخیره شد', 'success');
         setPending(null);
         setEditing(false);
         refresh();
@@ -1253,6 +1459,10 @@ export default function MapPage() {
             longitude: d.longitude,
             deviceType: d.deviceType,
             groupName: d.groupName ?? null,
+            // مسیر جزئیات هنوز عضویت ایستگاه را برنمی‌گرداند؛ این حالت فقط
+            // برای تجهیزی است که در فهرست نقشه نیست.
+            siteId: null,
+            siteName: null,
             lastRtt: d.lastRtt,
             priority: d.priority,
             location: d.location,
@@ -1271,6 +1481,14 @@ export default function MapPage() {
         return;
       }
       map.setView([device.latitude, device.longitude], Math.max(map.getZoom(), 14), { animate: true });
+      // تجهیز عضو ایستگاه نشانگر مستقل ندارد؛ پاپ‌آپ ایستگاه با جزئیات همین
+      // تجهیز باز می‌شود تا مثل یک تجهیز منفرد دیده شود.
+      const site = mapSitesRef.current.find((s) => s.devices.some((m) => m.id === id));
+      if (site) {
+        sitePopupViews.current.get(site.id)?.showDevice(id);
+        schedulePopup(() => siteMarkers.current.get(site.id));
+        return;
+      }
       schedulePopup(() => markers.current.get(id));
     },
     [schedulePopup, push]
@@ -1285,6 +1503,49 @@ export default function MapPage() {
     },
     [schedulePopup]
   );
+
+  /**
+   * تغییر عرض فهرست با کشیدن دستگیرهٔ لبهٔ آن.
+   * لبهٔ کشیدن، حاشیهٔ راست کادر فهرست (سمت نقشه) است؛ کشیدن آن به راست
+   * فهرست را بزرگ‌تر و به چپ کوچک‌تر می‌کند و لبه با نشانگر حرکت می‌کند.
+   * عرض در بازهٔ ۲۴۰ تا ۵۶۰ پیکسل محدود و پس از رها کردن در localStorage
+   * ذخیره می‌شود.
+   */
+  const startSideResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (fullscreen || !sideOpen) return;
+    event.preventDefault();
+    resizeState.current = { startX: event.clientX, startWidth: sideWidth };
+    const onMove = (moveEvent: PointerEvent) => {
+      const state = resizeState.current;
+      if (!state) return;
+      const next = Math.min(560, Math.max(240, state.startWidth + (moveEvent.clientX - state.startX)));
+      sideWidthRef.current = next;
+      setSideWidth(next);
+    };
+    const onUp = () => {
+      resizeState.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      try {
+        window.localStorage.setItem('nw-map-side-width', String(sideWidthRef.current));
+      } catch {
+        /* ذخیرهٔ محلی اختیاری است */
+      }
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  // تغییر عرض فهرست، عرض نقشه را عوض می‌کند؛ Leaflet باید اندازهٔ تازه را بگیرد.
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(() => mapRef.current?.invalidateSize(), 120);
+    return () => window.clearTimeout(timer);
+  }, [sideWidth, ready]);
 
   useEffect(() => {
     const target = params.get('device');
@@ -1318,7 +1579,7 @@ export default function MapPage() {
           </select>
 
           <div className="ms-auto flex flex-wrap items-center gap-2">
-            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); }} title="جابه‌جایی تجهیزات و علامت‌ها روی نقشه" aria-pressed={editing}>
+            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); }} title="جابه‌جایی تجهیزات، ایستگاه‌ها و علامت‌ها روی نقشه" aria-pressed={editing}>
               <Crosshair size={14} />
               {editing ? 'حالت جابه‌جایی فعال' : 'جابه‌جایی موقعیت'}
             </button>
@@ -1326,53 +1587,16 @@ export default function MapPage() {
               <RefreshCw size={14} />
               به‌روزرسانی
             </button>
-            <span
-              className="inline-flex items-center gap-0.5 rounded-pill border border-ink-200 bg-white p-0.5"
-              role="group"
-              aria-label="ابزارهای نقشه"
+            <button
+              type="button"
+              className="btn-ghost btn-xs"
+              onClick={() => setExportOpen(true)}
+              aria-label="خروجی مختصات"
+              title="خروجی مختصات"
             >
-              <button
-                type="button"
-                className={`grid h-7 w-7 place-items-center rounded-pill transition ${
-                  fullscreen ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
-                }`}
-                onClick={() => setFullscreen((value) => !value)}
-                aria-pressed={fullscreen}
-                aria-label={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
-                title={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
-              >
-                {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
-              <button
-                type="button"
-                className={`grid h-7 w-7 place-items-center rounded-pill transition ${
-                  measureOpen ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
-                }`}
-                onClick={() => setMeasureOpen((value) => !value)}
-                aria-pressed={measureOpen}
-                aria-label="اندازه‌گیری روی نقشه"
-                title="اندازه‌گیری مسافت، مساحت و شعاع"
-              >
-                <Ruler size={14} />
-              </button>
-              <button
-                type="button"
-                className="grid h-7 w-7 place-items-center rounded-pill text-ink-500 transition hover:bg-ink-50 hover:text-ink-700"
-                onClick={() => setLayersOpen(true)}
-                aria-label="لایه‌های نقشه"
-                title="لایه‌های نقشه"
-              >
-                <Layers size={14} />
-              </button>
-              <a
-                className="grid h-7 w-7 place-items-center rounded-pill text-ink-500 transition hover:bg-ink-50 hover:text-ink-700"
-                href={downloadUrl('/devices/export/geo', { format: 'xlsx' })}
-                aria-label="خروجی مختصات"
-                title="خروجی مختصات"
-              >
-                <Download size={14} />
-              </a>
-            </span>
+              <Download size={14} />
+              خروجی مختصات
+            </button>
           </div>
         </div>
 
@@ -1390,12 +1614,12 @@ export default function MapPage() {
             {faDigits(visibleDevices.length)} تجهیز در فهرست — {faDigits(withGeo)} دارای مختصات، {faDigits(missingGeo)} بدون مختصات
           </span>
           {mapData?.truncated ? (
-            <span className="chip border-sun-200 bg-sun-50 text-sun-700">فهرست به سقف پاسخ سرور محدود شد</span>
+            <span className="chip border-sun-200 bg-sun-50 text-warning">فهرست به سقف پاسخ سرور محدود شد</span>
           ) : null}
           {hiddenGroups.length ? <span className="chip border-ink-200 bg-ink-50 text-ink-600">{faDigits(hiddenGroups.length)} گروه مخفی</span> : null}
           {hiddenTypeIds.length ? <span className="chip border-ink-200 bg-ink-50 text-ink-600">{faDigits(hiddenTypeIds.length)} نوع علامت مخفی</span> : null}
           {missingGeo > 0 ? (
-            <span className="chip border-sun-200 bg-sun-50 text-sun-700">
+            <span className="chip border-sun-200 bg-sun-50 text-warning">
               {faDigits(missingGeo)} از {faDigits(totalDevices)} تجهیز بدون مختصات جغرافیایی
             </span>
           ) : null}
@@ -1416,14 +1640,14 @@ export default function MapPage() {
       ) : null}
 
       {editing ? (
-        <div className="animate-fade-up rounded-card border border-sun-200 bg-sun-50/80 p-3 text-[12px] text-sun-800">
-          حالت جابه‌جایی فعال است: نشانگر تجهیز یا علامت را بگیرید و بکشید. برای تجهیز می‌توانید روی نشانگر کلیک کنید و محل جدید را روی نقشه انتخاب کنید، یا آن را از فهرست بکشید و روی نقشه رها کنید.
+        <div className="animate-fade-up rounded-card border border-sun-200 bg-sun-50/80 p-3 text-[12px] text-warning">
+          حالت جابه‌جایی فعال است: نشانگر تجهیز، ایستگاه یا علامت را بگیرید و بکشید. برای تجهیز می‌توانید روی نشانگر کلیک کنید و محل جدید را روی نقشه انتخاب کنید، یا آن را از فهرست بکشید و روی نقشه رها کنید. جابه‌جایی هر تجهیز عضو ایستگاه، کل ایستگاه را به همان نقطه می‌برد.
           {placingDevice ? <span className="ms-2 font-semibold">در انتظار انتخاب محل جدید برای تجهیز #{faDigits(placingDevice)}</span> : null}
         </div>
       ) : null}
 
       {armedType ? (
-        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/80 p-3 text-[12px] text-brand-800">
+        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/80 p-3 text-[12px] text-accent">
           برای جانمایی علامت «{armedType.typeName}» روی نقشه کلیک کنید.
           <button type="button" className="btn-ghost btn-xs ms-2" onClick={() => setArmedType(null)}>
             انصراف
@@ -1437,8 +1661,8 @@ export default function MapPage() {
           <div
             className={
               fullscreen
-                ? 'fixed inset-0 z-[1100] flex flex-col overflow-hidden rounded-none border-0 bg-white shadow-pop'
-                : 'relative overflow-hidden rounded-card border border-ink-200/70 bg-white shadow-card'
+                ? 'fixed inset-0 z-[1100] flex flex-col overflow-hidden rounded-none border-0 bg-surface shadow-pop'
+                : 'relative overflow-hidden rounded-card border border-ink-200/70 bg-surface shadow-card'
             }
           >
             <div
@@ -1451,7 +1675,7 @@ export default function MapPage() {
               <div className="absolute left-3 top-3 z-[500] flex items-center gap-2">
                 <button
                   type="button"
-                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/95 text-ink-600 shadow-soft transition hover:bg-white hover:text-ink-900"
+                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-surface/95 text-ink-600 shadow-soft transition hover:bg-surface hover:text-ink-900"
                   onClick={() => setSideOpen(true)}
                   title="نمایش فهرست نقشه"
                   aria-label="نمایش فهرست نقشه"
@@ -1462,7 +1686,7 @@ export default function MapPage() {
                 </button>
                 <button
                   type="button"
-                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/95 text-ink-600 shadow-soft transition hover:bg-white hover:text-ink-900"
+                  className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-surface/95 text-ink-600 shadow-soft transition hover:bg-surface hover:text-ink-900"
                   onClick={() => setFullscreen(false)}
                   title="بستن نقشه و خروج از تمام‌صفحه"
                   aria-label="بستن نقشه و خروج از تمام‌صفحه"
@@ -1476,14 +1700,79 @@ export default function MapPage() {
                 <div className="h-full w-1/3 animate-pulse bg-brand-500" />
               </div>
             ) : null}
-            {measureOpen ? (
+            {/* کنترل‌های شناور روی نقشه — مثل نقشه‌های گوگل: لایه‌ها، اندازه‌گیری
+                و تمام‌صفحه در یک ستون کم‌حجم، هم در حالت عادی و هم در تمام‌صفحه. */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 z-[540] flex items-start justify-start gap-2 p-3"
+              dir="rtl"
+            >
+              <div className="pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-ink-200/70 bg-surface/95 shadow-pop backdrop-blur-md">
+                <button
+                  type="button"
+                  className={`grid h-8 w-8 place-items-center transition ${
+                    layersOpen ? 'bg-brand-50 text-accent' : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                  }`}
+                  onClick={() => {
+                    if (!layersOpen) setMeasureOpen(false);
+                    const current = mapRef.current?.getCenter();
+                    if (current) setCenter([current.lat, current.lng]);
+                    setLayersOpen((value) => !value);
+                  }}
+                  aria-pressed={layersOpen}
+                  aria-expanded={layersOpen}
+                  aria-controls="map-layers-panel"
+                  aria-label="لایه‌های نقشه"
+                  title="لایه‌های نقشه"
+                >
+                  <Layers size={15} />
+                </button>
+                <span className="mx-auto h-px w-4 bg-ink-100" aria-hidden />
+                <button
+                  type="button"
+                  className={`grid h-8 w-8 place-items-center transition ${
+                    measureOpen ? 'bg-brand-50 text-accent' : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                  }`}
+                  onClick={() => {
+                    if (!measureOpen) setLayersOpen(false);
+                    setMeasureOpen((value) => !value);
+                  }}
+                  aria-pressed={measureOpen}
+                  aria-label="اندازه‌گیری روی نقشه"
+                  title="اندازه‌گیری مسافت، مساحت و شعاع"
+                >
+                  <Ruler size={15} />
+                </button>
+                <span className="mx-auto h-px w-4 bg-ink-100" aria-hidden />
+                <button
+                  type="button"
+                  className={`grid h-8 w-8 place-items-center transition ${
+                    fullscreen ? 'bg-brand-50 text-accent' : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                  }`}
+                  onClick={() => setFullscreen((value) => !value)}
+                  aria-pressed={fullscreen}
+                  aria-label={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
+                  title={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
+                >
+                  {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                </button>
+              </div>
+              {layersOpen ? (
+                <MapLayersPanel
+                  layers={layers}
+                  center={center}
+                  zoom={zoom}
+                  onSelect={(layer) => void selectLayer(layer)}
+                  onClose={() => setLayersOpen(false)}
+                />
+              ) : null}
+              {measureOpen ? (
               <div
-                className="absolute right-3 top-3 z-[520] w-[252px] rounded-card border border-ink-200 bg-white/95 p-2.5 shadow-pop backdrop-blur"
+                className="pointer-events-auto w-[258px] max-w-[calc(100vw-4rem)] rounded-card border border-ink-200/70 bg-surface/95 p-2.5 shadow-pop backdrop-blur"
                 dir="rtl"
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="flex items-center gap-1 text-[11.5px] font-semibold text-ink-700">
-                    <Ruler size={13} className="text-brand-600" />
+                    <Ruler size={13} className="text-accent" />
                     اندازه‌گیری روی نقشه
                   </p>
                   <button
@@ -1508,7 +1797,7 @@ export default function MapPage() {
                       onClick={() => startMeasure(item.mode)}
                       aria-pressed={measureMode === item.mode}
                       className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[11px] font-medium transition ${
-                        measureMode === item.mode ? 'text-white' : 'border-ink-200 bg-white text-ink-600 hover:border-brand-200'
+                        measureMode === item.mode ? 'text-white' : 'border-ink-200 bg-surface text-ink-600 hover:border-brand-200'
                       }`}
                       style={measureMode === item.mode ? { background: item.color, borderColor: item.color } : undefined}
                     >
@@ -1586,7 +1875,7 @@ export default function MapPage() {
                     </div>
                   ) : measureReadout ? (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                      <span className="rounded-pill bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      <span className="rounded-pill bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                         پایان‌یافته
                       </span>
                       <button type="button" className="btn-ghost btn-xs" onClick={clearMeasure}>
@@ -1602,8 +1891,9 @@ export default function MapPage() {
                 </div>
               </div>
             ) : null}
+            </div>
             {pending ? (
-              <div className="absolute inset-x-0 bottom-4 mx-auto flex w-[92%] max-w-lg items-center justify-between gap-3 rounded-soft border border-brand-200 bg-white/97 p-3 shadow-pop backdrop-blur">
+              <div className="absolute inset-x-0 bottom-4 mx-auto flex w-[92%] max-w-lg items-center justify-between gap-3 rounded-soft border border-brand-200 bg-surface/97 p-3 shadow-pop backdrop-blur">
                 <span className="text-[12px] text-ink-600">
                   موقعیت جدید: <span className="num font-semibold">{pending.latitude}, {pending.longitude}</span>
                 </span>
@@ -1639,6 +1929,22 @@ export default function MapPage() {
               background: rgba(37,99,235,.92); color:#fff; font-size:12px; font-weight:700; direction:rtl;
               border:2px solid rgba(255,255,255,.9); box-shadow:0 6px 18px -6px rgba(37,99,235,.8);
               font-family: Vazirmatn, Tahoma, sans-serif; }
+            .nw-site-marker { background: transparent; border: 0; }
+            .nw-site { position: relative; display:grid; place-items:center; width:30px; height:30px; border-radius:10px;
+              background:#1d4ed8; color:#fff; border:2.5px solid #fff; box-shadow:0 8px 20px -8px rgba(29,78,216,.95);
+              font-family: Vazirmatn, Tahoma, sans-serif; }
+            .nw-site-count { position:absolute; top:-7px; inset-inline-start:-7px; min-width:16px; height:16px; padding:0 4px;
+              border-radius:999px; background:#0f172a; color:#fff; font-size:9.5px; font-weight:700; line-height:16px;
+              text-align:center; direction:rtl; border:1.5px solid #fff; }
+            .nw-site .nw-map-label { top: -3px; }
+            /* کنترل زوم: دکمه‌های گرد و مدرن به‌جای مربع‌های پیش‌فرض Leaflet */
+            .leaflet-control-zoom.leaflet-bar { border: 0 !important; border-radius: 14px !important; box-shadow: 0 10px 24px -10px rgba(15,23,42,.45) !important; overflow: hidden; background: transparent; }
+            .leaflet-control-zoom a, .leaflet-touch .leaflet-control-zoom a { width: 36px !important; height: 36px !important; line-height: 34px !important; background: rgba(255,255,255,.94) !important; backdrop-filter: blur(10px); border: 0 !important; color: #334155 !important; font-size: 19px !important; font-weight: 600 !important; text-indent: 0 !important; transition: background .15s ease, color .15s ease; }
+            .leaflet-control-zoom a:hover, .leaflet-touch .leaflet-control-zoom a:hover { background: #eff6ff !important; color: #1d4ed8 !important; }
+            .leaflet-touch .leaflet-control-zoom-in { border-radius: 14px 14px 0 0 !important; border-bottom: 1px solid rgba(226,232,240,.9) !important; }
+            .leaflet-touch .leaflet-control-zoom-out { border-radius: 0 0 14px 14px !important; }
+            .leaflet-control-zoom a.leaflet-disabled, .leaflet-touch .leaflet-control-zoom a.leaflet-disabled { background: rgba(248,250,252,.85) !important; color: #cbd5e1 !important; }
+            .leaflet-bottom .leaflet-control-zoom { margin-bottom: 16px; }
           `}</style>
         </div>
 
@@ -1648,14 +1954,28 @@ export default function MapPage() {
               ? `fixed inset-y-0 left-0 z-[1200] flex w-[330px] max-w-[88vw] flex-col gap-2 p-3 transition-transform duration-300 ${
                   sideOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
                 }`
-              : `flex shrink-0 flex-col gap-2 ${sideOpen ? 'xl:w-[324px]' : 'xl:w-auto'}`
+              : `relative flex shrink-0 flex-col gap-2 ${sideOpen ? 'xl:w-[var(--nw-side-w)]' : 'xl:w-auto'}`
           }
+          style={fullscreen ? undefined : ({ '--nw-side-w': `${sideWidth}px` } as React.CSSProperties)}
           aria-hidden={fullscreen && !sideOpen ? true : undefined}
         >
+          {/* ناحیهٔ نامرئی روی لبهٔ راست خود کادر؛ بدون خط اضافه، خود حاشیهٔ منو
+              با موس گرفته و کشیده می‌شود. */}
+          {!fullscreen && sideOpen ? (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="تغییر عرض فهرست نقشه"
+              title="برای بزرگ یا کوچک کردن فهرست، لبهٔ آن را بکشید"
+              onPointerDown={startSideResize}
+              className="absolute inset-y-0 -right-2 z-10 hidden w-4 cursor-col-resize xl:block"
+              style={{ touchAction: 'none' }}
+            />
+          ) : null}
           {!sideOpen && !fullscreen ? (
             <button
               type="button"
-              className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-white/90 text-ink-500 shadow-soft transition hover:text-ink-800"
+              className="grid h-8 w-8 place-items-center rounded-soft border border-ink-200 bg-surface/90 text-ink-500 shadow-soft transition hover:text-ink-800"
               onClick={() => setSideOpen(true)}
               aria-controls="map-side-list"
               aria-expanded={false}
@@ -1681,7 +2001,6 @@ export default function MapPage() {
                   <MapPin size={16} className="text-brand-500" />
                   فهرست نقشه
                 </h3>
-                <p className="mt-0.5 text-[11px] text-ink-500">تجهیزات دارای موقعیت و علامت‌های جانمایی‌شده</p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {fullscreen ? (
@@ -1715,7 +2034,7 @@ export default function MapPage() {
                 role="tab"
                 aria-selected={sideTab === 'devices'}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 font-medium transition ${
-                  sideTab === 'devices' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500 hover:text-ink-700'
+                  sideTab === 'devices' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500 hover:text-ink-700'
                 }`}
                 onClick={() => setSideTab('devices')}
               >
@@ -1728,7 +2047,7 @@ export default function MapPage() {
                 role="tab"
                 aria-selected={sideTab === 'markers'}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 font-medium transition ${
-                  sideTab === 'markers' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500 hover:text-ink-700'
+                  sideTab === 'markers' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500 hover:text-ink-700'
                 }`}
                 onClick={() => setSideTab('markers')}
               >
@@ -1740,12 +2059,24 @@ export default function MapPage() {
 
             {sideTab === 'devices' ? (
               <DeviceList
-                devices={visibleDevices}
+                devices={individualDevices}
                 groups={groupNames}
+                sites={mapSites}
                 hiddenGroups={hiddenGroups}
+                hiddenSiteIds={hiddenSiteIds}
                 onToggleGroup={(g) => setHiddenGroups((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]))}
+                onToggleSite={(id) => setHiddenSiteIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+                onAddSite={() => setSiteFormOpen(true)}
                 selectedId={pending?.id ?? placingDevice ?? null}
                 onFlyTo={flyToDevice}
+                onFlyToSite={(id) => {
+                  const site = mapSites.find((s) => s.id === id);
+                  const map = mapRef.current;
+                  if (!site || !map || site.latitude == null || site.longitude == null) return;
+                  map.setView([site.latitude, site.longitude], Math.max(map.getZoom(), 14), { animate: true });
+                  sitePopupViews.current.get(id)?.showList();
+                  schedulePopup(() => siteMarkers.current.get(id));
+                }}
                 onDragStart={(id) => {
                   if (editing) setPlacingDevice(id);
                 }}
@@ -1755,7 +2086,7 @@ export default function MapPage() {
                 types={markerTypes}
                 markers={visibleMarkers}
                 hiddenTypeIds={hiddenTypeIds}
-                onToggleType={(id) => setHiddenTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+                onSetHiddenTypes={setHiddenTypeIds}
                 showLabels={showMarkerLabels}
                 onToggleLabels={setShowMarkerLabels}
                 armedTypeId={armedType?.typeId ?? null}
@@ -1794,53 +2125,75 @@ export default function MapPage() {
         }}
       />
 
-      <LayerManager
-        open={layersOpen}
-        onClose={() => setLayersOpen(false)}
-        layers={layers}
-        onChanged={() => {
-          refreshLayers();
-          refreshMeta();
+      <SiteFormModal
+        open={siteFormOpen}
+        groups={meta?.groups ?? []}
+        devices={devices}
+        sites={mapSites}
+        onClose={() => setSiteFormOpen(false)}
+        onSaved={() => {
+          setSiteFormOpen(false);
+          refreshSites();
+          refresh();
         }}
       />
+
+      <CoordsExportModal open={exportOpen} onClose={() => setExportOpen(false)} groups={exportGroups} types={markerTypes} />
     </div>
   );
 }
 
 /* ============================== فهرست تجهیزات ============================== */
-/** یک ردیف فهرست: یا سرتیتر یک گروه، یا یک تجهیز */
+/** یک ردیف فهرست: سرتیتر گروه، ایستگاه زیرمجموعهٔ گروه، یا یک تجهیز */
 type ListRow =
   | { kind: 'group'; key: string; group: string; name: string; count: number; positioned: number; hidden: boolean }
-  | { kind: 'device'; key: string; device: MapDevice };
+  | { kind: 'site'; key: string; site: MapSite; count: number; hidden: boolean }
+  | { kind: 'device'; key: string; device: MapDevice; inSite: boolean };
 
 function DeviceList({
   devices,
   groups,
+  sites,
   hiddenGroups,
+  hiddenSiteIds,
   onToggleGroup,
+  onToggleSite,
+  onAddSite,
   selectedId,
   onFlyTo,
+  onFlyToSite,
   onDragStart,
 }: {
   devices: MapDevice[];
   groups: string[];
+  sites: MapSite[];
   hiddenGroups: string[];
+  hiddenSiteIds: number[];
   onToggleGroup: (group: string) => void;
+  onToggleSite: (siteId: number) => void;
+  onAddSite: () => void;
   selectedId: number | null;
   onFlyTo: (id: number) => void;
+  onFlyToSite: (siteId: number) => void;
   onDragStart: (id: number) => void;
 }) {
-  // گروه‌های جمع‌شده فقط در فهرست پنهان می‌شوند؛ نمایش روی نقشه با Eye کنترل می‌شود.
+  // گروه‌ها/ایستگاه‌های جمع‌شده فقط در فهرست پنهان می‌شوند؛ نمایش روی نقشه با Eye کنترل می‌شود.
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [collapsedSites, setCollapsedSites] = useState<number[]>([]);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const rows = useMemo<ListRow[]>(() => {
-    const byGroup = new Map<string, MapDevice[]>();
-    for (const d of devices) {
-      const g = d.groupName || '__none__';
-      const list = byGroup.get(g);
-      if (list) list.push(d);
-      else byGroup.set(g, [d]);
-    }
-    const names = [...byGroup.keys()].sort((a, b) => {
+    const buckets = new Map<string, { devices: MapDevice[]; sites: MapSite[] }>();
+    const bucket = (g: string) => {
+      let entry = buckets.get(g);
+      if (!entry) {
+        entry = { devices: [], sites: [] };
+        buckets.set(g, entry);
+      }
+      return entry;
+    };
+    for (const d of devices) bucket(d.groupName || '__none__').devices.push(d);
+    for (const s of sites) bucket(s.groupName || '__none__').sites.push(s);
+    const names = [...buckets.keys()].sort((a, b) => {
       // «بدون گروه» همیشه آخر می‌آید
       if (a === '__none__') return 1;
       if (b === '__none__') return -1;
@@ -1848,58 +2201,88 @@ function DeviceList({
     });
     const out: ListRow[] = [];
     for (const g of names) {
-      const list = (byGroup.get(g) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
-      const isCollapsed = collapsed.includes(g);
+      const entry = buckets.get(g)!;
+      const siteList = [...entry.sites].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+      const deviceList = [...entry.devices].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+      const groupHidden = hiddenGroups.includes(g);
       out.push({
         kind: 'group',
         key: `g:${g}`,
         group: g,
         name: g === '__none__' ? 'بدون گروه' : g,
-        count: list.length,
-        positioned: list.filter((d) => d.latitude != null && d.longitude != null).length,
-        hidden: hiddenGroups.includes(g),
+        count: deviceList.length + siteList.reduce((sum, s) => sum + s.devices.length, 0),
+        positioned: deviceList.filter((d) => d.latitude != null && d.longitude != null).length,
+        hidden: groupHidden,
       });
-      if (!isCollapsed) for (const d of list) out.push({ kind: 'device', key: `d:${d.id}`, device: d });
+      if (groupHidden || collapsed.includes(g)) continue;
+      // ایستگاه‌ها زیرمجموعهٔ گروه می‌آیند و تجهیزات عضو آن‌ها فقط داخل خود
+      // ایستگاه فهرست می‌شوند؛ بدین‌ترتیب هر تجهیز یک ردیف دارد.
+      for (const site of siteList) {
+        const siteHidden = hiddenSiteIds.includes(site.id);
+        out.push({ kind: 'site', key: `s:${site.id}`, site, count: site.devices.length, hidden: siteHidden });
+        if (siteHidden || collapsedSites.includes(site.id)) continue;
+        for (const d of site.devices) out.push({ kind: 'device', key: `d:${d.id}`, device: d, inSite: true });
+      }
+      for (const d of deviceList) out.push({ kind: 'device', key: `d:${d.id}`, device: d, inSite: false });
     }
     return out;
-  }, [devices, hiddenGroups, collapsed]);
+  }, [devices, sites, hiddenGroups, hiddenSiteIds, collapsed, collapsedSites]);
 
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col">
-      {/* نمایش/عدم نمایش گروه‌های مختلف در فهرست و روی نقشه */}
-      <details className="mb-2 rounded-soft border border-ink-200 bg-white/70 px-2.5 py-1.5">
-        <summary className="cursor-pointer text-[11px] font-medium text-ink-600">
-          نمایش گروه‌ها {hiddenGroups.length ? `(${faDigits(hiddenGroups.length)} مخفی)` : ''}
-        </summary>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {groups.length === 0 ? <span className="text-[10.5px] text-ink-400">گروهی وجود ندارد</span> : null}
-          {groups.map((g) => {
-            const hidden = hiddenGroups.includes(g);
-            const label = g === '__none__' ? 'بدون گروه' : g;
-            return (
-              <button
-                key={g}
-                type="button"
-                onClick={() => onToggleGroup(g)}
-                className={`inline-flex items-center gap-1 rounded-pill border px-2 py-0.5 text-[10.5px] transition ${
-                  hidden ? 'border-ink-200 bg-ink-50 text-ink-400 line-through' : 'border-brand-200 bg-brand-50 text-brand-700'
-                }`}
-                aria-pressed={!hidden}
-                title={hidden ? `نمایش ${label}` : `مخفی کردن ${label}`}
-              >
-                {hidden ? <EyeOff size={10} /> : <Eye size={10} />}
-                {label}
-              </button>
-            );
-          })}
+      {/* نوار فشردهٔ نمایش گروه‌ها + افزودن ایستگاه */}
+      <div className="mb-2 mt-2.5 flex items-center gap-1.5">
+        <div className="relative">
+          <button
+            type="button"
+            className="btn-ghost btn-xs border border-ink-200 !px-2"
+            onClick={() => setGroupsOpen((value) => !value)}
+            aria-expanded={groupsOpen}
+            title="نمایش یا مخفی کردن گروه‌ها روی نقشه"
+          >
+            <Layers size={11} />
+            نمایش گروه‌ها
+            {hiddenGroups.length ? <span className="num text-[9.5px] text-ink-400">{faDigits(hiddenGroups.length)}</span> : null}
+            <ChevronDown size={11} className={`transition ${groupsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {groupsOpen ? (
+            <div className="absolute right-0 top-full z-30 mt-1 max-h-56 w-52 overflow-auto rounded-soft border border-ink-200 bg-surface p-2 shadow-pop">
+              {groups.length === 0 ? <p className="text-[10.5px] text-ink-400">گروهی وجود ندارد</p> : null}
+              <div className="flex flex-wrap gap-1">
+                {groups.map((g) => {
+                  const hidden = hiddenGroups.includes(g);
+                  const label = g === '__none__' ? 'بدون گروه' : g;
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => onToggleGroup(g)}
+                      className={`inline-flex items-center gap-1 rounded-pill border px-1.5 py-0.5 text-[10px] transition ${
+                        hidden ? 'border-ink-200 bg-ink-50 text-ink-400 line-through' : 'border-brand-200 bg-brand-50 text-accent'
+                      }`}
+                      aria-pressed={!hidden}
+                      title={hidden ? `نمایش ${label}` : `مخفی کردن ${label}`}
+                    >
+                      {hidden ? <EyeOff size={9} /> : <Eye size={9} />}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
-      </details>
+        <button type="button" className="btn-primary btn-xs" onClick={onAddSite} title="تعریف ایستگاه از تجهیزات یک گروه">
+          <Plus size={11} />
+          افزودن ایستگاه
+        </button>
+      </div>
       {/* فهرست مجازی با ارتفاع متغیر: سرتیتر گروه‌ها هم داخل همان فهرست
           رندر می‌شوند تا با هزاران تجهیز، DOM سبک بماند. */}
       <VirtualList
         items={rows}
         itemHeight={56}
-        heightOf={(r) => (r.kind === 'group' ? 34 : 56)}
+        heightOf={(r) => (r.kind === 'group' ? 34 : r.kind === 'site' ? 32 : 56)}
         keyOf={(r) => r.key}
         empty={
           <EmptyState
@@ -1909,7 +2292,50 @@ function DeviceList({
           />
         }
         render={(row) =>
-          row.kind === 'group' ? (
+          row.kind === 'site' ? (
+            <div className="flex h-[32px] items-center justify-between gap-1 border-b border-ink-100/70 pb-1 pt-1">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-1 pe-1 text-right"
+                onClick={() =>
+                  setCollapsedSites((prev) =>
+                    prev.includes(row.site.id) ? prev.filter((id) => id !== row.site.id) : [...prev, row.site.id]
+                  )
+                }
+                title={collapsedSites.includes(row.site.id) ? 'باز کردن ایستگاه' : 'جمع کردن ایستگاه'}
+              >
+                {collapsedSites.includes(row.site.id) ? (
+                  <ChevronLeft size={12} className="shrink-0 text-ink-400" />
+                ) : (
+                  <ChevronDown size={12} className="shrink-0 text-ink-400" />
+                )}
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded-[5px] bg-brand-50 text-accent">
+                  <Building2 size={9} />
+                </span>
+                <span className="truncate text-[11px] font-medium text-ink-600">{row.site.name}</span>
+                <span className="num shrink-0 rounded-pill bg-ink-100 px-1.5 text-[9.5px] text-ink-500">
+                  {faDigits(row.count)}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-xs shrink-0 !px-1"
+                onClick={() => onFlyToSite(row.site.id)}
+                title="نمایش ایستگاه روی نقشه"
+              >
+                <Crosshair size={11} />
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-xs shrink-0 !px-1"
+                onClick={() => onToggleSite(row.site.id)}
+                title={row.hidden ? 'نمایش ایستگاه روی نقشه' : 'مخفی کردن ایستگاه روی نقشه'}
+                aria-pressed={!row.hidden}
+              >
+                {row.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+            </div>
+          ) : row.kind === 'group' ? (
             <div className="flex h-[34px] items-center justify-between gap-1 border-b border-ink-100 pb-1 pt-1.5">
               <button
                 type="button"
@@ -1941,6 +2367,7 @@ function DeviceList({
           ) : (
             <div
               draggable
+              style={{ marginInlineStart: row.inSite ? 12 : 0 }}
               onDragStart={(e) => {
                 const d = row.device;
                 e.dataTransfer.setData('text/nw-device', String(d.id));
@@ -1948,7 +2375,7 @@ function DeviceList({
                 e.dataTransfer.effectAllowed = 'move';
                 onDragStart(d.id);
               }}
-              className={`mb-1 flex h-[52px] cursor-grab items-center justify-between gap-2 rounded-soft border bg-white/70 px-2.5 py-2 transition active:cursor-grabbing ${
+              className={`mb-1 flex h-[52px] cursor-grab items-center justify-between gap-2 rounded-soft border bg-surface/70 px-2.5 py-2 transition active:cursor-grabbing ${
                 selectedId === row.device.id ? 'border-brand-300 ring-1 ring-brand-200' : 'border-ink-100 hover:border-brand-200'
               }`}
               title="برای جانمایی، بکشید و روی نقشه رها کنید"
@@ -1970,10 +2397,200 @@ function DeviceList({
           )
         }
       />
-      <p className="mt-2 border-t border-ink-100 pt-2 text-center text-[10px] leading-relaxed text-ink-400">
-        {`${faDigits(devices.length)} تجهیز در ${faDigits(new Set(devices.map((d) => d.groupName || '__none__')).size)} گروه — فهرست مجازی، فقط ردیف‌های دیده‌شده رندر می‌شوند.`}
-      </p>
     </div>
+  );
+}
+
+/* --------------------------- فرم افزودن ایستگاه --------------------------- */
+/**
+ * ساخت ایستگاه: اول گروه، بعد جست‌وجو و انتخاب تجهیزات همان گروه، سپس نام.
+ * هر تجهیز فقط عضو یک ایستگاه است؛ تجهیزات عضو ایستگاه دیگر غیرفعال و با
+ * نام همان ایستگاه نشان داده می‌شوند.
+ */
+function SiteFormModal({
+  open,
+  groups,
+  devices,
+  sites,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  groups: { id: number; name: string }[];
+  devices: MapDevice[];
+  sites: MapSite[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { push } = useToast();
+  const [groupId, setGroupId] = useState<string>('');
+  const [name, setName] = useState('');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const { busy: saving, run: runGuarded } = useSubmitGuard();
+
+  useEffect(() => {
+    if (!open) return;
+    setGroupId(groups[0] ? String(groups[0].id) : '__none__');
+    setName('');
+    setSearch('');
+    setSelected([]);
+    setError(null);
+    // انتخاب گروه پیش‌فرض فقط هنگام باز شدن فرم تنظیم می‌شود.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const siteByDevice = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const site of sites) for (const device of site.devices) map.set(device.id, site.name);
+    return map;
+  }, [sites]);
+
+  // مقدار <select> شناسهٔ گروه است، اما گروه هر تجهیز در خروجی نقشه با «نام»
+  // می‌آید؛ مقایسه با شناسه باعث می‌شد هیچ تجهیزی پیدا نشود.
+  const groupName = groups.find((g) => String(g.id) === groupId)?.name ?? '__none__';
+  const candidates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return devices
+      .filter((d) => (d.groupName || '__none__') === groupName)
+      .filter((d) => !q || [d.name, d.ip, d.location].some((value) => String(value || '').toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+  }, [devices, groupName, search]);
+
+  const toggle = (id: number) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+
+  const submit = () => {
+    if (!name.trim()) return setError('نام ایستگاه الزامی است');
+    if (!selected.length) return setError('حداقل یک تجهیز برای ایستگاه انتخاب کنید');
+    void runGuarded(async () => {
+      try {
+        await api.createSite({
+          name: name.trim(),
+          group_id: groupId === '__none__' ? null : Number(groupId),
+          device_ids: selected,
+        });
+        push(`ایستگاه «${name.trim()}» ساخته شد`, 'success');
+        onSaved();
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="افزودن ایستگاه"
+      subtitle="گروه را انتخاب کنید، تجهیزات هم‌مکان را برگزینید و یک نام بگذارید"
+      footer={
+        <>
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
+          <span className="num me-auto text-[11px] text-ink-400">{faDigits(selected.length)} تجهیز انتخاب شده</span>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            انصراف
+          </button>
+          <button type="button" className="btn-primary" disabled={saving} onClick={submit}>
+            {saving ? 'در حال ذخیره…' : 'ساخت ایستگاه'}
+          </button>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="گروه" required>
+            <select className="field" value={groupId} onChange={(e) => { setGroupId(e.target.value); setSelected([]); }}>
+              {groups.length ? null : <option value="__none__">بدون گروه</option>}
+              {groups.map((g) => (
+                <option key={g.id} value={String(g.id)}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="نام ایستگاه" required>
+            <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً ایستگاه مرکزی" />
+          </Field>
+        </div>
+
+        <div className="relative">
+          <Search size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            className="field pr-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="جست‌وجوی تجهیز بر اساس نام، IP یا محل"
+          />
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] text-ink-500">
+          <span>{faDigits(candidates.length)} تجهیز در این گروه</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className="btn-ghost btn-xs"
+              onClick={() => setSelected(candidates.filter((d) => !siteByDevice.has(d.id)).map((d) => d.id))}
+            >
+              انتخاب همه
+            </button>
+            <button type="button" className="btn-ghost btn-xs" onClick={() => setSelected([])}>
+              هیچ‌کدام
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-64 overflow-auto rounded-soft border border-ink-200 bg-surface/70 p-1.5">
+          {candidates.length === 0 ? (
+            <p className="py-6 text-center text-[11px] text-ink-400">تجهیزی در این گروه پیدا نشد</p>
+          ) : null}
+          <div className="grid gap-1">
+            {candidates.map((d) => {
+              const occupied = siteByDevice.get(d.id);
+              const active = selected.includes(d.id);
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  disabled={!!occupied}
+                  onClick={() => toggle(d.id)}
+                  className={`flex items-center justify-between gap-2 rounded-soft border px-2 py-1.5 text-right transition ${
+                    occupied
+                      ? 'cursor-not-allowed border-ink-100 bg-ink-50/60 opacity-70'
+                      : active
+                        ? 'border-brand-300 bg-brand-50/70'
+                        : 'border-ink-100 bg-surface hover:border-brand-200'
+                  }`}
+                  aria-pressed={active}
+                  title={occupied ? `عضو ایستگاه «${occupied}» است` : `انتخاب ${d.name}`}
+                >
+                  <span
+                    className={`grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border ${
+                      active ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-surface text-transparent'
+                    }`}
+                  >
+                    <Check size={11} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-medium text-ink-700">{d.name}</span>
+                    <span className="num block text-[10px] text-ink-400">
+                      {d.ip}
+                      {d.location ? ` · ${d.location}` : ''}
+                    </span>
+                  </span>
+                  {occupied ? (
+                    <span className="shrink-0 rounded-pill bg-sun-50 px-1.5 py-0.5 text-[9.5px] text-warning">در {occupied}</span>
+                  ) : (
+                    <StatusPill status={d.status} size="sm" showLabel={false} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1982,7 +2599,7 @@ function MarkersList({
   types,
   markers,
   hiddenTypeIds,
-  onToggleType,
+  onSetHiddenTypes,
   showLabels,
   onToggleLabels,
   armedTypeId,
@@ -1994,7 +2611,7 @@ function MarkersList({
   types: MarkerType[];
   markers: MapMarker[];
   hiddenTypeIds: number[];
-  onToggleType: (id: number) => void;
+  onSetHiddenTypes: (hidden: number[]) => void;
   showLabels: boolean;
   onToggleLabels: (v: boolean) => void;
   armedTypeId: number | null;
@@ -2006,11 +2623,15 @@ function MarkersList({
   const { push } = useToast();
   const [tab, setTab] = useState<'place' | 'types'>('place');
   const [typeForm, setTypeForm] = useState<Partial<MarkerType> | null>(null);
-  const [filterType, setFilterType] = useState<number | ''>('');
+  const [typesOpen, setTypesOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const filtered = filterType === '' ? markers : markers.filter((m) => m.typeId === filterType);
+  const visibleTypes = types.filter((t) => !hiddenTypeIds.includes(t.id));
+  // نوعی که جانمایی روی نقشه و ورود فایل به آن نسبت داده می‌شود: تنها نوع قابل‌مشاهده.
+  const placementType = visibleTypes[0] ?? null;
+  // فهرست و نقشه هر دو فقط انواع انتخاب‌شده در منوی «انواع علامت» را نشان می‌دهند.
+  const filtered = markers.filter((m) => m.typeId == null || !hiddenTypeIds.includes(m.typeId));
 
   const importFile = async (file: File) => {
     setBusy(true);
@@ -2018,7 +2639,7 @@ function MarkersList({
       // KML/KMZ (ترسیم‌های Google Earth) هم مسیر ورود خودش را دارد؛ صفحه‌گسترده
       // از همان مسیر Excel/CSV می‌رود.
       if (/\.(kml|kmz)$/i.test(file.name)) {
-        const chosen = types.find((t) => t.id === filterType) ?? null;
+        const chosen = placementType;
         const res = await api.markerImportKml(file, { typeId: chosen?.id ?? null, type: chosen?.name });
         const skipped = res.skipped ? ` — ${faDigits(res.skipped)} مورد بدون نقطه یافت شد` : '';
         push(`${faDigits(res.inserted)} علامت از KML/KMZ وارد شد${skipped}`, res.inserted ? 'success' : 'warning');
@@ -2038,12 +2659,12 @@ function MarkersList({
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-white/70 p-0.5 text-[11px]" role="tablist">
+        <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-surface/70 p-0.5 text-[11px]" role="tablist">
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'place'}
-            className={`rounded-lg px-2 py-1 font-medium transition ${tab === 'place' ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:text-ink-700'}`}
+            className={`rounded-lg px-2 py-1 font-medium transition ${tab === 'place' ? 'bg-brand-50 text-accent' : 'text-ink-500 hover:text-ink-700'}`}
             onClick={() => setTab('place')}
           >
             جانمایی ({faDigits(markers.length)})
@@ -2052,7 +2673,7 @@ function MarkersList({
             type="button"
             role="tab"
             aria-selected={tab === 'types'}
-            className={`rounded-lg px-2 py-1 font-medium transition ${tab === 'types' ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:text-ink-700'}`}
+            className={`rounded-lg px-2 py-1 font-medium transition ${tab === 'types' ? 'bg-brand-50 text-accent' : 'text-ink-500 hover:text-ink-700'}`}
             onClick={() => setTab('types')}
           >
             انواع ({faDigits(types.length)})
@@ -2063,49 +2684,96 @@ function MarkersList({
 
       {tab === 'place' ? (
         <div className="mt-2 flex min-h-0 flex-1 flex-col">
-          <select className="field !w-full !rounded-pill !py-1.5 text-[12px]" value={filterType} onChange={(e) => setFilterType(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">همه انواع علامت</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          {/* نمایش/عدم نمایش انواع مختلف علامت روی نقشه و در فهرست */}
-          <details className="mt-1.5 rounded-soft border border-ink-200 bg-white/70 px-2.5 py-1.5">
-            <summary className="cursor-pointer text-[11px] font-medium text-ink-600">
-              نمایش انواع {hiddenTypeIds.length ? `(${faDigits(hiddenTypeIds.length)} مخفی)` : ''}
-            </summary>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {types.map((t) => {
-                const hidden = hiddenTypeIds.includes(t.id);
-                return (
+          {/* یک منو برای انتخاب انواعی که هم روی نقشه و هم در این فهرست دیده می‌شوند */}
+          <div className="relative">
+            <button
+              type="button"
+              className="field flex w-full items-center justify-between !rounded-pill !py-1.5 text-[12px]"
+              onClick={() => setTypesOpen((value) => !value)}
+              aria-expanded={typesOpen}
+              aria-label="انتخاب انواع علامت نمایش‌داده‌شده"
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Layers size={12} className="shrink-0 text-accent" />
+                <span className="truncate">
+                  {hiddenTypeIds.length
+                    ? `${faDigits(visibleTypes.length)} از ${faDigits(types.length)} نوع علامت`
+                    : 'همه انواع علامت'}
+                </span>
+              </span>
+              <ChevronDown size={13} className={`shrink-0 text-ink-400 transition ${typesOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {typesOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-20 cursor-default"
+                  aria-label="بستن منوی انواع علامت"
+                  onClick={() => setTypesOpen(false)}
+                />
+                <div
+                  className="absolute inset-x-0 z-30 mt-1 max-h-[240px] overflow-y-auto rounded-xl border border-ink-200 bg-surface p-1.5 shadow-pop"
+                  role="group"
+                  aria-label="انواع علامت"
+                >
                   <button
-                    key={t.id}
                     type="button"
-                    onClick={() => onToggleType(t.id)}
-                    className={`inline-flex items-center gap-1 rounded-pill border px-2 py-0.5 text-[10.5px] transition ${
-                      hidden ? 'border-ink-200 bg-ink-50 text-ink-400 line-through' : 'border-brand-200 bg-brand-50 text-brand-700'
-                    }`}
-                    aria-pressed={!hidden}
-                    style={hidden ? undefined : { borderColor: `${t.color}55`, background: `${t.color}12`, color: t.color }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11.5px] font-medium text-ink-700 transition hover:bg-ink-50"
+                    onClick={() => onSetHiddenTypes([])}
+                    aria-pressed={!hiddenTypeIds.length}
                   >
-                    {hidden ? <EyeOff size={10} /> : <Eye size={10} />}
-                    <MarkerGlyph name={t.icon} size={10} />
-                    {t.name}
+                    <span
+                      className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+                        hiddenTypeIds.length ? 'border-ink-300 bg-surface text-transparent' : 'border-brand-500 bg-brand-500 text-white'
+                      }`}
+                    >
+                      <Check size={9} />
+                    </span>
+                    همه انواع
+                    <span className="num ms-auto text-[10px] text-ink-400">{faDigits(markers.length)}</span>
                   </button>
-                );
-              })}
-              {types.length === 0 ? <span className="text-[10.5px] text-ink-400">نوعی تعریف نشده است</span> : null}
-            </div>
-          </details>
+                  <div className="my-1 h-px bg-ink-100" />
+                  {types.map((t) => {
+                    const hidden = hiddenTypeIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11.5px] transition hover:bg-ink-50"
+                        onClick={() =>
+                          onSetHiddenTypes(hidden ? hiddenTypeIds.filter((id) => id !== t.id) : [...hiddenTypeIds, t.id])
+                        }
+                        aria-pressed={!hidden}
+                      >
+                        <span
+                          className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+                            hidden ? 'border-ink-300 bg-surface text-transparent' : 'border-brand-500 bg-brand-500 text-white'
+                          }`}
+                        >
+                          <Check size={9} />
+                        </span>
+                        <span className="shrink-0" style={{ color: hidden ? '#94a3b8' : t.color }}>
+                          <MarkerGlyph name={t.icon} size={11} />
+                        </span>
+                        <span className="truncate" style={{ color: hidden ? '#94a3b8' : undefined }}>
+                          {t.name}
+                        </span>
+                        <span className="num ms-auto text-[10px] text-ink-400">{faDigits(t.markerCount ?? 0)}</span>
+                      </button>
+                    );
+                  })}
+                  {types.length === 0 ? <p className="px-2 py-2 text-[10.5px] text-ink-400">نوعی تعریف نشده است</p> : null}
+                </div>
+              </>
+            ) : null}
+          </div>
 
           <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pe-1">
             {filtered.length === 0 ? (
               <p className="py-6 text-center text-[11px] text-ink-400">علامتی جانمایی نشده است</p>
             ) : (
               filtered.map((m) => (
-                <div key={m.id} className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-white/70 px-2.5 py-2">
+                <div key={m.id} className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-surface/70 px-2.5 py-2">
                   <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-right" onClick={() => onFlyTo(m)}>
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full" style={{ background: `${m.typeColor || '#0ea5e9'}1f`, color: m.typeColor || '#0ea5e9' }}>
                       <MarkerGlyph name={m.typeIcon} size={13} />
@@ -2143,45 +2811,54 @@ function MarkersList({
           </div>
 
           <div className="mt-2 space-y-2 border-t border-ink-100 pt-2">
-            <button
-              type="button"
-              className="btn-primary btn-xs w-full justify-center"
-              disabled={!types.length}
-              onClick={() => {
-                const t = types.find((x) => x.id === filterType) ?? types[0];
-                if (t) onArm(t);
-              }}
-            >
-              <Crosshair size={13} />
-              جانمایی علامت روی نقشه
-            </button>
-            {armedTypeId ? <p className="text-center text-[10.5px] text-brand-600">در انتظار کلیک روی نقشه…</p> : null}
-
             <div className="flex flex-wrap items-center gap-1.5">
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.kml,.kmz" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.currentTarget.value = ''; }} />
-              <button type="button" className="btn-ghost btn-xs flex-1 justify-center" disabled={busy} onClick={() => fileRef.current?.click()}>
-                <Upload size={12} />
-                ورود از فایل
+              <button
+                type="button"
+                className="btn-primary btn-xs min-w-0 flex-1 justify-center"
+                disabled={!types.length}
+                onClick={() => {
+                  if (placementType) onArm(placementType);
+                }}
+              >
+                <Crosshair size={13} />
+                جانمایی علامت روی نقشه
               </button>
-              <a className="btn-ghost btn-xs flex-1 justify-center" href={downloadUrl('/markers/export', { format: 'xlsx' })}>
-                <Download size={12} />
-                خروجی
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.kml,.kmz" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.currentTarget.value = ''; }} />
+              <button
+                type="button"
+                className="btn-ghost btn-xs !px-2"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+                title="ورود از فایل"
+                aria-label="ورود از فایل"
+              >
+                <Upload size={13} />
+              </button>
+              <a
+                className="btn-ghost btn-xs !px-2"
+                href={downloadUrl('/markers/export', { format: 'xlsx' })}
+                title="خروجی"
+                aria-label="خروجی"
+              >
+                <Download size={13} />
               </a>
-              <a className="btn-ghost btn-xs flex-1 justify-center" href={downloadUrl('/markers/template', { format: 'xlsx' })}>
-                <Download size={12} />
-                فایل نمونه
+              <a
+                className="btn-ghost btn-xs !px-2"
+                href={downloadUrl('/markers/template', { format: 'xlsx' })}
+                title="فایل نمونه"
+                aria-label="فایل نمونه"
+              >
+                <FileSpreadsheet size={13} />
               </a>
             </div>
-            <p className="text-[10px] leading-relaxed text-ink-400">
-              ورودی: فایل Excel/CSV (نام، نوع، عرض و طول جغرافیایی، توضیحات) یا فایل ترسیم <span className="ltr">KML/KMZ</span>. هر Placemark به یک علامت تبدیل می‌شود؛ اگر نوعی در فهرست انتخاب شده باشد همان نوع به علامت‌های تازه داده می‌شود.
-            </p>
+            {armedTypeId ? <p className="text-center text-[10.5px] text-accent">در انتظار کلیک روی نقشه…</p> : null}
           </div>
         </div>
       ) : (
         <div className="mt-2 flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pe-1">
             {types.map((t) => (
-              <div key={t.id} className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-white/70 px-2.5 py-2">
+              <div key={t.id} className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-surface/70 px-2.5 py-2">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full" style={{ background: `${t.color}1f`, color: t.color }}>
                     <MarkerGlyph name={t.icon} size={13} />
@@ -2260,7 +2937,7 @@ function MarkerTypeForm({ draft, onClose, onSaved }: { draft: Partial<MarkerType
       subtitle="نام، رنگ و آیکون این نوع علامت را مشخص کنید"
       footer={
         <>
-          {error ? <p className="me-auto text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
           <button type="button" className="btn-ghost" onClick={onClose}>
             انصراف
           </button>
@@ -2289,7 +2966,7 @@ function MarkerTypeForm({ draft, onClose, onSaved }: { draft: Partial<MarkerType
         <Field label="توضیحات" className="sm:col-span-2">
           <input className="field" value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>
-        <div className="sm:col-span-2 flex items-center gap-3 rounded-soft border border-ink-200 bg-white/70 p-3">
+        <div className="sm:col-span-2 flex items-center gap-3 rounded-soft border border-ink-200 bg-surface/70 p-3">
           <span className="text-[11.5px] text-ink-500">پیش‌نمایش:</span>
           <span className="grid h-8 w-8 place-items-center rounded-full" style={{ background: `${color}1f`, color }}>
             <MarkerGlyph name={icon} size={16} />
@@ -2366,7 +3043,7 @@ function MarkerForm({
       subtitle={editing ? 'مشخصات علامت را ویرایش کنید' : 'نام و نوع این علامت را مشخص کنید'}
       footer={
         <>
-          {error ? <p className="me-auto text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
           <button type="button" className="btn-ghost" onClick={onClose}>
             انصراف
           </button>
@@ -2410,18 +3087,104 @@ function popupHtml(device: MapDevice) {
   return `
   <div style="min-width:220px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <strong style="font-size:13px;color:#1e293b">${escapeHtml(device.name)}</strong>
+      <strong style="font-size:13px;color:var(--nw-ink-800)">${escapeHtml(device.name)}</strong>
       <span style="font-size:10.5px;padding:2px 8px;border-radius:99px;background:${meta.chart}1a;color:${meta.chart};border:1px solid ${meta.chart}33">${meta.label}</span>
     </div>
-    <div style="margin-top:8px;font-size:11.5px;color:#475569;display:grid;gap:4px">
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">آدرس IP</span><span style="font-family:monospace">${escapeHtml(device.ip)}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">نوع تجهیز</span><span>${escapeHtml(device.deviceType)}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">گروه</span><span>${escapeHtml(device.groupName ?? '—')}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">تأخیر</span><span>${device.lastRtt == null ? '—' : device.lastRtt.toFixed(1) + ' ms'}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">موقعیت</span><span>${escapeHtml(device.location || '—')}</span></div>
+    <div style="margin-top:8px;font-size:11.5px;color:var(--nw-ink-600);display:grid;gap:4px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">آدرس IP</span><span style="font-family:monospace">${escapeHtml(device.ip)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">نوع تجهیز</span><span>${escapeHtml(device.deviceType)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">گروه</span><span>${escapeHtml(device.groupName ?? '—')}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">تأخیر</span><span>${device.lastRtt == null ? '—' : device.lastRtt.toFixed(1) + ' ms'}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">موقعیت</span><span>${escapeHtml(device.location || '—')}</span></div>
     </div>
-    <a href="/devices/${device.id}" style="display:block;margin-top:10px;text-align:center;font-size:11.5px;padding:6px;border-radius:10px;background:#eff6ff;color:#1d4ed8;text-decoration:none">مشاهده صفحه تجهیز</a>
+    <a href="/devices/${device.id}" style="display:block;margin-top:10px;text-align:center;font-size:11.5px;padding:6px;border-radius:10px;background:var(--nw-brand-50);color:var(--nw-accent);text-decoration:none">مشاهده صفحه تجهیز</a>
   </div>`;
+}
+
+/** پاپ‌آپ ایستگاه: فهرست تجهیزات عضو؛ هر ردیف با کلیک جزئیات را نشان می‌دهد. */
+function sitePopupHtml(site: MapSite) {
+  const rows = site.devices
+    .map((d) => {
+      const meta = statusMeta(d.status);
+      return `<button type="button" data-device-id="${d.id}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:6px 8px;border:1px solid var(--nw-ink-200);border-radius:9px;background:var(--nw-ink-50);cursor:pointer;text-align:right;font-family:inherit">
+        <span style="display:flex;align-items:center;gap:6px;min-width:0">
+          <span style="width:7px;height:7px;border-radius:99px;background:${meta.chart};flex:none"></span>
+          <span style="font-size:11.5px;color:var(--nw-ink-700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</span>
+        </span>
+        <span style="font-size:9.5px;color:${meta.chart};flex:none">${escapeHtml(meta.label)}</span>
+      </button>`;
+    })
+    .join('');
+  return `<div dir="rtl" style="min-width:230px;font-family:Vazirmatn,Tahoma,sans-serif">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <strong style="font-size:13px;color:var(--nw-ink-800)">${escapeHtml(site.name)}</strong>
+      <span style="font-size:10px;padding:2px 8px;border-radius:99px;background:var(--nw-brand-50);color:var(--nw-accent);border:1px solid var(--nw-brand-200)">ایستگاه · ${faDigits(site.devices.length)} تجهیز</span>
+    </div>
+    <div style="margin-top:8px;display:grid;gap:4px;max-height:200px;overflow:auto">${rows || '<p style="font-size:11px;color:var(--nw-ink-400)">تجهیزی در این ایستگاه نیست</p>'}</div>
+    <p style="margin-top:8px;font-size:10px;color:var(--nw-ink-400)">برای دیدن جزئیات، روی هر تجهیز کلیک کنید.</p>
+  </div>`;
+}
+
+/**
+ * سازندهٔ عنصر پاپ‌آپ ایستگاه.
+ *
+ * فهرست تجهیزات و جزئیات هر تجهیز هر دو در همین عنصر ساخته می‌شوند و جابه‌جایی
+ * بین آن‌ها فقط با نمایش/مخفی کردن است. پیش‌تر محتوای پاپ‌آپ باز با
+ * `setPopupContent` بازنویسی می‌شد و شنوندهٔ کلیک ردیف‌ها از بین می‌رفت؛ نتیجه
+ * این بود که کلیک روی تجهیز، جزئیات را نشان نمی‌داد.
+ */
+function sitePopupElement(site: MapSite): SitePopupView {
+  const element = document.createElement('div');
+  element.dir = 'rtl';
+
+  const list = document.createElement('div');
+  list.innerHTML = sitePopupHtml(site);
+
+  const detail = document.createElement('div');
+  detail.style.display = 'none';
+
+  const showList = () => {
+    detail.replaceChildren();
+    detail.style.display = 'none';
+    list.style.display = '';
+  };
+  const showDevice = (deviceId: number) => {
+    const device = site.devices.find((d) => d.id === deviceId);
+    if (!device) return;
+    detail.replaceChildren(siteDeviceDetailElement(device, showList));
+    list.style.display = 'none';
+    detail.style.display = '';
+  };
+
+  for (const row of list.querySelectorAll<HTMLElement>('[data-device-id]')) {
+    // جزئیات هر تجهیز درست مانند پاپ‌آپ همان تجهیز منفرد است.
+    row.addEventListener('click', (event) => {
+      event.preventDefault();
+      const id = Number(row.dataset.deviceId);
+      if (Number.isFinite(id)) showDevice(id);
+    });
+  }
+
+  element.append(list, detail);
+  return { element, showDevice, showList };
+}
+
+/** جزئیات تجهیز عضو ایستگاه با امکان بازگشت به فهرست ایستگاه */
+function siteDeviceDetailElement(device: MapDevice, onBack: () => void) {
+  const element = document.createElement('div');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.textContent = 'بازگشت به ایستگاه';
+  back.style.cssText =
+    'margin-bottom:6px;font-size:10.5px;color:var(--nw-accent);background:var(--nw-brand-50);border:1px solid var(--nw-brand-200);border-radius:8px;padding:3px 8px;cursor:pointer;font-family:inherit';
+  back.addEventListener('click', (event) => {
+    event.preventDefault();
+    onBack();
+  });
+  const body = document.createElement('div');
+  body.innerHTML = popupHtml(device);
+  element.append(back, body);
+  return element;
 }
 
 function markerPopupHtml(m: MapMarker) {
@@ -2429,171 +3192,344 @@ function markerPopupHtml(m: MapMarker) {
   <div style="min-width:200px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="display:inline-block;width:10px;height:10px;border-radius:99px;background:${m.typeColor || '#0ea5e9'}"></span>
-      <strong style="font-size:13px;color:#1e293b">${escapeHtml(m.name)}</strong>
+      <strong style="font-size:13px;color:var(--nw-ink-800)">${escapeHtml(m.name)}</strong>
     </div>
-    <div style="margin-top:8px;font-size:11.5px;color:#475569;display:grid;gap:4px">
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">نوع</span><span>${escapeHtml(m.typeName ?? '—')}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:#94a3b8">عرض / طول</span><span style="font-family:monospace">${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}</span></div>
-      ${m.notes ? `<div style="color:#475569">${escapeHtml(m.notes)}</div>` : ''}
+    <div style="margin-top:8px;font-size:11.5px;color:var(--nw-ink-600);display:grid;gap:4px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">نوع</span><span>${escapeHtml(m.typeName ?? '—')}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nw-ink-400)">عرض / طول</span><span style="font-family:monospace">${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}</span></div>
+      ${m.notes ? `<div style="color:var(--nw-ink-600)">${escapeHtml(m.notes)}</div>` : ''}
     </div>
-    <p style="margin-top:8px;font-size:10.5px;color:#94a3b8">برای ویرایش از پنل «علامت‌ها» استفاده کنید.</p>
   </div>`;
 }
 
-/* ---------------------------- Layer manager ---------------------------- */
-function LayerManager({
+/* ---------------------- نمای بندانگشتی نقشه ---------------------- */
+/**
+ * پیش‌نمایش کوچک و زندهٔ همان نقطه‌ای که نقشهٔ اصلی نشان می‌دهد.
+ * یک نقشهٔ Leaflet بدون تعامل با همان کاشی‌های لایهٔ تصویری فعال ساخته می‌شود و
+ * با هر جابه‌جایی/زوم نقشهٔ اصلی هم‌گام می‌ماند؛ بنابراین کاربر پیش از تغییر
+ * لایه، نتیجه را در همان اندازهٔ کوچک می‌بیند.
+ */
+function MapThumbnail({ center, zoom, layers }: { center: [number, number]; zoom: number; layers: MapLayer[] }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const miniRef = useRef<L.Map | null>(null);
+  const added = useRef<Map<number, L.Layer>>(new Map());
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || miniRef.current) return;
+    const mini = L.map(host, {
+      center,
+      zoom,
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false,
+      touchZoom: false,
+      zoomSnap: 0,
+      zoomAnimation: false,
+      fadeAnimation: false,
+    });
+    miniRef.current = mini;
+    // پنل تازه باز شده؛ اندازهٔ ظرف باید یک‌بار خوانده شود وگرنه کاشی‌ها نمی‌آیند.
+    const timer = window.setTimeout(() => mini.invalidateSize(), 60);
+    return () => {
+      window.clearTimeout(timer);
+      mini.remove();
+      miniRef.current = null;
+      added.current.clear();
+    };
+    // نمای اولیه فقط یک‌بار لازم است؛ تغییرات بعدی در افکت پایین اعمال می‌شوند.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    miniRef.current?.setView(center, zoom, { animate: false });
+  }, [center, zoom]);
+
+  useEffect(() => {
+    const mini = miniRef.current;
+    if (!mini) return;
+    const wanted = new Set<number>();
+    for (const layer of layers) {
+      if (!layer.visible || layer.kind !== 'mbtiles' || isVectorLayer(layer)) continue;
+      wanted.add(layer.id);
+      if (added.current.has(layer.id)) continue;
+      added.current.set(layer.id, createRasterLayer(layer).addTo(mini));
+    }
+    // لایه‌ای که از پنل مخفی شد باید از نمای بندانگشتی هم برداشته شود.
+    for (const [id, instance] of [...added.current]) {
+      if (wanted.has(id)) continue;
+      mini.removeLayer(instance);
+      added.current.delete(id);
+    }
+  }, [layers]);
+
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-ink-200/70 bg-ink-50">
+      <div ref={hostRef} className="h-[92px] w-full" />
+      <span className="pointer-events-none absolute inset-0 grid place-items-center">
+        <span className="h-3.5 w-3.5 rounded-full border-2 border-brand-600 bg-surface/70 shadow" />
+      </span>
+      <span className="pointer-events-none absolute bottom-1 start-1 rounded-md bg-surface/85 px-1.5 py-0.5 text-[9.5px] font-medium text-ink-500 backdrop-blur">
+        نمای فعلی نقشه
+      </span>
+    </div>
+  );
+}
+
+/* ------------------- پنل شناور لایه‌های نقشه ------------------- */
+function MapLayersPanel({
+  layers,
+  center,
+  zoom,
+  onSelect,
+  onClose,
+}: {
+  layers: MapLayer[];
+  center: [number, number];
+  zoom: number;
+  onSelect: (layer: MapLayer) => void;
+  onClose: () => void;
+}) {
+  // فقط نقشه‌های موجود (MBTiles) قابل انتخاب‌اند؛ در هر لحظه یک نقشه فعال است.
+  const maps = layers.filter((l) => l.kind === 'mbtiles' && l.file_name);
+  const active = maps.find((l) => l.visible) ?? null;
+
+  return (
+    <div
+      id="map-layers-panel"
+      className="pointer-events-auto w-[262px] max-w-[calc(100vw-4rem)] overflow-hidden rounded-2xl border border-ink-200/70 bg-surface/95 shadow-pop backdrop-blur-md"
+      dir="rtl"
+    >
+      <div className="flex items-center justify-between gap-1 px-2.5 pt-2">
+        <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink-700">
+          <Layers size={13} className="text-accent" />
+          لایه‌های نقشه
+        </p>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            className="grid h-6 w-6 place-items-center rounded-md text-ink-400 transition hover:bg-ink-50 hover:text-ink-800"
+            onClick={onClose}
+            title="بستن پنل لایه‌ها"
+            aria-label="بستن پنل لایه‌ها"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="px-2.5 pt-2">
+        <MapThumbnail center={center} zoom={zoom} layers={layers} />
+      </div>
+
+      <div className="mt-1.5 max-h-[206px] space-y-0.5 overflow-y-auto px-1.5 py-1">
+        {maps.length === 0 ? (
+          <p className="px-1 py-3 text-center text-[10.5px] text-ink-400">نقشه‌ای بارگذاری نشده است</p>
+        ) : (
+          maps.map((l) => {
+            const vector = isVectorLayer(l);
+            const selected = !!l.visible;
+            return (
+              <button
+                key={l.id}
+                type="button"
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right transition hover:bg-ink-50 ${
+                  selected ? 'bg-brand-50/60' : ''
+                }`}
+                onClick={() => onSelect(l)}
+                aria-pressed={selected}
+                title={selected ? `نقشهٔ فعال: «${l.name}»` : `انتخاب «${l.name}»`}
+              >
+                <span
+                  className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border transition ${
+                    selected ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-surface text-transparent'
+                  }`}
+                >
+                  <Check size={10} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[11.5px] font-medium text-ink-700">{l.name}</span>
+                  <span className="block text-[9.5px] text-ink-400">
+                    {vector ? 'برداری' : 'تصویری'}
+                    {l.is_default ? ' · پیش‌فرض' : ''}
+                  </span>
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 border-t border-ink-100 px-2.5 py-1.5">
+        <span className="min-w-0 truncate text-[9.5px] text-ink-400">
+          {active ? `نقشهٔ فعال: ${active.name}` : 'نقشه‌ای انتخاب نشده'}
+        </span>
+        <Link to="/settings?tab=layers" className="shrink-0 text-[10.5px] font-medium text-accent transition hover:text-accent">
+          مدیریت در تنظیمات
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- خروجی مختصات با فیلتر گروه/نوع -------------------- */
+/**
+ * دیالوگ خروجی مختصات.
+ * کاربر گروه تجهیزات و انواع علامت را انتخاب می‌کند و فقط همان‌ها در فایل خروجی
+ * می‌آیند؛ اگر هیچ نوع علامتی انتخاب نشود، فایل فقط تجهیزات را شامل می‌شود.
+ */
+function CoordsExportModal({
   open,
   onClose,
-  layers,
-  onChanged,
+  groups,
+  types,
 }: {
   open: boolean;
   onClose: () => void;
-  layers: MapLayer[];
-  onChanged: () => void;
+  /** نام گروه‌های تجهیزات؛ «__none__» یعنی تجهیزات بدون گروه */
+  groups: string[];
+  types: MarkerType[];
 }) {
-  const { push } = useToast();
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  // گروه‌ها و انواعی که از خروجی کنار گذاشته می‌شوند؛ پیش‌فرض هیچ‌کدام حذف نمی‌شود.
+  const [excludedGroups, setExcludedGroups] = useState<string[]>([]);
+  const [excluded, setExcluded] = useState<number[]>([]);
+  if (!open) return null;
 
-  const upload = async (file: File) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await api.uploadLayer(file, name || undefined);
-      push(`لایه «${res.layer.name}» با ${faDigits(res.info.tileCount ?? 0)} کاشی بارگذاری شد`, 'success');
-      setName('');
-      onChanged();
-    } catch (e) {
-      push((e as Error).message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const chosenGroups = groups.filter((g) => !excludedGroups.includes(g));
+  const chosen = types.filter((t) => !excluded.includes(t.id));
+  const withMarkers = chosen.length > 0;
+  const url = downloadUrl('/devices/export/geo', {
+    format: 'xlsx',
+    // فهرست گروه‌های انتخاب‌شده همیشه فرستاده می‌شود؛ `__none_selected__`
+    // یعنی هیچ گروهی انتخاب نشده و فایل فقط علامت‌ها را در بر می‌گیرد.
+    groups: chosenGroups.length ? chosenGroups.join(',') : '__none_selected__',
+    markers: withMarkers ? 1 : 0,
+    types: withMarkers && chosen.length !== types.length ? chosen.map((t) => t.id).join(',') : undefined,
+  });
 
   return (
     <Modal
-      open={open}
+      open
+      size="sm"
       onClose={onClose}
-      size="lg"
-      title="مدیریت لایه‌های نقشه"
-      subtitle="لایه‌های آفلاین MBTiles — هم تصویری (Raster) و هم برداری (Vector) — بدون نیاز به اینترنت"
+      title="خروجی مختصات"
+      subtitle="گروه تجهیزات و انواع علامت‌های حاضر در فایل خروجی را مشخص کنید"
       footer={
-        <button type="button" className="btn-ghost" onClick={onClose}>
-          بستن
-        </button>
+        <>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            انصراف
+          </button>
+          <a className="btn-primary" href={url} onClick={onClose} download>
+            <Download size={15} />
+            دریافت خروجی
+          </a>
+        </>
       }
     >
       <div className="space-y-4">
-        <div className="rounded-soft border border-brand-100 bg-brand-50/50 p-4">
-          <p className="text-[12.5px] font-medium text-brand-800">بارگذاری نقشه آفلاین (.mbtiles)</p>
-          <p className="mt-1 text-[11px] text-brand-700/80">
-            فایل MBTiles را انتخاب کنید. کاشی‌های تصویری (PNG/JPEG) با Leaflet و کاشی‌های برداری (PBF/MVT) با MapLibre سرو می‌شوند.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input className="field !w-auto flex-1" placeholder="نام نمایشی لایه (اختیاری)" value={name} onChange={(e) => setName(e.target.value)} />
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".mbtiles"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) upload(f);
-                e.currentTarget.value = '';
-              }}
-            />
-            <button type="button" className="btn-primary btn-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
-              <Upload size={14} />
-              {busy ? 'در حال بارگذاری…' : 'انتخاب فایل MBTiles'}
-            </button>
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-[12px] font-medium text-ink-600">گروه تجهیزات</span>
+            <div className="flex items-center gap-1">
+              <button type="button" className="btn-ghost btn-xs !px-2" onClick={() => setExcludedGroups([])}>
+                همه
+              </button>
+              <button type="button" className="btn-ghost btn-xs !px-2" onClick={() => setExcludedGroups(groups)}>
+                هیچ‌کدام
+              </button>
+            </div>
           </div>
+          <div className="max-h-[220px] space-y-1 overflow-y-auto rounded-soft border border-ink-200 bg-surface/70 p-1.5">
+            {groups.length === 0 ? <p className="px-1 py-2 text-[11px] text-ink-400">گروهی تعریف نشده است</p> : null}
+            {groups.map((g) => {
+              const on = !excludedGroups.includes(g);
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11.5px] transition hover:bg-ink-50"
+                  onClick={() =>
+                    setExcludedGroups((prev) => (on ? [...prev, g] : prev.filter((name) => name !== g)))
+                  }
+                  aria-pressed={on}
+                >
+                  <span
+                    className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+                      on ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-surface text-transparent'
+                    }`}
+                  >
+                    <Check size={9} />
+                  </span>
+                  <span className="shrink-0 text-ink-400">
+                    <Layers size={11} />
+                  </span>
+                  <span className="truncate" style={{ color: on ? undefined : '#94a3b8' }}>
+                    {g === '__none__' ? 'بدون گروه' : g}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[10.5px] leading-4 text-ink-400">
+            تنها تجهیزات دارای مختصات از گروه‌های انتخاب‌شده در فایل می‌آیند؛ با «هیچ‌کدام» فایل فقط علامت‌ها را شامل می‌شود.
+          </p>
         </div>
 
-        <div className="space-y-2">
-          {layers.map((l) => {
-            const vector = isVectorLayer(l);
-            return (
-              <div key={l.id} className="rounded-soft border border-ink-200 bg-white/80 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-[12.5px] font-semibold text-ink-700">{l.name}</p>
-                      {l.is_default ? <Badge tone="brand">پیش‌فرض</Badge> : null}
-                      <Badge tone={l.kind === 'mbtiles' ? 'emerald' : l.kind === 'builtin' ? 'brand' : 'ink'}>
-                        {l.kind === 'mbtiles' ? (vector ? 'MBTiles برداری' : 'MBTiles تصویری') : l.kind === 'builtin' ? 'داخلی' : 'خالی'}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-[11px] text-ink-500">{l.description || '—'}</p>
-                    <p className="num mt-1 text-[10.5px] text-ink-400">
-                      {l.file_name ? `${l.file_name} · ` : ''}
-                      {faDigits(l.tile_count ?? 0)} کاشی · زوم {faDigits(l.min_zoom)} تا {faDigits(l.max_zoom)}
-                      {vector && l.fileInfo?.vectorLayers?.length ? ` · ${faDigits(l.fileInfo.vectorLayers.length)} لایه برداری` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Toggle
-                      checked={!!l.visible}
-                      onChange={async (v) => {
-                        await api.updateLayer(l.id, { visible: v ? 1 : 0 });
-                        onChanged();
-                      }}
-                      label={l.visible ? 'نمایش' : 'مخفی'}
-                    />
-                    {!l.is_default ? (
-                      <button
-                        type="button"
-                        className="btn-ghost btn-xs"
-                        onClick={async () => {
-                          await api.updateLayer(l.id, { is_default: 1 });
-                          onChanged();
-                          push('لایه پیش‌فرض تغییر کرد', 'success');
-                        }}
-                      >
-                        <Save size={13} />
-                        پیش‌فرض
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn-danger btn-xs"
-                      onClick={async () => {
-                        if (!window.confirm(`لایه «${l.name}» حذف شود؟`)) return;
-                        try {
-                          await api.deleteLayer(l.id, l.kind === 'mbtiles');
-                          onChanged();
-                          push('لایه حذف شد', 'success');
-                        } catch (e) {
-                          push((e as Error).message, 'error');
-                        }
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 rounded-soft border border-ink-200 bg-white/70 p-3">
-          <span className="text-[11.5px] text-ink-500">ایجاد لایه خالی برای دسته‌بندی تجهیزات:</span>
-          <button
-            type="button"
-            className="btn-soft btn-xs"
-            onClick={async () => {
-              const label = window.prompt('نام لایه جدید:');
-              if (!label) return;
-              await api.createLayer({ name: label, kind: 'empty' });
-              onChanged();
-              push('لایه جدید ساخته شد', 'success');
-            }}
-          >
-            <Plus size={13} />
-            افزودن لایه
-          </button>
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-[12px] font-medium text-ink-600">انواع علامت</span>
+            <div className="flex items-center gap-1">
+              <button type="button" className="btn-ghost btn-xs !px-2" onClick={() => setExcluded([])}>
+                همه
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-xs !px-2"
+                onClick={() => setExcluded(types.map((t) => t.id))}
+              >
+                هیچ‌کدام
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[220px] space-y-1 overflow-y-auto rounded-soft border border-ink-200 bg-surface/70 p-1.5">
+            {types.length === 0 ? <p className="px-1 py-2 text-[11px] text-ink-400">نوعی تعریف نشده است</p> : null}
+            {types.map((t) => {
+              const on = !excluded.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11.5px] transition hover:bg-ink-50"
+                  onClick={() =>
+                    setExcluded((prev) => (on ? [...prev, t.id] : prev.filter((id) => id !== t.id)))
+                  }
+                  aria-pressed={on}
+                >
+                  <span
+                    className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+                      on ? 'border-brand-500 bg-brand-500 text-white' : 'border-ink-300 bg-surface text-transparent'
+                    }`}
+                  >
+                    <Check size={9} />
+                  </span>
+                  <span className="shrink-0" style={{ color: on ? t.color : '#94a3b8' }}>
+                    <MarkerGlyph name={t.icon} size={11} />
+                  </span>
+                  <span className="truncate" style={{ color: on ? undefined : '#94a3b8' }}>
+                    {t.name}
+                  </span>
+                  <span className="num ms-auto text-[10px] text-ink-400">{faDigits(t.markerCount ?? 0)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[10.5px] leading-4 text-ink-400">
+            اگر هیچ نوع علامتی انتخاب نشود، فایل فقط تجهیزات دارای مختصات را شامل می‌شود.
+          </p>
         </div>
       </div>
     </Modal>

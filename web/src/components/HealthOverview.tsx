@@ -8,9 +8,9 @@ import { LiveBadge } from './Freshness';
 type Tone = 'ok' | 'warn' | 'down' | 'wait';
 
 const TONE_TEXT: Record<Tone, string> = {
-  ok: 'text-emerald-700',
-  warn: 'text-sun-700',
-  down: 'text-red-600',
+  ok: 'text-success',
+  warn: 'text-warning',
+  down: 'text-danger',
   wait: 'text-ink-500',
 };
 const TONE_DOT: Record<Tone, string> = {
@@ -35,13 +35,13 @@ function Metric({
 }) {
   const tones: Record<string, string> = {
     ink: 'text-ink-800',
-    emerald: 'text-emerald-600',
-    red: 'text-red-600',
-    sun: 'text-sun-600',
-    brand: 'text-brand-600',
+    emerald: 'text-success',
+    red: 'text-danger',
+    sun: 'text-warning',
+    brand: 'text-accent',
   };
   return (
-    <div className="rounded-soft border border-ink-100 bg-white/70 p-3">
+    <div className="rounded-soft border border-ink-100 bg-surface/70 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] text-ink-500">{label}</p>
         {icon ? <span className="text-ink-300">{icon}</span> : null}
@@ -101,10 +101,10 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
           </span>
           <span className="text-ink-400">·</span>
           <span className="text-ink-500">
-            وصل <span className="num font-semibold text-emerald-600">{fmtNumber(kpis.up)}</span>
+            وصل <span className="num font-semibold text-success">{fmtNumber(kpis.up)}</span>
           </span>
           <span className="text-ink-500">
-            قطع <span className="num font-semibold text-red-600">{fmtNumber(kpis.offline)}</span>
+            قطع <span className="num font-semibold text-danger">{fmtNumber(kpis.offline)}</span>
           </span>
           <span className="text-ink-500">
             دسترس‌پذیری <span className="num font-semibold text-ink-700">{fmtPct(availability, 2)}</span>
@@ -139,7 +139,7 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
       </div>
 
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-        <div className="rounded-soft border border-ink-100 bg-white/70 p-3">
+        <div className="rounded-soft border border-ink-100 bg-surface/70 p-3">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-ink-500">میانگین تأخیر (۲۴ ساعت)</span>
             <span className="num font-semibold text-ink-700">{fmtMs(health.avgRtt)}</span>
@@ -148,7 +148,7 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
             <Progress value={Math.min(100, (health.avgRtt ?? 0) / 2)} color="#2563eb" />
           </div>
         </div>
-        <div className="rounded-soft border border-ink-100 bg-white/70 p-3">
+        <div className="rounded-soft border border-ink-100 bg-surface/70 p-3">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-ink-500">میانگین افت بسته</span>
             <span className="num font-semibold text-ink-700">{fmtPct(health.lossAvg, 2)}</span>
@@ -186,7 +186,7 @@ export function NetworkHealthSection({ data, tzOffset }: { data: DashboardData; 
 
 function HealthRow({ label, tone, value, hint, icon }: { label: string; tone: Tone; value: React.ReactNode; hint?: string; icon: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-white/70 px-3 py-2" title={hint}>
+    <div className="flex items-center justify-between gap-2 rounded-soft border border-ink-100 bg-surface/70 px-3 py-2" title={hint}>
       <span className="flex min-w-0 items-center gap-2 text-[11.5px] text-ink-500">
         <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
         <span className="shrink-0 text-ink-400">{icon}</span>
@@ -303,7 +303,7 @@ export function ApplicationHealthSection({
       >
 
       {error ? (
-        <p className="mt-2 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[11px] text-red-700" role="alert">
+        <p className="mt-2 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[11px] text-danger" role="alert">
           وضعیت سرور دریافت نشد: {error}
         </p>
       ) : null}
@@ -374,7 +374,7 @@ export function ApplicationHealthSection({
       </div>
 
       {engine?.stale ? (
-        <p className="mt-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11px] text-sun-800" role="status">
+        <p className="mt-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11px] text-warning" role="status">
           چرخهٔ موتور از بازهٔ مورد انتظار عقب است؛ داده‌های تجهیزات ممکن است قدیمی باشند.
         </p>
       ) : null}

@@ -41,7 +41,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     return (
       <div className="card p-6">
         <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-soft border border-sun-200 bg-sun-50 text-sun-700">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-soft border border-sun-200 bg-sun-50 text-warning">
             <AlertTriangle size={20} />
           </span>
           <div className="min-w-0">

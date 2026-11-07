@@ -160,7 +160,7 @@ export default function Reports() {
             فیلترهای فعال روی گزارش اعمال شده است.
             <button
               type="button"
-              className="text-brand-600 underline"
+              className="text-accent underline"
               onClick={() => {
                 setGroup('');
                 setTag('');
@@ -177,7 +177,7 @@ export default function Reports() {
         <span>
           {updatedAt ? `آخرین به‌روزرسانی گزارش: ${fmtRelative(updatedAt)}` : 'در حال آماده‌سازی گزارش…'}
         </span>
-        {error ? <span className="text-sun-700">خطای به‌روزرسانی: {error} — دادهٔ قبلی نمایش داده می‌شود.</span> : null}
+        {error ? <span className="text-warning">خطای به‌روزرسانی: {error} — دادهٔ قبلی نمایش داده می‌شود.</span> : null}
       </div>
 
       {loading && !data ? (
@@ -302,7 +302,7 @@ export default function Reports() {
                   {rows.map((r) => (
                     <tr key={r.id}>
                       <td>
-                        <Link to={`/devices/${r.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+                        <Link to={`/devices/${r.id}`} className="font-medium text-ink-800 hover:text-accent">
                           {r.name}
                         </Link>
                         <span className="num block text-[10.5px] text-ink-400">{r.ip}</span>
@@ -322,10 +322,10 @@ export default function Reports() {
                       </td>
                       <td className="num">{fmtNumber(r.checks)}</td>
                       <td className="num">
-                        <span className="text-emerald-600">{fmtNumber(r.okCount)}</span> / <span className="text-red-600">{fmtNumber(r.failed)}</span>
+                        <span className="text-success">{fmtNumber(r.okCount)}</span> / <span className="text-danger">{fmtNumber(r.failed)}</span>
                       </td>
                       <td className="num">
-                        <span className={(r.availability ?? 100) < 98 ? 'font-semibold text-red-600' : 'text-emerald-600'}>{fmtPct(r.availability, 2)}</span>
+                        <span className={(r.availability ?? 100) < 98 ? 'font-semibold text-danger' : 'text-success'}>{fmtPct(r.availability, 2)}</span>
                       </td>
                       <td className="num">{fmtMs(r.avgRtt)}</td>
                       <td className="num">{fmtMs(r.maxRtt)}</td>
@@ -353,21 +353,21 @@ export default function Reports() {
               action={<Badge tone="sun">{faDigits(data.mttr?.count ?? 0)} رخداد مبنا</Badge>}
             />
             <div className="mt-3 grid gap-2 sm:grid-cols-4">
-              <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
                 <p className="text-[10px] text-ink-400">میانگین</p>
                 <p className="num mt-0.5 text-[14px] font-semibold text-ink-800">{data.mttr?.avgSec != null ? fmtDuration(data.mttr.avgSec) : '—'}</p>
               </div>
-              <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
                 <p className="text-[10px] text-ink-400">کوتاه‌ترین / بلندترین</p>
                 <p className="num mt-0.5 text-[12px] font-semibold text-ink-800">
                   {data.mttr?.minSec != null ? fmtDuration(data.mttr.minSec) : '—'} / {data.mttr?.maxSec != null ? fmtDuration(data.mttr.maxSec) : '—'}
                 </p>
               </div>
-              <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
                 <p className="text-[10px] text-ink-400">قطعی‌های حذف‌شده (بدون تعمیر)</p>
-                <p className="num mt-0.5 text-[14px] font-semibold text-sun-700">{faDigits(data.mttr?.excluded ?? 0)}</p>
+                <p className="num mt-0.5 text-[14px] font-semibold text-warning">{faDigits(data.mttr?.excluded ?? 0)}</p>
               </div>
-              <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
                 <p className="text-[10px] text-ink-400">کل قطعی‌های بسته‌شده در بازه</p>
                 <p className="num mt-0.5 text-[14px] font-semibold text-ink-800">{faDigits(data.mttr?.totalOutages ?? 0)}</p>
               </div>
@@ -389,7 +389,7 @@ export default function Reports() {
                     {(data.mttr?.events ?? []).slice(0, 100).map((e) => (
                       <tr key={e.outageId}>
                         <td>
-                          <Link to={`/devices/${e.deviceId}`} className="font-medium text-ink-800 hover:text-brand-700">
+                          <Link to={`/devices/${e.deviceId}`} className="font-medium text-ink-800 hover:text-accent">
                             {e.deviceName}
                           </Link>
                           <span className="num block text-[10px] text-ink-400">{e.ip}</span>
@@ -471,7 +471,7 @@ export default function Reports() {
                     {(installations.data?.items ?? []).map((r) => (
                       <tr key={r.id}>
                         <td>
-                          <Link to={`/devices/${r.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+                          <Link to={`/devices/${r.id}`} className="font-medium text-ink-800 hover:text-accent">
                             {r.name}
                           </Link>
                           <span className="num block text-[10px] text-ink-400">{r.ip}</span>
@@ -575,7 +575,7 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
       />
 
       {error && !data ? (
-        <p className="mt-3 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[11.5px] text-red-700">خطا در دریافت آمار: {error}</p>
+        <p className="mt-3 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[11.5px] text-danger">خطا در دریافت آمار: {error}</p>
       ) : null}
 
       <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
@@ -595,8 +595,8 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
             aria-pressed={dim === d.key}
             className={`rounded-pill border px-2.5 py-1 text-[11px] font-medium transition ${
               dim === d.key
-                ? 'border-brand-300 bg-brand-50 text-brand-700'
-                : 'border-ink-200 bg-white/70 text-ink-500 hover:border-brand-200 hover:text-ink-700'
+                ? 'border-brand-300 bg-brand-50 text-accent'
+                : 'border-ink-200 bg-surface/70 text-ink-500 hover:border-brand-200 hover:text-ink-700'
             }`}
           >
             {d.label}
@@ -641,7 +641,7 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
                   <tr key={b.label}>
                     <td>
                       {linkable ? (
-                        <Link to={`/devices?search=${encodeURIComponent(b.label)}`} className="font-medium text-ink-800 hover:text-brand-700">
+                        <Link to={`/devices?search=${encodeURIComponent(b.label)}`} className="font-medium text-ink-800 hover:text-accent">
                           {b.label}
                         </Link>
                       ) : (
@@ -657,9 +657,9 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
                         <span className="num text-[10.5px] text-ink-500">{fmtPct(b.share, 1)}</span>
                       </div>
                     </td>
-                    <td className="num text-emerald-600">{fmtNumber(b.online)}</td>
-                    <td className="num text-sun-700">{fmtNumber(b.warning)}</td>
-                    <td className="num text-red-600">{fmtNumber(b.offline)}</td>
+                    <td className="num text-success">{fmtNumber(b.online)}</td>
+                    <td className="num text-warning">{fmtNumber(b.warning)}</td>
+                    <td className="num text-danger">{fmtNumber(b.offline)}</td>
                     <td className="num text-ink-500">{fmtNumber(b.installed)}</td>
                   </tr>
                 );
@@ -677,7 +677,7 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
 
 function InventoryMini({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+    <div className="rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
       <p className="flex items-center gap-1 text-[10px] text-ink-400">
         {label === 'دارای تگ' ? <Tag size={10} /> : label === 'دارای محل نصب' ? <MapPin size={10} /> : null}
         {label}
@@ -689,10 +689,10 @@ function InventoryMini({ label, value }: { label: string; value: number }) {
 
 function ReportPreset({ title, desc, url }: { title: string; desc: string; url: string }) {
   return (
-    <a href={url} className="group rounded-soft border border-ink-200/70 bg-white/70 p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft">
-      <p className="text-[12.5px] font-semibold text-ink-700 group-hover:text-brand-700">{title}</p>
+    <a href={url} className="group rounded-soft border border-ink-200/70 bg-surface/70 p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft">
+      <p className="text-[12.5px] font-semibold text-ink-700 group-hover:text-accent">{title}</p>
       <p className="mt-1 text-[11px] leading-relaxed text-ink-500">{desc}</p>
-      <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-brand-600">
+      <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent">
         <Download size={12} />
         دریافت فایل
       </p>

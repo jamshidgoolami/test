@@ -3,6 +3,7 @@ import { Activity, Eye, EyeOff, LockKeyhole, ShieldCheck, User } from 'lucide-re
 import { useAuth } from '../lib/auth';
 import { api, type PasswordPolicy } from '../lib/api';
 import { PageLoader } from '../components/ui';
+import { ThemeIconButton } from '../components/ThemeToggle';
 
 /**
  * دروازهٔ ورود: تا وقتی نشست معتبری وجود نداشته باشد، هیچ صفحه‌ای (و هیچ
@@ -96,6 +97,10 @@ export default function Login() {
 
   return (
     <div className="relative grid min-h-screen place-items-center overflow-hidden bg-ink-50 px-4 py-10">
+      {/* تغییر تم پیش از ورود هم ممکن است (در همین مرورگر ذخیره می‌شود) */}
+      <div className="absolute left-4 top-4 z-10">
+        <ThemeIconButton />
+      </div>
       {/* پس‌زمینهٔ نرم — بدون تصویر خارجی تا CSP دست‌نخورده بماند */}
       <div className="pointer-events-none absolute -top-32 right-1/2 h-[520px] w-[520px] translate-x-1/2 rounded-full bg-brand-200/40 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 left-0 h-[420px] w-[420px] rounded-full bg-emerald-200/30 blur-3xl" />
@@ -117,7 +122,7 @@ export default function Login() {
 
         <form onSubmit={submit} className="card space-y-4 p-5">
           {shownError ? (
-            <p className="rounded-soft border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700" role="alert">
+            <p className="rounded-soft border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-danger" role="alert">
               {shownError}
             </p>
           ) : null}

@@ -33,6 +33,7 @@ import type {
   ReportData,
   RetentionStatus,
   Series,
+  Site,
   SimultaneousData,
   StatusData,
   Tag,
@@ -247,6 +248,8 @@ export const api = {
         longitude: number | null;
         deviceType: string;
         groupName: string | null;
+        siteId: number | null;
+        siteName: string | null;
         lastRtt: number | null;
         priority: string;
         location: string;
@@ -416,6 +419,12 @@ export const api = {
   createGroup: (body: Record<string, unknown>) => request<Group>('/groups', { method: 'POST', body: JSON.stringify(body) }),
   updateGroup: (id: number, body: Record<string, unknown>) => request<{ updated: number }>(`/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteGroup: (id: number, moveTo?: number) => request<{ deleted: number }>(`/groups/${id}${moveTo ? `?moveTo=${moveTo}` : ''}`, { method: 'DELETE' }),
+  /** ایستگاه‌ها: تجهیزات هم‌مکان زیرمجموعهٔ گروه‌ها */
+  sites: (signal?: AbortSignal) => request<{ items: Site[] }>('/sites', { signal }),
+  createSite: (body: Record<string, unknown>) => request<Site>('/sites', { method: 'POST', body: JSON.stringify(body) }),
+  updateSite: (id: number, body: Record<string, unknown>) =>
+    request<{ updated: number }>(`/sites/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteSite: (id: number) => request<{ deleted: number }>(`/sites/${id}`, { method: 'DELETE' }),
   tags: (signal?: AbortSignal) => request<{ items: Tag[] }>('/tags', { signal }),
   createTag: (body: Record<string, unknown>) => request<Tag>('/tags', { method: 'POST', body: JSON.stringify(body) }),
   updateTag: (id: number, body: Record<string, unknown>) => request<{ updated: number }>(`/tags/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

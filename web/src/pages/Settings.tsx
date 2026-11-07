@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  Check,
   Database,
   Gamepad2,
   Layers,
@@ -19,6 +20,7 @@ import {
   Tag as TagIcon,
   Trash2,
   TriangleAlert,
+  Upload,
   Users,
   Wrench,
 } from 'lucide-react';
@@ -30,6 +32,7 @@ import { useAuth } from '../lib/auth';
 import { faDigits, fmtDateTime, fmtNumber, fmtRelative } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, Field, Modal, PageLoader, Toggle } from '../components/ui';
 import { ColorField } from '../components/ColorField';
+import { ThemeSegmented } from '../components/ThemeToggle';
 import { WidgetVisibilityRow, useWidgetLayout } from '../components/widgets';
 import { DETAIL_WIDGETS, DASHBOARD_WIDGETS } from '../lib/widgetdefs';
 import type { AppSettings, AuthRole, AuthUser, DeviceType } from '../lib/types';
@@ -200,7 +203,7 @@ export default function Settings() {
                       onClick={() => setTab(item.key)}
                       aria-current={tab === item.key ? 'page' : undefined}
                       className={`flex w-full items-center gap-2 rounded-soft px-2.5 py-2 text-right text-[12.5px] transition ${
-                        tab === item.key ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-600 hover:bg-ink-50'
+                        tab === item.key ? 'bg-brand-50 font-medium text-accent' : 'text-ink-600 hover:bg-ink-50'
                       }`}
                     >
                       {item.icon}
@@ -230,7 +233,7 @@ export default function Settings() {
 
       <div className="min-w-0 space-y-4">
       {!canWrite ? (
-        <div className="rounded-card border border-sun-200 bg-sun-50/70 px-4 py-3 text-[11.5px] leading-relaxed text-sun-800" role="status">
+        <div className="rounded-card border border-sun-200 bg-sun-50/70 px-4 py-3 text-[11.5px] leading-relaxed text-warning" role="status">
           نقش شما اجازهٔ تغییر تنظیمات را ندارد؛ مقادیر فقط برای مشاهده نمایش داده می‌شوند. عملیات مدیریتی (پشتیبان‌گیری، Retention و بازنشانی) نیز در صورت نداشتن مجوز توسط سرور رد می‌شوند.
         </div>
       ) : null}
@@ -285,7 +288,7 @@ export default function Settings() {
                 <InfoCell label="رد شده" value={fmtNumber(engineData?.skipped ?? 0)} />
                 <InfoCell label="خطاها" value={fmtNumber(engineData?.errors ?? 0)} />
               </div>
-              <div className="rounded-soft border border-ink-200 bg-white/70 p-3 text-[11px] text-ink-500">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11px] text-ink-500">
                 <p className="flex items-center justify-between">
                   <span>دسترسی ICMP</span>
                   <Badge tone={engineData?.icmpAvailable ? 'emerald' : 'sun'}>{engineData?.icmpAvailable ? 'فعال' : 'در دسترس نیست'}</Badge>
@@ -379,7 +382,7 @@ export default function Settings() {
                 </Field>
               </div>
             </div>
-            <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+            <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
               بازه بررسی را می‌توان برای هر گروه یا هر تجهیز به‌صورت مستقل تعیین کرد (از صفحه ویرایش تجهیز یا ویرایش گروهی). مقدار تعریف‌شده در تجهیز، بر مقدار عمومی اولویت دارد.
             </p>
           </Card>
@@ -388,7 +391,7 @@ export default function Settings() {
             <CardHeader title="آخرین رویدادهای موتور" subtitle="گزارش فعالیت و خطاها" icon={<MonitorSmartphone size={18} />} action={<button type="button" className="btn-ghost btn-xs" onClick={refreshEngine}><RefreshCw size={13} /></button>} />
             <div className="mt-3 max-h-[460px] space-y-2 overflow-y-auto">
               {(engineData?.lastLogs ?? []).map((l, i) => (
-                <div key={i} className="rounded-soft border border-ink-100 bg-white/70 px-3 py-2">
+                <div key={i} className="rounded-soft border border-ink-100 bg-surface/70 px-3 py-2">
                   <p className="text-[11.5px] text-ink-600">{l.message}</p>
                   <p className="mt-0.5 text-[10px] text-ink-400">
                     {fmtDateTime(l.ts, local.timezone_offset_minutes)} · {l.level}
@@ -404,6 +407,16 @@ export default function Settings() {
       {tab === 'display' ? (
         <Card>
           <CardHeader title="نمایش، نقشه و تجربه کاربری" subtitle="تنظیمات ظاهری و پیش‌فرض‌های نقشه" icon={<Palette size={18} />} />
+          {/* تم فقط روی همین مرورگر ذخیره می‌شود (localStorage) و به سرور نمی‌رود. */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-ink-50/60 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium text-ink-700">تم رابط کاربری</p>
+              <p className="mt-0.5 text-[11px] text-ink-400">
+                تم تاریک برای اتاق مانیتورینگ و استفادهٔ شبانه؛ گزینهٔ هم‌سیستم ترجیح سیستم‌عامل را دنبال می‌کند.
+              </p>
+            </div>
+            <ThemeSegmented />
+          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="عرض جغرافیایی مرکز نقشه">
               <input dir="ltr" className="field num" value={local.map_default_center?.[0] ?? 35.6892} onChange={(e) => set('map_default_center', [Number(e.target.value) || 0, local.map_default_center?.[1] ?? 51.389])} />
@@ -497,7 +510,7 @@ export default function Settings() {
                 <InfoCell label="WAL" value={fmtNumber(Math.round((retentionData?.storage?.walBytes ?? 0) / 1024)) + ' KB'} />
               </div>
               {retentionData?.lastRun?.error ? (
-                <p className="rounded-soft border border-red-100 bg-red-50/60 p-2 text-[11px] text-red-700">{retentionData.lastRun.error}</p>
+                <p className="rounded-soft border border-red-100 bg-red-50/60 p-2 text-[11px] text-danger">{retentionData.lastRun.error}</p>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <button
@@ -549,7 +562,7 @@ export default function Settings() {
                   توقف
                 </button>
               </div>
-              <div className="rounded-soft border border-ink-200 bg-white/70 p-3 text-[11px] leading-relaxed text-ink-500">
+              <div className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11px] leading-relaxed text-ink-500">
                 هر Batch در تراکنش مستقل اجرا می‌شود؛ پیش از حذف نمونه‌ها، آمار روزانه تثبیت می‌شود و داده‌های دارای قطعی باز یا هشدار حل‌نشده حفظ می‌شوند.
               </div>
             </div>
@@ -606,7 +619,7 @@ export default function Settings() {
           <Card>
             <CardHeader title="بازنشانی داده‌های نمونه" subtitle="بازگرداندن سامانه به داده‌های نمایشی اولیه" icon={<TriangleAlert size={18} />} />
             <div className="mt-4 space-y-3">
-              <div className="rounded-soft border border-red-100 bg-red-50/60 p-3 text-[11.5px] leading-relaxed text-red-700">
+              <div className="rounded-soft border border-red-100 bg-red-50/60 p-3 text-[11.5px] leading-relaxed text-danger">
                 هشدار: با بازنشانی، تمام تجهیزات، سوابق قطعی، هشدارها و سوابق تعمیرات فعلی حذف و داده‌های نمونه جایگزین می‌شوند. این عملیات بازگشت‌پذیر نیست؛ پیش از آن پشتیبان بگیرید.
               </div>
               <button
@@ -639,7 +652,7 @@ export default function Settings() {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between rounded-card border border-white/70 bg-white/80 px-4 py-3 text-[11.5px] text-ink-500">
+      <div className="flex items-center justify-between rounded-card border border-ink-200/70 bg-surface/80 px-4 py-3 text-[11.5px] text-ink-500">
         <span className="inline-flex items-center gap-1.5">
           <Server size={13} />
           {engine?.running ? 'موتور مانیتورینگ در حال اجرا است' : 'موتور مانیتورینگ متوقف است'}
@@ -653,7 +666,7 @@ export default function Settings() {
 
 function InfoCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-soft border border-ink-200 bg-white/70 px-2.5 py-2">
+    <div className="rounded-soft border border-ink-200 bg-surface/70 px-2.5 py-2">
       <p className="text-[10.5px] text-ink-400">{label}</p>
       <p className="num mt-0.5 text-[12px] font-semibold text-ink-700">{value}</p>
     </div>
@@ -698,7 +711,7 @@ function GroupsTab() {
       />
       <div className="mt-4 space-y-3">
         {(data?.items ?? []).map((g) => (
-          <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-white/70 p-3">
+          <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-surface/70 p-3">
             <div className="flex items-center gap-3">
               <span className="h-8 w-8 rounded-soft" style={{ background: `${g.color}22`, border: `1px solid ${g.color}55` }} />
               <div>
@@ -708,9 +721,9 @@ function GroupsTab() {
             </div>
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-ink-500">
               <span className="num">{faDigits(g.device_count ?? 0)} تجهیز</span>
-              <span className="num text-emerald-600">{faDigits(g.online ?? 0)} در دسترس</span>
-              <span className="num text-sun-600">{faDigits(g.warning ?? 0)} اختلال</span>
-              <span className="num text-red-600">{faDigits(g.offline ?? 0)} قطع</span>
+              <span className="num text-success">{faDigits(g.online ?? 0)} در دسترس</span>
+              <span className="num text-warning">{faDigits(g.warning ?? 0)} اختلال</span>
+              <span className="num text-danger">{faDigits(g.offline ?? 0)} قطع</span>
               <button type="button" className="btn-ghost btn-xs" onClick={() => { setEditing({ id: g.id, name: g.name, description: g.description, color: g.color }); setOpen(true); }}>
                 ویرایش
               </button>
@@ -806,7 +819,7 @@ function TagsTab() {
       />
       <div className="mt-4 flex flex-wrap gap-2">
         {(data?.items ?? []).map((t) => (
-          <div key={t.id} className="flex items-center gap-2 rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+          <div key={t.id} className="flex items-center gap-2 rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
             <span className="chip" style={{ borderColor: `${t.color}44`, background: `${t.color}12`, color: t.color }}>
               {t.name}
             </span>
@@ -922,7 +935,7 @@ function DeviceTypesTab() {
       />
       <div className="mt-4 flex flex-wrap gap-2">
         {(data?.items ?? []).map((t: DeviceType) => (
-          <div key={t.id} className="flex items-center gap-2 rounded-soft border border-ink-200 bg-white/70 px-3 py-2">
+          <div key={t.id} className="flex items-center gap-2 rounded-soft border border-ink-200 bg-surface/70 px-3 py-2">
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
             <span className="text-[12.5px] font-medium text-ink-700">{t.name}</span>
             <span className="num text-[10.5px] text-ink-400">{faDigits(t.device_count ?? 0)} تجهیز</span>
@@ -960,7 +973,7 @@ function DeviceTypesTab() {
         ))}
         {(data?.items ?? []).length === 0 ? <EmptyState title="نوع تجهیزی تعریف نشده است" /> : null}
       </div>
-      <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+      <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
         تغییر نام یک نوع، نوع همهٔ تجهیزات همان نوع را هم به‌روزرسانی می‌کند. حذف نوعی که تجهیز دارد تا زمانی که نوع آن تجهیزات تغییر نکند ممکن نیست.
       </p>
 
@@ -999,11 +1012,45 @@ function LayersTab() {
   const { push } = useToast();
   const { refreshMeta } = useApp();
   const { data, refresh } = useAsync((signal) => api.layers(signal), []);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // فقط نقشه‌های بارگذاری‌شدهٔ کاربر (MBTiles) در این بخش مدیریت می‌شوند؛
+  // لایه‌های داخلی و لایه‌های خالی دسته‌بندی در این فهرست نمی‌آیند.
+  const maps = (data?.items ?? []).filter((l) => l.kind === 'mbtiles' && l.file_name);
+
+  const upload = async (file: File) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await api.uploadLayer(file, name || undefined);
+      push(`نقشهٔ «${res.layer.name}» با ${faDigits(res.info.tileCount ?? 0)} کاشی بارگذاری شد`, 'success');
+      setName('');
+      refresh();
+      refreshMeta();
+    } catch (e) {
+      push((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** انتخاب نقشهٔ پایه: در هر لحظه فقط یک نقشه فعال می‌شود. */
+  const selectMap = async (id: number) => {
+    try {
+      await Promise.all((data?.items ?? []).map((l) => api.updateLayer(l.id, { visible: l.id === id ? 1 : 0 })));
+      refresh();
+      refreshMeta();
+    } catch (e) {
+      push((e as Error).message, 'error');
+    }
+  };
+
   return (
     <Card>
       <CardHeader
-        title="لایه‌های نقشه"
-        subtitle="مدیریت لایه‌های آفلاین؛ بارگذاری فایل MBTiles از صفحه نقشه انجام می‌شود"
+        title="مدیریت و بارگذاری نقشه"
+        subtitle="نقشه‌های آفلاین MBTiles — بارگذاری، انتخاب نقشهٔ فعال و حذف"
         icon={<MapIcon size={18} />}
         action={
           <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
@@ -1012,36 +1059,112 @@ function LayersTab() {
           </button>
         }
       />
-      <div className="mt-4 space-y-3">
-        {(data?.items ?? []).map((l) => (
-          <div key={l.id} className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-white/70 p-3">
-            <div>
-              <p className="text-[12.5px] font-semibold text-ink-700">
-                {l.name} {l.is_default ? <Badge tone="brand">پیش‌فرض</Badge> : null}
-              </p>
-              <p className="num mt-1 text-[11px] text-ink-500">
-                {l.kind === 'mbtiles' ? l.file_name : l.kind === 'builtin' ? 'لایه داخلی آفلاین' : 'لایه خالی'} · {faDigits(l.tile_count ?? 0)} کاشی
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Toggle checked={!!l.visible} onChange={async (v) => { await api.updateLayer(l.id, { visible: v ? 1 : 0 }); refresh(); }} label={l.visible ? 'نمایش' : 'مخفی'} />
-              <button
-                type="button"
-                className="btn-danger btn-xs"
-                onClick={async () => {
-                  if (!window.confirm(`حذف لایه «${l.name}»؟`)) return;
-                  await api.deleteLayer(l.id, true);
-                  refresh();
-                  refreshMeta();
-                }}
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          </div>
-        ))}
+
+      <div className="mt-4 rounded-soft border border-brand-100 bg-brand-50/50 p-4">
+        <p className="text-[12.5px] font-medium text-accent">بارگذاری نقشهٔ جدید (.mbtiles)</p>
+        <p className="mt-1 text-[11px] text-accent/80">
+          کاشی‌های تصویری (PNG/JPEG) با Leaflet و کاشی‌های برداری (PBF/MVT) با MapLibre نمایش داده می‌شوند؛ نیازی به اینترنت نیست.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            className="field !w-auto flex-1"
+            placeholder="نام نمایشی نقشه (اختیاری)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".mbtiles"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) upload(f);
+              e.currentTarget.value = '';
+            }}
+          />
+          <button type="button" className="btn-primary btn-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
+            <Upload size={14} />
+            {busy ? 'در حال بارگذاری…' : 'انتخاب فایل MBTiles'}
+          </button>
+        </div>
       </div>
-      <p className="mt-4 rounded-soft border border-ink-200 bg-white/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
+
+      <div className="mt-3 space-y-2">
+        {maps.length === 0 ? (
+          <EmptyState
+            title="نقشه‌ای بارگذاری نشده است"
+            description="برای نمایش نقشهٔ پایه، یک فایل MBTiles بارگذاری کنید."
+            icon={<MapIcon size={22} />}
+          />
+        ) : null}
+        {maps.map((l) => {
+          const active = !!l.visible;
+          return (
+            <div
+              key={l.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-surface/70 p-3"
+            >
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-[12.5px] font-semibold text-ink-700">
+                  <span className="truncate">{l.name}</span>
+                  {l.is_default ? <Badge tone="brand">پیش‌فرض</Badge> : null}
+                  {active ? <Badge tone="emerald">فعال</Badge> : null}
+                </p>
+                <p className="num mt-1 text-[10.5px] text-ink-400">
+                  {l.file_name} · {faDigits(l.tile_count ?? 0)} کاشی · زوم {faDigits(l.min_zoom)} تا {faDigits(l.max_zoom)}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={`btn-xs ${active ? 'btn-soft' : 'btn-ghost'}`}
+                  onClick={() => selectMap(l.id)}
+                  disabled={active}
+                  title={active ? 'این نقشه روی صفحهٔ نقشه فعال است' : 'استفاده به‌عنوان نقشهٔ پایه'}
+                >
+                  <Check size={13} />
+                  {active ? 'نقشهٔ فعال' : 'انتخاب'}
+                </button>
+                {!l.is_default ? (
+                  <button
+                    type="button"
+                    className="btn-ghost btn-xs"
+                    onClick={async () => {
+                      await api.updateLayer(l.id, { is_default: 1 });
+                      refresh();
+                      refreshMeta();
+                      push('نقشه پیش‌فرض تغییر کرد', 'success');
+                    }}
+                  >
+                    <Save size={13} />
+                    پیش‌فرض
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn-danger btn-xs"
+                  onClick={async () => {
+                    if (!window.confirm(`نقشه «${l.name}» و فایل آن حذف شود؟`)) return;
+                    try {
+                      await api.deleteLayer(l.id, true);
+                      refresh();
+                      refreshMeta();
+                      push('نقشه حذف شد', 'success');
+                    } catch (e) {
+                      push((e as Error).message, 'error');
+                    }
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-4 rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
         فایل‌های <span className="num" dir="ltr">.mbtiles</span> در پوشه <span className="num" dir="ltr">data/mbtiles</span> نگهداری و کاشی‌ها از طریق مسیر{' '}
         <span className="num" dir="ltr">/api/tiles/&lt;layerId&gt;/z/x/y</span> سرو می‌شوند؛ بدون نیاز به هیچ سرویس نقشه آنلاین.
       </p>
@@ -1123,7 +1246,7 @@ function WidgetLayoutTab() {
         </div>
       </Card>
 
-      <p className="rounded-soft border border-ink-200 bg-white/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
+      <p className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
         تغییرات بلافاصله ذخیره می‌شوند. برای تغییر اولویت نمایش، نام یا دستگیرهٔ کنار هر ویجت را بگیرید و بالا یا پایین بکشید. در صفحه داشبورد و جزئیات تجهیز می‌توانید با دکمهٔ «شخصی‌سازی» ویجت‌ها را روی خود صفحه هم جابه‌جا، تغییر عرض، حذف یا اضافه کنید؛ برای ارتفاع دلخواه، لبهٔ پایین ویجت را به بالا یا پایین بکشید.
       </p>
     </div>
@@ -1166,9 +1289,9 @@ function RepairTab({
           </div>
           <div className="flex flex-wrap gap-2">
             {local.repair_causes.map((c) => (
-              <span key={c} className="chip border-ink-200 bg-white text-ink-600">
+              <span key={c} className="chip border-ink-200 bg-surface text-ink-600">
                 {c}
-                <button type="button" className="text-ink-400 hover:text-red-500" onClick={() => set('repair_causes', local.repair_causes.filter((x) => x !== c))}>
+                <button type="button" className="text-ink-400 hover:text-danger" onClick={() => set('repair_causes', local.repair_causes.filter((x) => x !== c))}>
                   ×
                 </button>
               </span>
@@ -1197,9 +1320,9 @@ function RepairTab({
           </div>
           <div className="flex flex-wrap gap-2">
             {local.repair_actions.map((a) => (
-              <span key={a} className="chip border-ink-200 bg-white text-ink-600">
+              <span key={a} className="chip border-ink-200 bg-surface text-ink-600">
                 {a}
-                <button type="button" className="text-ink-400 hover:text-red-500" onClick={() => set('repair_actions', local.repair_actions.filter((x) => x !== a))}>
+                <button type="button" className="text-ink-400 hover:text-danger" onClick={() => set('repair_actions', local.repair_actions.filter((x) => x !== a))}>
                   ×
                 </button>
               </span>
@@ -1297,7 +1420,7 @@ function UsersTab() {
         {loading && !data ? (
           <p className="py-10 text-center text-xs text-ink-400">در حال دریافت کاربران…</p>
         ) : error && !data ? (
-          <p className="my-4 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[12px] text-red-700">{error}</p>
+          <p className="my-4 rounded-soft border border-red-100 bg-red-50/70 px-3 py-2 text-[12px] text-danger">{error}</p>
         ) : items.length === 0 ? (
           <EmptyState title="کاربری یافت نشد" description="نخستین کاربر را با دکمهٔ «کاربر جدید» بسازید." icon={<Users size={22} />} />
         ) : (

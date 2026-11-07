@@ -1213,7 +1213,7 @@ export default function Diagrams() {
           </button>
         ) : null}
 
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-50 text-brand-600">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-50 text-accent">
           <Workflow size={15} />
         </span>
         <div className="min-w-0">
@@ -1227,11 +1227,11 @@ export default function Diagrams() {
 
         <div className="ms-auto flex items-center gap-1">
           {canWrite ? (
-            <div className="flex items-center rounded-pill border border-ink-200 bg-white/80 p-0.5" role="group" aria-label="حالت نمایش">
+            <div className="flex items-center rounded-pill border border-ink-200 bg-surface/80 p-0.5" role="group" aria-label="حالت نمایش">
               <button
                 type="button"
                 className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[11px] font-medium transition ${
-                  mode === 'view' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
+                  mode === 'view' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
                 }`}
                 onClick={() => setMode('view')}
                 aria-pressed={mode === 'view'}
@@ -1242,7 +1242,7 @@ export default function Diagrams() {
               <button
                 type="button"
                 className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[11px] font-medium transition ${
-                  mode === 'edit' ? 'bg-white text-brand-700 shadow-soft' : 'text-ink-500'
+                  mode === 'edit' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
                 }`}
                 onClick={() => setMode('edit')}
                 aria-pressed={mode === 'edit'}
@@ -1267,7 +1267,7 @@ export default function Diagrams() {
           </button>
           <button
             type="button"
-            className={`btn-ghost btn-xs ${titleBlock ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
+            className={`btn-ghost btn-xs ${titleBlock ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
             onClick={() => setTitleBlock((value) => !value)}
             aria-pressed={titleBlock}
             title="درج کادر عنوان و متادیتا در تصویر و PDF"
@@ -1304,7 +1304,7 @@ export default function Diagrams() {
             <>
               <button
                 type="button"
-                className={`btn-ghost btn-xs ${autoSave ? '!text-emerald-700' : ''}`}
+                className={`btn-ghost btn-xs ${autoSave ? '!text-success' : ''}`}
                 onClick={() => setAutoSave((value) => !value)}
                 aria-pressed={autoSave}
                 title={autoSave ? 'ذخیرهٔ خودکار روشن است' : 'ذخیرهٔ خودکار خاموش است'}
@@ -1325,13 +1325,13 @@ export default function Diagrams() {
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {detail ? (
             <nav
-              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-ink-200/70 bg-white/80 px-2 py-1 text-[10.5px] text-ink-500"
+              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-ink-200/70 bg-surface/80 px-2 py-1 text-[10.5px] text-ink-500"
               aria-label="مسیر دیاگرام"
               dir="rtl"
             >
               <button
                 type="button"
-                className="shrink-0 rounded px-0.5 text-ink-400 transition hover:text-brand-700"
+                className="shrink-0 rounded px-0.5 text-ink-400 transition hover:text-accent"
                 onClick={() => {
                   setPanelOpen(true);
                   setPanelTab('tree');
@@ -1356,7 +1356,7 @@ export default function Diagrams() {
                     ) : (
                       <button
                         type="button"
-                        className="max-w-[160px] truncate rounded px-0.5 transition hover:text-brand-700"
+                        className="max-w-[160px] truncate rounded px-0.5 transition hover:text-accent"
                         onClick={() => openDiagram(item.id)}
                         title={`باز کردن «${item.name}»`}
                       >
@@ -1371,7 +1371,7 @@ export default function Diagrams() {
           ) : null}
           {trail.length ? (
             <div
-              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-200/70 bg-white/80 px-2 py-1 text-[10.5px] text-ink-500"
+              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-200/70 bg-surface/80 px-2 py-1 text-[10.5px] text-ink-500"
               dir="rtl"
             >
               <button type="button" className="btn-ghost btn-xs" onClick={goBackInTrail} title="بازگشت به دیاگرام قبلی">
@@ -1457,13 +1457,13 @@ export default function Diagrams() {
 
           <div className="min-h-0 flex-1">
             {detailLoading && !detail ? (
-              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-white">
+              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-surface">
                 <PageLoader label="در حال باز کردن دیاگرام…" />
               </div>
             ) : error ? (
-              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-white p-6">
+              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-surface p-6">
                 <div className="text-center">
-                  <AlertCircle size={26} className="mx-auto text-red-500" />
+                  <AlertCircle size={26} className="mx-auto text-danger" />
                   <p className="mt-2 text-[12.5px] text-ink-600">{error}</p>
                   <button type="button" className="btn-ghost btn-xs mt-3" onClick={reload}>
                     تلاش دوباره
@@ -1520,7 +1520,7 @@ export default function Diagrams() {
                 />
               </ReactFlowProvider>
             ) : (
-              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-white p-6">
+              <div className="grid h-full place-items-center rounded-2xl border border-ink-200/70 bg-surface p-6">
                 <EmptyState
                   title="دیاگرامی انتخاب نشده است"
                   description="از پنل کناری یک دیاگرام بسازید یا انتخاب کنید. هر دیاگرام بوم و اجزای مستقل خودش را دارد."
@@ -1541,12 +1541,12 @@ export default function Diagrams() {
           }`}
           aria-hidden={!panelOpen}
         >
-          <div className="flex h-full w-[300px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-white/90 shadow-soft">
+          <div className="flex h-full w-[300px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-surface/90 shadow-soft">
             <div className="flex shrink-0 items-center gap-1 border-b border-ink-100 px-2 py-1.5">
               <button
                 type="button"
                 className={`rounded-lg px-2 py-1 text-[11.5px] font-medium transition ${
-                  panelTab === 'tree' ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50'
+                  panelTab === 'tree' ? 'bg-brand-50 text-accent' : 'text-ink-500 hover:bg-ink-50'
                 }`}
                 onClick={() => setPanelTab('tree')}
               >
@@ -1555,7 +1555,7 @@ export default function Diagrams() {
               <button
                 type="button"
                 className={`rounded-lg px-2 py-1 text-[11.5px] font-medium transition ${
-                  panelTab === 'devices' ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50'
+                  panelTab === 'devices' ? 'bg-brand-50 text-accent' : 'text-ink-500 hover:bg-ink-50'
                 }`}
                 onClick={() => setPanelTab('devices')}
               >
@@ -1564,7 +1564,7 @@ export default function Diagrams() {
               <button
                 type="button"
                 className={`rounded-lg px-2 py-1 text-[11.5px] font-medium transition ${
-                  panelTab === 'inspector' ? 'bg-brand-50 text-brand-700' : 'text-ink-500 hover:bg-ink-50'
+                  panelTab === 'inspector' ? 'bg-brand-50 text-accent' : 'text-ink-500 hover:bg-ink-50'
                 }`}
                 onClick={() => setPanelTab('inspector')}
               >
@@ -1646,7 +1646,7 @@ export default function Diagrams() {
       />
 
       {uploadingImage ? (
-        <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] rounded-pill border border-ink-200 bg-white/95 px-3 py-1.5 text-[11.5px] text-ink-600 shadow-pop">
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] rounded-pill border border-ink-200 bg-surface/95 px-3 py-1.5 text-[11.5px] text-ink-600 shadow-pop">
           در حال بارگذاری تصویر…
         </div>
       ) : null}

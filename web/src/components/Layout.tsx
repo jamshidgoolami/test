@@ -30,6 +30,7 @@ import { APP_VERSION } from '../lib/version';
 import StatusPanel from './StatusPanel';
 import { LiveBadge } from './Freshness';
 import CommandPalette from './CommandPalette';
+import { ThemeIconButton } from './ThemeToggle';
 
 const NAV_ICONS: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {
   '/dashboard': LayoutDashboard,
@@ -118,7 +119,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 right-0 z-[900] shrink-0 border-l border-ink-200/70 bg-white transition-all duration-300 lg:translate-x-0 ${
+        className={`fixed inset-y-0 right-0 z-[900] shrink-0 border-l border-ink-200/70 bg-surface transition-all duration-300 lg:translate-x-0 ${
           collapsed ? 'w-[264px] lg:w-[76px]' : 'w-[264px]'
         } ${open ? 'translate-x-0 shadow-pop' : 'translate-x-full'}`}
       >
@@ -176,11 +177,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {open ? <div className="fixed inset-0 z-[890] bg-ink-900/20 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} /> : null}
+      {open ? <div className="fixed inset-0 z-[890] bg-scrim/20 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} /> : null}
 
       {/* Main */}
       <div className={`transition-[margin] duration-300 ${collapsed ? 'lg:mr-[76px]' : 'lg:mr-[264px]'}`}>
-        <header className="sticky top-0 z-[800] border-b border-ink-200/70 bg-white">
+        <header className="sticky top-0 z-[800] border-b border-ink-200/70 bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 sm:flex-nowrap sm:gap-2 sm:px-4 sm:py-1.5">
             <button type="button" className="btn-ghost btn-xs lg:hidden" onClick={() => setOpen(true)} aria-label="منو">
               <Menu size={16} />
@@ -224,6 +225,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <LiveBadge compact />
             </div>
 
+            <ThemeIconButton />
+
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
@@ -244,11 +247,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <div
                   role="dialog"
                   aria-label="هشدارهای فعال"
-                  className="absolute left-0 mt-2 w-[min(20rem,calc(100vw-2rem))] animate-fade-up rounded-card border border-ink-200 bg-white p-3 shadow-pop"
+                  className="absolute left-0 mt-2 w-[min(20rem,calc(100vw-2rem))] animate-fade-up rounded-card border border-ink-200 bg-surface p-3 shadow-pop"
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-semibold text-ink-700">هشدارهای فعال</p>
-                    <Link to="/alerts" className="text-[11px] text-brand-600">
+                    <Link to="/alerts" className="text-[11px] text-accent">
                       مشاهده همه
                     </Link>
                   </div>

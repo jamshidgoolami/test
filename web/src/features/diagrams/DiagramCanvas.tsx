@@ -83,7 +83,7 @@ function CommentBadge({ comments }: { comments?: DiagramComment[] }) {
   if (!count || exporting) return null;
   return (
     <span
-      className="pointer-events-none absolute -start-1.5 -top-1.5 z-20 inline-flex items-center gap-0.5 rounded-pill border border-brand-200 bg-white/95 px-1 py-0.5 text-[9px] font-semibold text-brand-700 shadow-xs"
+      className="pointer-events-none absolute -start-1.5 -top-1.5 z-20 inline-flex items-center gap-0.5 rounded-pill border border-brand-200 bg-surface/95 px-1 py-0.5 text-[9px] font-semibold text-accent shadow-xs"
       title={`${faDigits(count)} کامنت`}
     >
       <MessageSquare size={9} />
@@ -152,9 +152,9 @@ function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
       <SideHandles color={color} />
       <CommentBadge comments={data.comments} />
       <div
-        className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border bg-white px-2 py-1 text-center shadow-soft transition-shadow"
+        className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border bg-surface px-2 py-1 text-center shadow-soft transition-shadow"
         style={{
-          borderColor: active ? color : ring ? `${ring}99` : '#e2e8f0',
+          borderColor: active ? color : ring ? `${ring}99` : 'rgb(var(--nw-ink-200))',
           boxShadow: active
             ? `0 0 0 2px ${color}33`
             : ring
@@ -224,9 +224,9 @@ function ImageNode({ data, selected }: NodeProps<DiagramFlowNode>) {
       />
       <CommentBadge comments={data.comments} />
       <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-white shadow-soft"
+        className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-surface shadow-soft"
         style={{
-          borderColor: active ? '#0ea5e9' : '#e2e8f0',
+          borderColor: active ? '#0ea5e9' : 'rgb(var(--nw-ink-200))',
           boxShadow: active ? '0 0 0 2px #0ea5e933' : undefined,
         }}
       >
@@ -294,7 +294,7 @@ function GroupNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
           {!exporting ? (
             <button
               type="button"
-              className="nodrag nopan ms-auto grid h-5 w-5 shrink-0 place-items-center rounded-md text-ink-500 transition hover:bg-white/80 hover:text-ink-800"
+              className="nodrag nopan ms-auto grid h-5 w-5 shrink-0 place-items-center rounded-md text-ink-500 transition hover:bg-surface/80 hover:text-ink-800"
               onClick={(event) => {
                 event.stopPropagation();
                 onToggleGroup(id);
@@ -408,7 +408,7 @@ function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
       <SideHandles color={color} />
       <CommentBadge comments={data.comments} />
       <div
-        className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 border-dashed bg-white px-2 py-1 text-center shadow-soft"
+        className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 border-dashed bg-surface px-2 py-1 text-center shadow-soft"
         style={{ borderColor: `${color}99`, boxShadow: active ? `0 0 0 2px ${color}33` : undefined }}
         onDoubleClick={() => {
           if (targetId && !exporting) onOpenDiagram(targetId);
@@ -464,7 +464,7 @@ function ConnectionEdge({
         path={path}
         interactionWidth={22}
         style={{
-          stroke: '#ffffff',
+          stroke: 'rgb(var(--nw-surface))',
           strokeWidth: (active ? meta.width + 1.5 : meta.width) + 3.5,
           opacity: 0.94,
         }}
@@ -503,7 +503,7 @@ function ConnectionEdge({
             dir="rtl"
           >
             <span
-              className="inline-flex items-center gap-1 whitespace-nowrap rounded-pill border bg-white/95 px-1.5 py-0.5 text-[9.5px] font-medium shadow-xs"
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-pill border bg-surface/95 px-1.5 py-0.5 text-[9.5px] font-medium shadow-xs"
               style={{ borderColor: `${meta.color}66`, color: meta.color }}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
@@ -871,7 +871,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
     >
       <div
         ref={hostRef}
-        className={`${fullscreen ? 'fixed inset-0 z-[1300]' : 'relative'} h-full w-full overflow-hidden bg-white ${
+        className={`${fullscreen ? 'fixed inset-0 z-[1300]' : 'relative'} h-full w-full overflow-hidden bg-surface ${
           fullscreen ? 'rounded-none border-0' : 'rounded-2xl border border-ink-200/70'
         }`}
         dir="ltr"
@@ -921,11 +921,11 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
           fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
           onlyRenderVisibleElements={!exporting}
         >
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color="#cbd5e1" />
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color="rgb(var(--nw-ink-300))" />
           <Controls position="bottom-left" showInteractive={false} />
           <div className="absolute left-2.5 top-2.5 z-30" dir="rtl">
             {minimapOpen ? (
-              <div className="w-[168px] overflow-hidden rounded-xl border border-ink-200 bg-white/95 shadow-soft">
+              <div className="w-[168px] overflow-hidden rounded-xl border border-ink-200 bg-surface/95 shadow-soft">
                 <div className="flex items-center justify-between border-b border-ink-100 px-2 py-1">
                   <span className="text-[10px] font-medium text-ink-500">مینی‌مپ</span>
                   <button
@@ -948,7 +948,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
                     const color = typeof node.data?.color === 'string' ? node.data.color : null;
                     return node.type === 'group' ? '#bfdbfe' : color ?? '#94a3b8';
                   }}
-                  nodeStrokeColor="#ffffff"
+                  nodeStrokeColor="rgb(var(--nw-surface))"
                   nodeStrokeWidth={3}
                   nodeBorderRadius={5}
                   maskColor="rgba(248, 250, 252, 0.55)"
@@ -958,7 +958,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
               <button
                 type="button"
                 onClick={() => setMinimapOpen(true)}
-                className="grid h-8 w-8 place-items-center rounded-lg border border-ink-200 bg-white/95 text-ink-500 shadow-soft transition hover:bg-white hover:text-ink-800"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-ink-200 bg-surface/95 text-ink-500 shadow-soft transition hover:bg-surface hover:text-ink-800"
                 title="باز کردن مینی‌مپ"
                 aria-label="باز کردن مینی‌مپ"
                 aria-expanded={false}
@@ -971,7 +971,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
 
         <button
           type="button"
-          className="absolute right-2.5 top-2.5 z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ink-200 bg-white/95 text-ink-500 shadow-soft transition hover:bg-white hover:text-ink-800"
+          className="absolute right-2.5 top-2.5 z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ink-200 bg-surface/95 text-ink-500 shadow-soft transition hover:bg-surface hover:text-ink-800"
           onClick={() => void toggleFullscreen()}
           title={fullscreen ? 'خروج از تمام‌صفحه (Esc)' : 'نمایش تمام‌صفحه'}
           aria-label={fullscreen ? 'خروج از تمام‌صفحه' : 'نمایش تمام‌صفحه'}
@@ -1008,7 +1008,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
 
         {pendingHint ? (
           <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2" dir="rtl">
-            <div className="pointer-events-auto flex items-center gap-2 rounded-pill border border-brand-200 bg-white/95 px-3 py-1.5 text-[11.5px] font-medium text-brand-700 shadow-pop">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-pill border border-brand-200 bg-surface/95 px-3 py-1.5 text-[11.5px] font-medium text-accent shadow-pop">
               <Link2 size={13} />
               {pendingHint}
               <button type="button" className="btn-ghost btn-xs" onClick={onCancelPending}>
@@ -1020,7 +1020,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
 
         {!nodes.length ? (
           <div className="pointer-events-none absolute inset-0 grid place-items-center p-6" dir="rtl">
-            <div className="max-w-sm rounded-2xl border border-dashed border-ink-200 bg-white/80 px-6 py-5 text-center backdrop-blur">
+            <div className="max-w-sm rounded-2xl border border-dashed border-ink-200 bg-surface/80 px-6 py-5 text-center backdrop-blur">
               <p className="text-sm font-semibold text-ink-700">بوم این دیاگرام خالی است</p>
               <p className="mt-1 text-[11.5px] leading-5 text-ink-500">
                 {editing
@@ -1032,7 +1032,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
         ) : null}
 
         {editing && connectable ? (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-pill border border-ink-200 bg-white/95 px-3 py-1 text-[10.5px] text-ink-500 shadow-soft" dir="rtl">
+          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-pill border border-ink-200 bg-surface/95 px-3 py-1 text-[10.5px] text-ink-500 shadow-soft" dir="rtl">
             از نقطهٔ اتصال یک جزء بکشید و روی نقطهٔ اتصال جزء دیگر رها کنید.
           </div>
         ) : null}

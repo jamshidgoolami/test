@@ -248,7 +248,7 @@ export default function Dashboard() {
                 <p className="py-8 text-center text-xs text-ink-400">هیچ تجهیز دارای افت کیفیت یافت نشد</p>
               ) : (
                 degraded.map((d) => (
-                  <Link key={d.id} to={`/devices/${d.id}`} className="flex items-center justify-between gap-3 rounded-soft border border-ink-100 bg-white/70 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40">
+                  <Link key={d.id} to={`/devices/${d.id}`} className="flex items-center justify-between gap-3 rounded-soft border border-ink-100 bg-surface/70 px-3 py-2 transition hover:border-brand-200 hover:bg-brand-50/40">
                     <span className="min-w-0">
                       <span className="block truncate text-[12.5px] font-medium text-ink-700">{d.name}</span>
                       <span className="num block text-[10.5px] text-ink-400">{d.ip}</span>
@@ -407,7 +407,7 @@ export default function Dashboard() {
                       </span>
                     </span>
                     <span className="shrink-0 text-left">
-                      <span className="num block text-[11.5px] font-semibold text-red-600">{fmtDuration(o.durationSec)}</span>
+                      <span className="num block text-[11.5px] font-semibold text-danger">{fmtDuration(o.durationSec)}</span>
                       <span className="block text-[10px] text-ink-400">از {fmtRelative(o.startedAt)}</span>
                     </span>
                   </Link>
@@ -445,7 +445,7 @@ export default function Dashboard() {
                 {(h) => <LatencyAreaChart points={offlineTrend.map((o) => ({ t: o.t, rtt: null }))} height={h} tzOffset={tzOffset} />}
               </ChartFill>
             )}
-            <div className="mt-3 rounded-soft border border-sun-100 bg-sun-50/70 p-3 text-[11px] text-sun-800">
+            <div className="mt-3 rounded-soft border border-sun-100 bg-sun-50/70 p-3 text-[11px] text-warning">
               آستانه مجاز تأخیر: <span className="num font-semibold">{faDigits(settings?.latency_threshold ?? 150)} ms</span> — آستانه افت بسته:{' '}
               <span className="num font-semibold">{faDigits(settings?.loss_threshold ?? 10)}٪</span>
             </div>
@@ -477,7 +477,7 @@ export default function Dashboard() {
           <p className="mt-1 text-xs text-ink-500">
             آخرین به‌روزرسانی {fmtRelative(updatedAt ?? data.generatedAt)} · {faDigits(health.checks24h)} بررسی در ۲۴ ساعت گذشته · به وقت{' '}
             {fmtTimezone(tzOffset)}
-            {error ? <span className="text-sun-700"> · نمایش آخرین دادهٔ موفق (خطا: {error})</span> : null}
+            {error ? <span className="text-warning"> · نمایش آخرین دادهٔ موفق (خطا: {error})</span> : null}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -504,7 +504,7 @@ export default function Dashboard() {
       <DataFreshness updatedAt={updatedAt ?? data.generatedAt} intervalMs={25000} onRefresh={refresh} />
 
       {editMode ? (
-        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-brand-800">
+        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/70 p-3 text-[12px] text-accent">
           حالت شخصی‌سازی فعال است: ویجت‌ها را بکشید و روی هم رها کنید تا جابه‌جا شوند، اندازه انتخاب کنید یا حذف/افزوده کنید. برای ارتفاع دلخواه، لبهٔ پایین هر ویجت را به بالا یا پایین بکشید.
         </div>
       ) : null}
@@ -644,8 +644,8 @@ function BreakdownCard({ dimension, rows }: { dimension: BreakdownDimension; row
                       <span className="h-full bg-emerald-500" style={{ width: `${upShare}%` }} />
                       <span className="h-full bg-red-500" style={{ width: `${downShare}%` }} />
                     </span>
-                    <span className="num shrink-0 text-[10px] font-semibold text-emerald-600">{fmtNumber(row.up)} وصل</span>
-                    <span className="num shrink-0 text-[10px] font-semibold text-red-500">{fmtNumber(row.down)} قطع</span>
+                    <span className="num shrink-0 text-[10px] font-semibold text-success">{fmtNumber(row.up)} وصل</span>
+                    <span className="num shrink-0 text-[10px] font-semibold text-danger">{fmtNumber(row.down)} قطع</span>
                   </span>
                 </button>
               );
@@ -754,8 +754,8 @@ function AlertsCard({ alerts }: { alerts: DashboardData['recentAlerts'] }) {
             aria-pressed={severity === filter.key}
             className={`rounded-pill border px-2 py-0.5 text-[10.5px] transition ${
               severity === filter.key
-                ? 'border-brand-300 bg-brand-50 text-brand-700'
-                : 'border-ink-200 bg-white/70 text-ink-500 hover:text-ink-700'
+                ? 'border-brand-300 bg-brand-50 text-accent'
+                : 'border-ink-200 bg-surface/70 text-ink-500 hover:text-ink-700'
             }`}
           >
             {filter.label}
@@ -792,8 +792,8 @@ function AlertsCard({ alerts }: { alerts: DashboardData['recentAlerts'] }) {
 
 function QuickLink({ to, title, desc }: { to: string; title: string; desc: string }) {
   return (
-    <Link to={to} className="group flex h-full flex-col justify-center rounded-soft border border-ink-200/70 bg-white/70 p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft">
-      <p className="text-[13px] font-semibold text-ink-700 group-hover:text-brand-700">{title}</p>
+    <Link to={to} className="group flex h-full flex-col justify-center rounded-soft border border-ink-200/70 bg-surface/70 p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-soft">
+      <p className="text-[13px] font-semibold text-ink-700 group-hover:text-accent">{title}</p>
       <p className="mt-1 text-[11.5px] leading-relaxed text-ink-500">{desc}</p>
     </Link>
   );

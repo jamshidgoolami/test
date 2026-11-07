@@ -132,7 +132,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[1150] flex items-start justify-center bg-ink-900/30 px-3 pt-[10vh] sm:pt-[14vh]"
+      className="fixed inset-0 z-[1150] flex items-start justify-center bg-scrim/30 px-3 pt-[10vh] sm:pt-[14vh]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -141,7 +141,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         role="dialog"
         aria-modal="true"
         aria-label="جست‌وجوی سراسری"
-        className="w-full max-w-2xl overflow-hidden rounded-card border border-ink-200 bg-white shadow-pop"
+        className="w-full max-w-2xl overflow-hidden rounded-card border border-ink-200 bg-surface shadow-pop"
         onKeyDown={handleKeyDown}
       >
         <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-3">
@@ -177,10 +177,10 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 onMouseEnter={() => setActive(index)}
                 onClick={() => go(result)}
                 className={`flex w-full items-center gap-3 rounded-soft px-3 py-2.5 text-right transition ${
-                  index === active ? 'bg-brand-50 text-brand-800' : 'text-ink-700 hover:bg-ink-50'
+                  index === active ? 'bg-brand-50 text-accent' : 'text-ink-700 hover:bg-ink-50'
                 }`}
               >
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-ink-100 bg-white text-ink-500">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-ink-100 bg-surface text-ink-500">
                   {result.kind === 'device' ? (
                     result.status === 'offline' ? <WifiOff size={14} /> : <Server size={14} />
                   ) : result.kind === 'action' ? (

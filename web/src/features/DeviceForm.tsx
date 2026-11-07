@@ -231,7 +231,7 @@ export default function DeviceForm({
       subtitle="اطلاعات تجهیز را وارد کنید. فیلدهای ستاره‌دار الزامی هستند."
       footer={
         <>
-          {error ? <p className="me-auto text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
           <button type="button" className="btn-ghost" onClick={onClose}>
             انصراف
           </button>
@@ -272,7 +272,7 @@ export default function DeviceForm({
             </select>
           </Field>
           <Field label="عضویت در گروه" className="sm:col-span-2" hint="هر تجهیز فقط عضو یک گروه می‌تواند باشد؛ فیلتر و گزارش گروه از همین عضویت استفاده می‌کند.">
-            <div className="flex max-h-32 flex-wrap gap-2 overflow-auto rounded-soft border border-ink-200 bg-white/80 p-2.5">
+            <div className="flex max-h-32 flex-wrap gap-2 overflow-auto rounded-soft border border-ink-200 bg-surface/80 p-2.5">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-pill border border-ink-200 px-2.5 py-1 text-[11px] text-ink-600 hover:border-brand-200">
                 <input
                   type="radio"
@@ -349,7 +349,7 @@ export default function DeviceForm({
           <Field label="توضیحات" className="sm:col-span-2">
             <textarea className="field min-h-[76px]" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </Field>
-          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2 rounded-soft border border-ink-100 bg-white/70 p-3">
+          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2 rounded-soft border border-ink-100 bg-surface/70 p-3">
             <p className="sm:col-span-2 text-[12px] font-semibold text-ink-500">وضعیت پایش</p>
             <Toggle checked={form.enabled} onChange={(v) => set('enabled', v)} label="تجهیز فعال است" hint="تجهیزات غیرفعال در گزارش‌ها و داشبورد لحاظ نمی‌شوند" />
             <Toggle
@@ -364,7 +364,7 @@ export default function DeviceForm({
 
       {tab === 'access' ? (
         <div className="space-y-4">
-          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
             نام کاربری و رمز عبور با AES-256-GCM رمزنگاری می‌شوند و در فهرست تجهیزات، خروجی فایل یا لاگ نمایش داده نمی‌شوند.
             رمز فعلی برای ویرایش خوانده نمی‌شود؛ برای تغییر، رمز تازه را وارد کنید و برای حذف، گزینهٔ حذف رمز را بزنید.
           </p>
@@ -398,7 +398,7 @@ export default function DeviceForm({
             </Field>
           </div>
           {device?.hasAccessPassword ? (
-            <label className="flex cursor-pointer items-center gap-2 rounded-soft border border-ink-200 bg-white/80 px-3 py-2 text-[12px] text-ink-600">
+            <label className="flex cursor-pointer items-center gap-2 rounded-soft border border-ink-200 bg-surface/80 px-3 py-2 text-[12px] text-ink-600">
               <input
                 type="checkbox"
                 className="accent-red-600"
@@ -416,7 +416,7 @@ export default function DeviceForm({
 
       {tab === 'monitoring' ? (
         <div className="space-y-4">
-          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-brand-800">
+          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
             در صورت خالی گذاشتن هر فیلد، مقدار عمومی تنظیمات برنامه استفاده می‌شود. مقادیر فعلی عمومی: بازه{' '}
             <span className="num font-semibold">{settings?.ping_interval ?? 30}</span> ثانیه، زمان انتظار{' '}
             <span className="num font-semibold">{settings?.timeout_ms ?? 1200}</span> میلی‌ثانیه، Packet{' '}
@@ -485,14 +485,14 @@ function TagPicker({
     setDraft('');
   };
   return (
-    <div className="rounded-soft border border-ink-200 bg-white/90 p-2.5">
+    <div className="rounded-soft border border-ink-200 bg-surface/90 p-2.5">
       <div className="mb-2 flex flex-wrap gap-1.5">
         {value.length === 0 ? <span className="text-[11px] text-ink-400">تگی انتخاب نشده است</span> : null}
         {value.map((t) => (
-          <span key={t} className="chip border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] text-brand-700">
+          <span key={t} className="chip border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] text-accent">
             <TagIcon size={11} />
             {t}
-            <button type="button" className="text-brand-400 hover:text-red-500" onClick={() => onChange(value.filter((x) => x !== t))}>
+            <button type="button" className="text-brand-400 hover:text-danger" onClick={() => onChange(value.filter((x) => x !== t))}>
               ×
             </button>
           </span>

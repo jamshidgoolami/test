@@ -69,7 +69,7 @@ export default function DiagramTree({
       <li key={node.id}>
         <div
           className={`group flex items-center gap-1 rounded-lg pr-1 transition ${
-            active ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-100' : 'text-ink-600 hover:bg-ink-50'
+            active ? 'bg-brand-50 text-accent ring-1 ring-brand-100' : 'text-ink-600 hover:bg-ink-50'
           }`}
           style={{ paddingInlineStart: 4 + depth * 12 }}
         >
@@ -87,18 +87,18 @@ export default function DiagramTree({
             className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-right"
             title={node.name}
           >
-            <Workflow size={13} className={active ? 'text-brand-600' : 'text-ink-400'} />
+            <Workflow size={13} className={active ? 'text-accent' : 'text-ink-400'} />
             <span className={`min-w-0 flex-1 truncate text-[12px] ${active ? 'font-semibold' : 'font-medium'}`}>
               {node.name}
             </span>
-            <span className="num shrink-0 rounded bg-white/70 px-1 text-[9px] text-ink-400 ring-1 ring-ink-100">
+            <span className="num shrink-0 rounded bg-surface/70 px-1 text-[9px] text-ink-400 ring-1 ring-ink-100">
               {faDigits(node.nodeCount)}
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition group-hover:opacity-100">
             <button
               type="button"
-              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-white hover:text-brand-600"
+              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-surface hover:text-accent"
               onClick={() => onCreate(node.id)}
               title="افزودن زیرمجموعه"
               aria-label="افزودن زیرمجموعه"
@@ -107,7 +107,7 @@ export default function DiagramTree({
             </button>
             <button
               type="button"
-              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-white hover:text-ink-700"
+              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-surface hover:text-ink-700"
               onClick={() => onEdit(node)}
               title="ویرایش نام"
               aria-label="ویرایش نام"
@@ -116,7 +116,7 @@ export default function DiagramTree({
             </button>
             <button
               type="button"
-              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-white hover:text-red-600"
+              className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-surface hover:text-danger"
               onClick={() => onDelete(node)}
               title="حذف دیاگرام"
               aria-label="حذف دیاگرام"

@@ -145,6 +145,106 @@ router.delete('/groups/:id', (req, res) => {
   res.json({ deleted });
 });
 
+/* ------------------------------ ایستگاه‌ها ------------------------------ */
+
+/**
+ * ایستگاه: چند تجهیز هم‌مکان زیرمجموعهٔ یک گروه.
+ * فهرست با تعداد تجهیزات عضو برمی‌گردد تا فهرست نقشه بدون پرس‌وجوی اضافه
+ * زیرمجموعهٔ هر گروه را بسازد.
+ */
+router.get('/sites', (_req, res) => {
+  res.json({
+    items: db
+      .prepare(
+        `SELECT s.*, g.name AS group_name, COUNT(d.id) AS device_count
+         FROM sites s
+         LEFT JOIN groups g ON g.id = s.group_id
+         LEFT JOIN devices d ON d.site_id = s.id
+         GROUP BY s.id
+         ORDER BY s.name`
+      )
+      .all(),
+  });
+});
+
+/** شناسه‌های معتبر و یکتای تجهیزات یک ایستگاه؛ ورودی نامعتبر خطای کاربر است. */
+function siteDevices(raw) {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) return { error: 'حداقل یک تجهیز برای ایستگاه انتخاب کنید' };
+  if (ids.length > 1000) return { error: 'تعداد تجهیزات یک ایستگاه بیش از حد مجاز است' };
+  const found = db
+    .prepare(`SELECT id FROM devices WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .all(...ids).length;
+  if (found !== ids.length) return { error: 'برخی تجهیزات انتخاب‌شده یافت نشدند' };
+  return { ids };
+}
+
+router.post('/sites', (req, res) => {
+  const name = text(req.body?.name, 120);
+  if (!name) return res.status(400).json({ error: 'نام ایستگاه الزامی است' });
+  const groupId = req.body?.group_id ? Number(req.body.group_id) : null;
+  if (groupId && !db.prepare('SELECT id FROM groups WHERE id=?').get(groupId)) {
+    return res.status(400).json({ error: 'گروه انتخاب‌شده یافت نشد' });
+  }
+  const chosen = siteDevices(req.body?.device_ids);
+  if (chosen.error) return res.status(400).json({ error: chosen.error });
+  const siteId = transaction(
+    () => {
+      const r = db.prepare('INSERT INTO sites(name, group_id, created_at) VALUES (?,?,?)').run(name, groupId, Date.now());
+      const id = Number(r.lastInsertRowid);
+      const assign = db.prepare('UPDATE devices SET site_id=?, updated_at=? WHERE id=?');
+      for (const deviceId of chosen.ids) assign.run(id, Date.now(), deviceId);
+      return id;
+    },
+    { label: 'inventory.site.create' }
+  );
+  res.status(201).json({
+    ...db
+      .prepare('SELECT s.*, g.name AS group_name FROM sites s LEFT JOIN groups g ON g.id = s.group_id WHERE s.id=?')
+      .get(siteId),
+    device_count: chosen.ids.length,
+  });
+});
+
+router.put('/sites/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM sites WHERE id=?').get(id);
+  if (!existing) return res.status(404).json({ error: 'ایستگاه یافت نشد' });
+  const name = req.body?.name === undefined ? existing.name : text(req.body.name, 120) || existing.name;
+  const groupId =
+    req.body?.group_id === undefined ? existing.group_id : req.body.group_id ? Number(req.body.group_id) : null;
+  if (groupId && !db.prepare('SELECT id FROM groups WHERE id=?').get(groupId)) {
+    return res.status(400).json({ error: 'گروه انتخاب‌شده یافت نشد' });
+  }
+  const chosen = req.body?.device_ids === undefined ? null : siteDevices(req.body.device_ids);
+  if (chosen?.error) return res.status(400).json({ error: chosen.error });
+  transaction(
+    () => {
+      db.prepare('UPDATE sites SET name=?, group_id=? WHERE id=?').run(name, groupId, id);
+      if (chosen) {
+        db.prepare('UPDATE devices SET site_id=NULL WHERE site_id=?').run(id);
+        const assign = db.prepare('UPDATE devices SET site_id=?, updated_at=? WHERE id=?');
+        for (const deviceId of chosen.ids) assign.run(id, Date.now(), deviceId);
+      }
+    },
+    { label: 'inventory.site.update' }
+  );
+  res.json({ updated: 1 });
+});
+
+router.delete('/sites/:id', (req, res) => {
+  const id = Number(req.params.id);
+  // عضویت تجهیزات اول خالی می‌شود تا ایستگاه بدون تجهیز یتیم حذف شود.
+  const deleted = transaction(
+    () => {
+      db.prepare('UPDATE devices SET site_id=NULL WHERE site_id=?').run(id);
+      return db.prepare('DELETE FROM sites WHERE id=?').run(id).changes;
+    },
+    { label: 'inventory.site.delete' }
+  );
+  res.json({ deleted });
+});
+
 /* ------------------------------- تگ‌ها ------------------------------- */
 
 router.get('/tags', (_req, res) => {

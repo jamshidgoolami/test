@@ -372,23 +372,143 @@ router.post('/import/commit', upload.single('file'), async (req, res) => {
   }
 });
 
-/** خروجی مختصات جغرافیایی */
+/**
+ * خروجی مختصات جغرافیایی.
+ *
+ * با `markers=1` علامت‌های نقشه هم در همان فایل می‌آیند و ستون «نوع رکورد»
+ * تجهیز را از علامت جدا می‌کند؛ پارامترهای `group` و `types` فهرست را به گروه
+ * تجهیزات و انواع علامت انتخاب‌شده در دیالوگ صفحهٔ نقشه محدود می‌کنند.
+ */
 router.get('/export/geo', async (req, res) => {
   const format = String(req.query.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv';
-  const rows = db
-    .prepare("SELECT name, ip, device_type AS type, location, latitude, longitude, status FROM devices WHERE latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY name")
-    .all()
-    .map((r) => ({ 'نام تجهیز': r.name, 'آدرس IP': r.ip, 'نوع': r.type, 'موقعیت': r.location, 'عرض جغرافیایی': r.latitude, 'طول جغرافیایی': r.longitude, 'وضعیت': r.status }));
-  const headers = Object.keys(
-    rows[0] || {
-      'نام تجهیز': '',
-      'آدرس IP': '',
-      'نوع': '',
-      'موقعیت': '',
-      'عرض جغرافیایی': '',
-      'طول جغرافیایی': '',
-      'وضعیت': '',
+  // انتخاب چندگروهی دیالوگ نقشه: `groups` فهرست نام گروه‌ها با کاما است و
+  // `__none_selected__` یعنی کاربر هیچ گروهی را انتخاب نکرده است. پارامتر
+  // تک‌گروهی `group` برای سازگاری با فراخوانی‌های قدیمی حفظ می‌شود.
+  const group = String(req.query.group || '').trim();
+  const hasGroupsParam = req.query.groups !== undefined;
+  const groups = String(req.query.groups || '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter((g) => g && g !== '__none_selected__')
+    .slice(0, 200);
+  const includeMarkers = String(req.query.markers || '') === '1';
+  const typeIds = String(req.query.types || '')
+    .split(',')
+    .map((v) => Number(v))
+    .filter((v) => Number.isInteger(v) && v > 0);
+
+  const where = ['d.latitude IS NOT NULL', 'd.longitude IS NOT NULL'];
+  const params = [];
+  if (hasGroupsParam && !groups.length) {
+    // هیچ گروهی انتخاب نشده است؛ فایل فقط علامت‌ها را در بر می‌گیرد.
+    where.push('0 = 1');
+  } else if (groups.length) {
+    const named = groups.filter((g) => g !== '__none__');
+    const clauses = [];
+    if (named.length) {
+      const ph = named.map(() => '?').join(',');
+      clauses.push(
+        `g.name IN (${ph})`,
+        `EXISTS (
+           SELECT 1 FROM device_group_members m JOIN groups mg ON mg.id = m.group_id
+           WHERE m.device_id = d.id AND mg.name IN (${ph}))`
+      );
+      params.push(...named, ...named);
     }
+    if (groups.includes('__none__')) {
+      clauses.push(
+        '(d.group_id IS NULL AND NOT EXISTS (SELECT 1 FROM device_group_members m WHERE m.device_id = d.id))'
+      );
+    }
+    where.push(`(${clauses.join(' OR ')})`);
+  } else if (group === '__none__') {
+    // بدون گروه: نه ستون قدیمی group_id و نه عضویت چندگروهی
+    where.push('d.group_id IS NULL AND NOT EXISTS (SELECT 1 FROM device_group_members m WHERE m.device_id = d.id)');
+  } else if (group) {
+    where.push(
+      `(g.name = ? OR EXISTS (
+         SELECT 1 FROM device_group_members m JOIN groups mg ON mg.id = m.group_id
+         WHERE m.device_id = d.id AND mg.name = ?))`
+    );
+    params.push(group, group);
+  }
+  const deviceRows = db
+    .prepare(
+      `SELECT d.name, d.ip, d.device_type AS type, d.location, d.latitude, d.longitude, d.status, COALESCE(g.name,'') AS group_name
+       FROM devices d LEFT JOIN groups g ON g.id = d.group_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY d.name`
+    )
+    .all(...params);
+
+  const markerRows = includeMarkers
+    ? db
+        .prepare(
+          `SELECT m.name, m.latitude, m.longitude, m.notes, COALESCE(t.name,'') AS type_name
+           FROM map_markers m LEFT JOIN marker_types t ON t.id = m.type_id
+           ${typeIds.length ? `WHERE m.type_id IN (${typeIds.map(() => '?').join(',')})` : ''}
+           ORDER BY m.name`
+        )
+        .all(...typeIds)
+    : [];
+
+  const rows = includeMarkers
+    ? [
+        ...deviceRows.map((r) => ({
+          'نوع رکورد': 'تجهیز',
+          'نام': r.name,
+          'آدرس IP': r.ip,
+          'نوع': r.type,
+          'گروه': r.group_name,
+          'موقعیت': r.location,
+          'عرض جغرافیایی': r.latitude,
+          'طول جغرافیایی': r.longitude,
+          'وضعیت': r.status,
+        })),
+        ...markerRows.map((r) => ({
+          'نوع رکورد': 'علامت',
+          'نام': r.name,
+          'آدرس IP': '',
+          'نوع': r.type_name,
+          'گروه': '',
+          'موقعیت': r.notes,
+          'عرض جغرافیایی': r.latitude,
+          'طول جغرافیایی': r.longitude,
+          'وضعیت': '',
+        })),
+      ]
+    : deviceRows.map((r) => ({
+        'نام تجهیز': r.name,
+        'آدرس IP': r.ip,
+        'نوع': r.type,
+        'موقعیت': r.location,
+        'عرض جغرافیایی': r.latitude,
+        'طول جغرافیایی': r.longitude,
+        'وضعیت': r.status,
+      }));
+  const headers = Object.keys(
+    rows[0] ||
+      (includeMarkers
+        ? {
+            'نوع رکورد': '',
+            'نام': '',
+            'آدرس IP': '',
+            'نوع': '',
+            'گروه': '',
+            'موقعیت': '',
+            'عرض جغرافیایی': '',
+            'طول جغرافیایی': '',
+            'وضعیت': '',
+          }
+        : {
+            'نام تجهیز': '',
+            'آدرس IP': '',
+            'نوع': '',
+            'موقعیت': '',
+            'عرض جغرافیایی': '',
+            'طول جغرافیایی': '',
+            'وضعیت': '',
+          })
   ).map((k) => [k, k]);
   const result = await runJob('export', { rows, headers, format }, { timeoutMs: 120000 });
   res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -677,7 +797,7 @@ router.get('/map', (req, res) => {
   const withGeoWhere = buildDeviceWhere(withGeoFilters);
   // تعداد کل مستقل از وجود مختصات است
   const totalWhere = buildDeviceWhere({ ...withGeoFilters, geo: '' });
-  const join = 'FROM devices d LEFT JOIN groups g ON g.id = d.group_id';
+  const join = 'FROM devices d LEFT JOIN groups g ON g.id = d.group_id LEFT JOIN sites s ON s.id = d.site_id';
   const total = db.prepare(`SELECT COUNT(*) AS c ${join} ${totalWhere.clause}`).get(...totalWhere.params).c;
   const withGeo = db.prepare(`SELECT COUNT(*) AS c ${join} ${withGeoWhere.clause}`).get(...withGeoWhere.params).c;
 
@@ -711,7 +831,8 @@ router.get('/map', (req, res) => {
   const rows = db
     .prepare(
       `SELECT d.id, d.name, d.ip, d.status, d.latitude, d.longitude, d.location,
-              d.device_type, d.last_rtt_ms, d.priority, d.map_layer_id, g.name AS group_name
+              d.device_type, d.last_rtt_ms, d.priority, d.map_layer_id, d.site_id, s.name AS site_name,
+              g.name AS group_name
        ${join}
        ${includeMissing ? totalWhere.clause : withGeoWhere.clause}${bboxSql}
        ORDER BY CASE d.status WHEN 'offline' THEN 0 WHEN 'warning' THEN 1 WHEN 'maintenance' THEN 2 ELSE 3 END, d.name
@@ -729,6 +850,8 @@ router.get('/map', (req, res) => {
     longitude: r.longitude,
     deviceType: r.device_type,
     groupName: r.group_name || null,
+    siteId: r.site_id ?? null,
+    siteName: r.site_name || null,
     lastRtt: r.last_rtt_ms,
     priority: r.priority,
     location: r.location || '',

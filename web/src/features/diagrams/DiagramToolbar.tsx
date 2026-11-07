@@ -109,7 +109,7 @@ function ToolButton({
       aria-label={label}
       aria-pressed={!!active}
       disabled={disabled}
-      className={`btn-ghost btn-xs ${active ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
+      className={`btn-ghost btn-xs ${active ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
     >
       {icon}
       <span className="whitespace-nowrap">{label}</span>
@@ -135,7 +135,7 @@ function IconButton({
       title={title}
       aria-label={title}
       disabled={disabled}
-      className="grid h-7 w-7 place-items-center rounded-lg border border-transparent text-ink-500 transition hover:border-ink-200 hover:bg-white hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid h-7 w-7 place-items-center rounded-lg border border-transparent text-ink-500 transition hover:border-ink-200 hover:bg-surface hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {icon}
     </button>
@@ -200,7 +200,7 @@ function ConnectionKindPicker({
           <div
             role="listbox"
             aria-label="نوع ارتباط"
-            className="absolute end-0 top-full z-40 mt-1 w-44 rounded-xl border border-ink-200 bg-white p-1 shadow-pop"
+            className="absolute end-0 top-full z-40 mt-1 w-44 rounded-xl border border-ink-200 bg-surface p-1 shadow-pop"
           >
             <p className="px-2 py-1 text-[10px] font-semibold text-ink-400">
               نوع ارتباط بعدی را انتخاب کنید
@@ -216,7 +216,7 @@ function ConnectionKindPicker({
                   setOpen(false);
                 }}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11.5px] transition hover:bg-ink-50 ${
-                  type.kind === kind ? 'bg-brand-50 text-brand-700' : 'text-ink-600'
+                  type.kind === kind ? 'bg-brand-50 text-accent' : 'text-ink-600'
                 }`}
               >
                 <LineSample kind={type.kind} />
@@ -283,7 +283,7 @@ export default function DiagramToolbar({
     <div
       role="toolbar"
       aria-label="ابزارهای دیاگرام"
-      className="relative z-30 flex flex-wrap items-center gap-1 rounded-xl border border-ink-200/70 bg-white px-1.5 py-1 shadow-soft"
+      className="relative z-30 flex flex-wrap items-center gap-1 rounded-xl border border-ink-200/70 bg-surface px-1.5 py-1 shadow-soft"
       dir="rtl"
     >
       <IconButton onClick={onUndo} icon={<Undo2 size={14} />} title="واگرد (Ctrl+Z)" disabled={!canUndo} />
@@ -304,7 +304,7 @@ export default function DiagramToolbar({
           type="button"
           onClick={() => setDeviceMenu((v) => !v)}
           title="افزودن تجهیز"
-          className={`btn-ghost btn-xs ${pending?.kind === 'device' ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
+          className={`btn-ghost btn-xs ${pending?.kind === 'device' ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
           aria-expanded={deviceMenu}
         >
           <Plus size={13} />
@@ -325,7 +325,7 @@ export default function DiagramToolbar({
               aria-label="بستن فهرست تجهیزات"
               onClick={() => setDeviceMenu(false)}
             />
-            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-pop">
+            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-56 overflow-y-auto rounded-xl border border-ink-200 bg-surface p-1 shadow-pop">
               <p className="px-2 py-1 text-[10px] font-semibold text-ink-400">یک تجهیز انتخاب کنید، سپس روی بوم کلیک کنید</p>
               {DEVICE_CATALOG.map((type) => (
                 <button
@@ -336,7 +336,7 @@ export default function DiagramToolbar({
                     setDeviceMenu(false);
                   }}
                   className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11.5px] transition hover:bg-ink-50 ${
-                    activeDevice === type.key ? 'bg-brand-50 text-brand-700' : 'text-ink-600'
+                    activeDevice === type.key ? 'bg-brand-50 text-accent' : 'text-ink-600'
                   }`}
                 >
                   <span className="grid h-6 w-6 place-items-center rounded-md" style={{ background: `${type.color}18`, color: type.color }}>
@@ -392,7 +392,7 @@ export default function DiagramToolbar({
           onClick={() => setDiagramMenu((v) => !v)}
           title="افزودن پیوند به دیاگرام دیگر (برای نقشهٔ ارتباط)"
           aria-expanded={diagramMenu}
-          className={`btn-ghost btn-xs ${pending?.kind === 'diagram' ? '!border-brand-300 !bg-brand-50 !text-brand-700' : ''}`}
+          className={`btn-ghost btn-xs ${pending?.kind === 'diagram' ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
           disabled={!onPickDiagram || diagrams.length === 0}
         >
           <Workflow size={13} />
@@ -407,7 +407,7 @@ export default function DiagramToolbar({
               aria-label="بستن فهرست دیاگرام‌ها"
               onClick={() => setDiagramMenu(false)}
             />
-            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-60 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-pop">
+            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-60 overflow-y-auto rounded-xl border border-ink-200 bg-surface p-1 shadow-pop">
               <p className="px-2 py-1 text-[10px] font-semibold text-ink-400">
                 دیاگرام مقصد را انتخاب کنید، سپس روی بوم کلیک کنید
               </p>
@@ -424,7 +424,7 @@ export default function DiagramToolbar({
                     }}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11.5px] text-ink-600 transition hover:bg-ink-50"
                   >
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand-50 text-brand-600">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand-50 text-accent">
                       <Workflow size={13} />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -478,7 +478,7 @@ export default function DiagramToolbar({
 
       <button
         type="button"
-        className="btn-ghost btn-xs hover:!border-red-200 hover:!text-red-600"
+        className="btn-ghost btn-xs hover:!border-red-200 hover:!text-danger"
         onClick={onDelete}
         disabled={!hasSelection}
         aria-label="حذف انتخاب"
@@ -491,7 +491,7 @@ export default function DiagramToolbar({
       {/* ردیف دوم: فقط با انتخاب چندگانه */}
       {multi ? (
         <div className="mt-1 flex w-full flex-wrap items-center gap-1 border-t border-ink-100 pt-1">
-          <span className="num rounded-pill bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+          <span className="num rounded-pill bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-accent">
             {faDigits(selectedCount)} انتخاب
           </span>
           {ALIGN_BUTTONS.map((item) => (

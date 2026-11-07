@@ -62,12 +62,12 @@ function LivePingDock() {
 
   return (
     // z-[900]: پایین‌تر از مودال (z-[1000]) تا پنجرهٔ شناور روی فرم باز نماند.
-    <div className="fixed bottom-4 left-4 z-[900] flex w-[272px] max-w-[86vw] flex-col rounded-card border border-white/70 bg-white/95 shadow-pop backdrop-blur-xl">
+    <div className="fixed bottom-4 left-4 z-[900] flex w-[272px] max-w-[86vw] flex-col rounded-card border border-ink-200/70 bg-surface/95 shadow-pop backdrop-blur-xl">
       <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-3 py-2">
         <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-ink-700">
           <Activity size={14} className="text-brand-500" />
           پینگ زنده
-          <span className="num rounded-pill bg-brand-50 px-1.5 py-0.5 text-[10px] text-brand-700">{faDigits(targets.length)}</span>
+          <span className="num rounded-pill bg-brand-50 px-1.5 py-0.5 text-[10px] text-accent">{faDigits(targets.length)}</span>
         </span>
         <button type="button" className="btn-ghost btn-xs" onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'باز کردن' : 'جمع کردن'}>
           {collapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -149,22 +149,22 @@ function LivePingCard({ target, onClose }: { target: LivePingTarget; onClose: ()
   const tone = !last
     ? 'text-ink-400'
     : !last.ok
-      ? 'text-red-600'
+      ? 'text-danger'
       : threshold != null && last.rtt != null && last.rtt > threshold
-        ? 'text-sun-600'
-        : 'text-emerald-600';
+        ? 'text-warning'
+        : 'text-success';
 
   return (
-    <div className="rounded-soft border border-ink-200 bg-white/85 p-2.5">
+    <div className="rounded-soft border border-ink-200 bg-surface/85 p-2.5">
       <div className="flex items-start justify-between gap-2">
         <Link to={`/devices/${target.id}`} className="min-w-0">
-          <span className="block truncate text-[12px] font-semibold text-ink-700 hover:text-brand-700">{target.name}</span>
+          <span className="block truncate text-[12px] font-semibold text-ink-700 hover:text-accent">{target.name}</span>
           <span className="num block text-[10px] text-ink-400">{target.ip}</span>
         </Link>
         <div className="flex shrink-0 items-center gap-1">
           <span
             className={`inline-flex items-center gap-1 rounded-pill px-1.5 py-0.5 text-[9.5px] font-medium ${
-              reachable ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+              reachable ? 'bg-emerald-50 text-success' : 'bg-red-50 text-danger'
             }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${reachable ? 'bg-emerald-500' : 'bg-red-500'} ${running ? 'animate-pulse' : ''}`} />
@@ -221,7 +221,7 @@ function LivePingCard({ target, onClose }: { target: LivePingTarget; onClose: ()
         </span>
       </div>
       {threshold != null ? <p className="mt-1 text-center text-[9.5px] text-ink-400">آستانه: {faDigits(threshold)} ms · {faDigits(stats.count)} نمونه</p> : null}
-      {error ? <p className="mt-1 truncate text-[9.5px] text-red-500">{error}</p> : null}
+      {error ? <p className="mt-1 truncate text-[9.5px] text-danger">{error}</p> : null}
     </div>
   );
 }

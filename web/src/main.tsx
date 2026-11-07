@@ -15,10 +15,12 @@ import { LivePingProvider } from './components/LivePing';
 import { AuthProvider } from './lib/auth';
 import { AuthGate } from './pages/Login';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ThemeProvider } from './lib/theme';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
           <AuthGate>
@@ -34,6 +36,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
           </AuthGate>
         </AuthProvider>
       </ToastProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ThemeProvider>
   </React.StrictMode>
 );

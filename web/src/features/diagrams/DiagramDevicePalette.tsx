@@ -68,7 +68,7 @@ export default function DiagramDevicePalette({ editing, onPick }: DiagramDeviceP
         {loading && !data ? (
           <p className="px-2 py-6 text-center text-[11px] text-ink-400">در حال بارگذاری تجهیزات…</p>
         ) : error ? (
-          <p className="px-2 py-6 text-center text-[11px] leading-5 text-red-600">{error}</p>
+          <p className="px-2 py-6 text-center text-[11px] leading-5 text-danger">{error}</p>
         ) : filtered.length === 0 ? (
           <p className="px-2 py-6 text-center text-[11px] leading-5 text-ink-400">
             {devices.length === 0 ? 'هنوز تجهیزی برای مانیتورینگ ثبت نشده است.' : 'تجهیزی با این جست‌وجو پیدا نشد.'}
@@ -96,7 +96,7 @@ export default function DiagramDevicePalette({ editing, onPick }: DiagramDeviceP
                     </span>
                     <Plus
                       size={12}
-                      className="shrink-0 text-ink-300 transition group-hover:text-brand-600 group-disabled:group-hover:text-ink-300"
+                      className="shrink-0 text-ink-300 transition group-hover:text-accent group-disabled:group-hover:text-ink-300"
                     />
                   </button>
                 </li>

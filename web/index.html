@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#f8fafc" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f8fb" />
+    <script src="/theme-boot.js"></script>
     <meta name="description" content="سامانه آفلاین پایش، نگهداری و تحلیل زیرساخت شبکه" />
     <title>NetWatch — پایش شبکه</title>
     <link
@@ -29,7 +30,7 @@
         justify-content: center;
         font-family: Tahoma, sans-serif;
         color: #64748b;
-        background: #f8fafc;
+        background: #f6f8fb;
       }
       .boot-ring {
         width: 46px;
@@ -43,6 +44,15 @@
         to {
           transform: rotate(360deg);
         }
+      }
+      /* صفحهٔ بارگذاری اولیه در تم تاریک هم تیره دیده شود */
+      html.dark .boot {
+        color: #93a4bd;
+        background: #090d14;
+      }
+      html.dark .boot-ring {
+        border-color: #21304a;
+        border-top-color: #4d8bf7;
       }
     </style>
     <script type="module" src="/src/main.tsx"></script>

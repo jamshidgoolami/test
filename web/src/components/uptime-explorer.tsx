@@ -95,9 +95,9 @@ interface ExplorerProps {
 }
 
 const UPTIME_TEXT: Record<UptimeState, string> = {
-  up: 'text-emerald-600',
-  warn: 'text-sun-600',
-  down: 'text-red-600',
+  up: 'text-success',
+  warn: 'text-warning',
+  down: 'text-danger',
   none: 'text-ink-500',
 };
 
@@ -287,14 +287,14 @@ export function AvailabilityExplorer({
           label="مجموع Downtime"
           value={ready ? fmtDuration(stats.downtimeMs / 1000) : '—'}
           hint={stats.longestOutageMs ? `طولانی‌ترین: ${fmtDuration(stats.longestOutageMs / 1000)}` : 'قطعی ثبت‌شده‌ای نیست'}
-          tone={stats.downtimeMs > 0 ? 'text-red-600' : 'text-emerald-600'}
+          tone={stats.downtimeMs > 0 ? 'text-danger' : 'text-success'}
           icon={<Timer size={13} />}
         />
         <Metric
           label="تعداد قطعی‌ها"
           value={ready ? fmtNumber(stats.outageCount) : '—'}
           hint="بر اساس رویدادهای همین بازه"
-          tone={stats.outageCount ? 'text-sun-600' : 'text-emerald-600'}
+          tone={stats.outageCount ? 'text-warning' : 'text-success'}
           icon={<AlertTriangle size={13} />}
         />
         <Metric
@@ -313,7 +313,7 @@ export function AvailabilityExplorer({
 
       {/* انتخاب نما و جابه‌جایی دوره */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-white/80 p-0.5" role="tablist" aria-label="نمای زمانی">
+        <div className="inline-flex items-center gap-0.5 rounded-soft border border-ink-200 bg-surface/80 p-0.5" role="tablist" aria-label="نمای زمانی">
           {VIEWS.map((item) => (
             <button
               key={item}
@@ -457,7 +457,7 @@ function Metric({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-soft border border-ink-200/70 bg-white/75 px-3 py-2.5 backdrop-blur">
+    <div className="rounded-soft border border-ink-200/70 bg-surface/75 px-3 py-2.5 backdrop-blur">
       <p className="flex items-center gap-1.5 text-[10.5px] text-ink-400">
         {icon}
         {label}
@@ -529,7 +529,7 @@ function MonthCalendar({
               <button
                 type="button"
                 onClick={() => onOpenWeek(weekStart)}
-                className="group flex flex-col items-center justify-center gap-0.5 rounded-[9px] border border-dashed border-ink-200/80 text-[9px] text-ink-400 transition hover:border-brand-300 hover:bg-brand-50/60 hover:text-brand-700"
+                className="group flex flex-col items-center justify-center gap-0.5 rounded-[9px] border border-dashed border-ink-200/80 text-[9px] text-ink-400 transition hover:border-brand-300 hover:bg-brand-50/60 hover:text-accent"
                 title={`نمای هفتگی ${weekTitle(week.from, week.to, tzOffset, calendar)}`}
                 aria-label={`نمای هفتگی ${weekTitle(week.from, week.to, tzOffset, calendar)}`}
               >
@@ -570,7 +570,7 @@ function MonthCalendar({
                       <span className={`num block truncate text-[9px] font-semibold ${UPTIME_TEXT[state]}`}>
                         {day.stats.uptime == null ? '—' : fmtPct(day.stats.uptime, 1)}
                       </span>
-                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-pill bg-white/70">
+                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-pill bg-surface/70">
                         <span
                           className="block h-full rounded-pill transition-[width] duration-500"
                           style={{
@@ -673,7 +673,7 @@ function LaneGrid({
               className="group flex w-[78px] shrink-0 flex-col items-start justify-center rounded-[8px] px-1 py-0.5 text-right transition hover:bg-brand-50/70 sm:w-[112px]"
               title={dayStart ? `نمای روزانهٔ ${dayTitle(row.from, tzOffset, calendar)}` : 'نمای ساعتی این بازه'}
             >
-              <span className="w-full truncate text-[11px] font-medium text-ink-700 group-hover:text-brand-700">
+              <span className="w-full truncate text-[11px] font-medium text-ink-700 group-hover:text-accent">
                 {dayStart ? label : <LaneClockRange from={row.from} to={row.to} tzOffset={tzOffset} />}
               </span>
               <span className="w-full truncate text-[9px] text-ink-400">{sub}</span>
@@ -877,7 +877,7 @@ function HourTimeline({
           <span className="me-1 hidden sm:inline">زوم با اسکرول ماوس</span>
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-white text-[13px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-surface text-[13px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
             onClick={() => applyZoom(zoom / 1.5)}
             disabled={zoom <= 1}
             aria-label="کوچک‌نمایی"
@@ -887,7 +887,7 @@ function HourTimeline({
           <span className="num min-w-[32px] text-center font-semibold text-ink-600">{faDigits(Number(zoom.toFixed(1)))}×</span>
           <button
             type="button"
-            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-white text-[13px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+            className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-surface text-[13px] text-ink-600 hover:bg-ink-50 disabled:opacity-40"
             onClick={() => applyZoom(zoom * 1.5)}
             disabled={zoom >= 16}
             aria-label="بزرگ‌نمایی"
@@ -896,7 +896,7 @@ function HourTimeline({
           </button>
           <button
             type="button"
-            className="ms-1 rounded-md border border-ink-200 bg-white px-1.5 py-1 text-[9.5px] text-ink-500 hover:bg-ink-50"
+            className="ms-1 rounded-md border border-ink-200 bg-surface px-1.5 py-1 text-[9.5px] text-ink-500 hover:bg-ink-50"
             onClick={() => applyZoom(1)}
           >
             بازنشانی
@@ -951,7 +951,7 @@ function HourTimeline({
             <div className="relative">
               {ticks.map((tick) => {
                 const left = ((tick - window.from) / Math.max(1, window.to - window.from)) * 100;
-                return <span key={`grid-${tick}`} className="pointer-events-none absolute inset-y-0 w-px bg-ink-900/5" style={{ left: `${left}%` }} />;
+                return <span key={`grid-${tick}`} className="pointer-events-none absolute inset-y-0 w-px bg-scrim/5" style={{ left: `${left}%` }} />;
               })}
               <StatusLane
                 from={window.from}
@@ -1252,7 +1252,7 @@ function outageHover(bar: ClippedOutage, tzOffset: number): HoverInfo {
 function HoverCard({ tip }: { tip: HoverTip }) {
   return (
     <div
-      className="pointer-events-none fixed z-[1100] w-[228px] rounded-soft border border-ink-200 bg-white/97 px-3 py-2 shadow-pop backdrop-blur"
+      className="pointer-events-none fixed z-[1100] w-[228px] rounded-soft border border-ink-200 bg-surface/97 px-3 py-2 shadow-pop backdrop-blur"
       style={{
         left: tip.x,
         top: tip.y,
@@ -1279,9 +1279,9 @@ function HoverCard({ tip }: { tip: HoverTip }) {
 
 function uptimeChipClass(uptime: number | null): string {
   if (uptime == null) return 'border-ink-200 bg-ink-50 text-ink-600';
-  if (uptime >= 99.5) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (uptime >= 95) return 'border-sun-200 bg-sun-50 text-sun-700';
-  return 'border-red-200 bg-red-50 text-red-600';
+  if (uptime >= 99.5) return 'border-emerald-200 bg-emerald-50 text-success';
+  if (uptime >= 95) return 'border-sun-200 bg-sun-50 text-warning';
+  return 'border-red-200 bg-red-50 text-danger';
 }
 
 function SelectionPanel({ selection, tzOffset, onClose }: { selection: Selection; tzOffset: number; onClose: () => void }) {
@@ -1299,7 +1299,7 @@ function SelectionPanel({ selection, tzOffset, onClose }: { selection: Selection
             <Percent size={10} />
             <span className="num">{selection.stats.uptime == null ? '—' : fmtPct(selection.stats.uptime, 2)}</span>
           </span>
-          <span className={`chip ${selection.stats.downtimeMs > 0 ? 'border-red-200 bg-red-50 text-red-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+          <span className={`chip ${selection.stats.downtimeMs > 0 ? 'border-red-200 bg-red-50 text-danger' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
             <Timer size={10} />
             <span className="num">{fmtDuration(selection.stats.downtimeMs / 1000)}</span>
           </span>
@@ -1311,7 +1311,7 @@ function SelectionPanel({ selection, tzOffset, onClose }: { selection: Selection
 
       <div className="max-h-40 overflow-auto px-3 py-2">
         {selection.bars.length === 0 ? (
-          <p className="flex items-center gap-1.5 py-1 text-[10.5px] text-emerald-700">
+          <p className="flex items-center gap-1.5 py-1 text-[10.5px] text-success">
             <CircleCheck size={12} />
             در این بازه قطعی ثبت‌شده‌ای وجود ندارد.
           </p>
@@ -1330,7 +1330,7 @@ function SelectionPanel({ selection, tzOffset, onClose }: { selection: Selection
                 <tr key={bar.outage.id}>
                   <td className="num text-[10.5px]">{fmtDateTime(bar.outage.startedAt, tzOffset)}</td>
                   <td className="num text-[10.5px]">
-                    {bar.outage.endedAt ? fmtDateTime(bar.outage.endedAt, tzOffset) : <span className="text-red-600">در جریان</span>}
+                    {bar.outage.endedAt ? fmtDateTime(bar.outage.endedAt, tzOffset) : <span className="text-danger">در جریان</span>}
                   </td>
                   <td className="num text-[10.5px] font-medium">{fmtDuration(((bar.outage.endedAt ?? Date.now()) - bar.outage.startedAt) / 1000)}</td>
                   <td className="text-[10.5px]">{bar.outage.cause || '—'}</td>
@@ -1348,9 +1348,9 @@ function ExplorerSkeleton({ error, onRetry }: { error?: string | null; onRetry: 
   if (error) {
     return (
       <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 rounded-soft border border-red-100 bg-red-50/50 p-5 text-center">
-        <AlertTriangle size={22} className="text-red-500" />
-        <p className="text-[12px] font-medium text-red-700">دریافت تاریخچه ممکن نشد</p>
-        <p className="max-w-sm text-[10.5px] text-red-600">{error}</p>
+        <AlertTriangle size={22} className="text-danger" />
+        <p className="text-[12px] font-medium text-danger">دریافت تاریخچه ممکن نشد</p>
+        <p className="max-w-sm text-[10.5px] text-danger">{error}</p>
         <button type="button" className="btn-ghost btn-xs mt-1" onClick={onRetry}>
           <RefreshCw size={12} />
           تلاش دوباره

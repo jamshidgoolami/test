@@ -234,9 +234,9 @@ export default function Alerts() {
           </Card>
 
           {canOperate && selected.length > 0 ? (
-            <div className="animate-fade-up rounded-card border border-brand-100 bg-white/95 p-3 shadow-pop">
+            <div className="animate-fade-up rounded-card border border-brand-100 bg-surface/95 p-3 shadow-pop">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="chip border-brand-200 bg-brand-50 text-brand-700">{faDigits(selected.length)} هشدار انتخاب شده</span>
+                <span className="chip border-brand-200 bg-brand-50 text-accent">{faDigits(selected.length)} هشدار انتخاب شده</span>
                 <button type="button" className="btn-ghost btn-xs" onClick={() => run('ack')}>
                   <Check size={13} />
                   بررسی‌شده
@@ -343,12 +343,12 @@ export default function Alerts() {
                 <div className="max-h-[560px] overflow-y-auto">
                   <div className="space-y-1.5">
                     {flaps.items.map((ev) => (
-                      <div key={ev.id} className="flex items-center gap-3 rounded-soft border border-ink-100 bg-white/70 px-3 py-2">
-                        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border ${ev.kind === 'down' ? 'border-red-200 bg-red-50 text-red-600' : 'border-emerald-200 bg-emerald-50 text-emerald-600'}`}>
+                      <div key={ev.id} className="flex items-center gap-3 rounded-soft border border-ink-100 bg-surface/70 px-3 py-2">
+                        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border ${ev.kind === 'down' ? 'border-red-200 bg-red-50 text-danger' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
                           {ev.kind === 'down' ? <WifiOff size={13} /> : <Wifi size={13} />}
                         </span>
                         <Link to={`/devices/${ev.deviceId}`} className="min-w-0 flex-1">
-                          <span className="block truncate text-[12.5px] font-medium text-ink-700 hover:text-brand-700">{ev.deviceName}</span>
+                          <span className="block truncate text-[12.5px] font-medium text-ink-700 hover:text-accent">{ev.deviceName}</span>
                           <span className="num block text-[10.5px] text-ink-400">{ev.deviceIp}</span>
                         </Link>
                         <span className="hidden text-[11px] text-ink-500 sm:block">{ev.cause}</span>
@@ -388,7 +388,7 @@ export default function Alerts() {
                 <EmptyState title="قطعی هم‌زمانی یافت نشد" description="در این بازه هیچ دو تجهیزی هم‌زمان قطع نبوده‌اند." icon={<Layers size={22} />} />
               ) : (
                 sim.items.map((c, i) => (
-                  <div key={i} className="rounded-soft border border-ink-200 bg-white/70 p-3">
+                  <div key={i} className="rounded-soft border border-ink-200 bg-surface/70 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="flex items-center gap-2 text-[12.5px] font-semibold text-ink-700">
                         <span className="num rounded-pill bg-violet-50 px-2 py-0.5 text-[11px] text-violet-700">{faDigits(c.count)} تجهیز</span>
@@ -482,7 +482,7 @@ export default function Alerts() {
                       {top.items.map((d) => (
                         <tr key={d.id}>
                           <td>
-                            <Link to={`/devices/${d.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+                            <Link to={`/devices/${d.id}`} className="font-medium text-ink-800 hover:text-accent">
                               {d.name}
                             </Link>
                             <span className="num block text-[10.5px] text-ink-400">{d.ip}</span>
@@ -491,7 +491,7 @@ export default function Alerts() {
                           <td>
                             <span className={`chip ${statusMeta(d.status).bg} ${statusMeta(d.status).text} ${statusMeta(d.status).border}`}>{statusMeta(d.status).label}</span>
                           </td>
-                          <td className="num font-semibold text-red-600">{fmtNumber(d.outages)}</td>
+                          <td className="num font-semibold text-danger">{fmtNumber(d.outages)}</td>
                           <td className="num">{fmtDuration(d.downtimeSec)}</td>
                           <td className="text-[11.5px] text-ink-500">{d.lastOutageAt ? fmtDateTime(d.lastOutageAt, tzOffset) : '—'}</td>
                         </tr>
@@ -546,7 +546,7 @@ export default function Alerts() {
           </button>
 
           {(rulesData?.items ?? []).map((r) => (
-            <div key={r.id} className="rounded-soft border border-ink-200 bg-white/80 p-3">
+            <div key={r.id} className="rounded-soft border border-ink-200 bg-surface/80 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-[12.5px] font-semibold text-ink-700">{r.name}</p>
@@ -660,7 +660,7 @@ function AlertRow({
               {fmtDateTime(alert.createdAt, tzOffset)} ({fmtRelative(alert.createdAt)})
             </span>
             {alert.deviceId ? (
-              <Link to={`/devices/${alert.deviceId}`} className="num text-brand-600 hover:underline">
+              <Link to={`/devices/${alert.deviceId}`} className="num text-accent hover:underline">
                 {alert.deviceName} — {alert.deviceIp}
               </Link>
             ) : null}
@@ -730,7 +730,7 @@ function RuleForm({
       subtitle="شرایط ایجاد هشدار و رفتار آن را مشخص کنید"
       footer={
         <>
-          {error ? <p className="me-auto text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="me-auto text-xs text-danger">{error}</p> : null}
           <button type="button" className="btn-ghost" onClick={onClose}>
             انصراف
           </button>

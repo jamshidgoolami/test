@@ -17,10 +17,10 @@ export function useNow(intervalMs = 10000): number {
 }
 
 const CONNECTION: Record<string, { label: string; className: string; dot: string }> = {
-  live: { label: 'داده زنده', className: 'border-emerald-200 bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
-  connecting: { label: 'در حال اتصال…', className: 'border-ink-200 bg-white/80 text-ink-600', dot: 'bg-ink-300' },
-  reconnecting: { label: 'اتصال مجدد…', className: 'border-sun-200 bg-sun-50 text-sun-800', dot: 'bg-sun-500' },
-  offline: { label: 'اتصال قطع است', className: 'border-red-200 bg-red-50 text-red-700', dot: 'bg-red-500' },
+  live: { label: 'داده زنده', className: 'border-emerald-200 bg-emerald-50 text-success', dot: 'bg-emerald-500' },
+  connecting: { label: 'در حال اتصال…', className: 'border-ink-200 bg-surface/80 text-ink-600', dot: 'bg-ink-300' },
+  reconnecting: { label: 'اتصال مجدد…', className: 'border-sun-200 bg-sun-50 text-warning', dot: 'bg-sun-500' },
+  offline: { label: 'اتصال قطع است', className: 'border-red-200 bg-red-50 text-danger', dot: 'bg-red-500' },
 };
 
 /**
@@ -100,7 +100,7 @@ export function DataFreshness({
   if (!live.connected) {
     return (
       <div
-        className={`flex flex-wrap items-center gap-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11.5px] text-sun-800 ${className}`}
+        className={`flex flex-wrap items-center gap-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11.5px] text-warning ${className}`}
         role="status"
         data-testid="stale-notice"
       >
@@ -131,7 +131,7 @@ export function DataFreshness({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11.5px] text-sun-800 ${className}`}
+      className={`flex flex-wrap items-center gap-2 rounded-soft border border-sun-200 bg-sun-50/80 px-3 py-2 text-[11.5px] text-warning ${className}`}
       role="status"
       data-testid="stale-notice"
     >

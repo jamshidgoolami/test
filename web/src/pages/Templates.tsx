@@ -143,7 +143,7 @@ export default function Templates() {
     <div className="space-y-4">
       <Card padded={false} className="p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-soft border border-brand-100 bg-brand-50 text-brand-600">
+          <span className="grid h-10 w-10 place-items-center rounded-soft border border-brand-100 bg-brand-50 text-accent">
             <LayoutTemplate size={19} />
           </span>
           <div>
@@ -163,7 +163,7 @@ export default function Templates() {
             ) : null}
           </div>
         </div>
-        <p className="mt-3 rounded-soft border border-sun-200 bg-sun-50/50 p-3 text-[10.5px] leading-relaxed text-sun-800">
+        <p className="mt-3 rounded-soft border border-sun-200 bg-sun-50/50 p-3 text-[10.5px] leading-relaxed text-warning">
           <AlertTriangle size={12} className="inline" /> اعمال قالب به‌صورت پیش‌فرض فقط فیلدهای خالی را پر می‌کند. بازنویسی تنظیمات اختصاصی فقط با فعال‌کردن صریح «بازنویسی» و تأیید دوباره انجام می‌شود.
         </p>
       </Card>
@@ -186,7 +186,7 @@ export default function Templates() {
                       <button type="button" className="btn-ghost btn-xs" onClick={() => openEdit(t)} aria-label="ویرایش قالب">
                         <Edit3 size={13} />
                       </button>
-                      <button type="button" className="btn-ghost btn-xs text-red-600" onClick={() => remove(t)} aria-label="حذف قالب">
+                      <button type="button" className="btn-ghost btn-xs text-danger" onClick={() => remove(t)} aria-label="حذف قالب">
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -195,7 +195,7 @@ export default function Templates() {
               />
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {Object.entries(t.settings).map(([key, value]) => (
-                  <span key={key} className="chip border-ink-200 bg-white/80 text-[10.5px] text-ink-600">
+                  <span key={key} className="chip border-ink-200 bg-surface/80 text-[10.5px] text-ink-600">
                     {fields.find((f) => f.key === key)?.label ?? key}: <b className="num">{String(value)}</b>
                   </span>
                 ))}
@@ -288,7 +288,7 @@ export default function Templates() {
         subtitle="فیلدهای موردنظر و تجهیزات مقصد را انتخاب کنید."
         footer={
           <>
-            {overwrite ? <p className="me-auto text-[10.5px] text-red-600">حالت بازنویسی فعال است؛ مقادیر اختصاصی جایگزین می‌شوند.</p> : null}
+            {overwrite ? <p className="me-auto text-[10.5px] text-danger">حالت بازنویسی فعال است؛ مقادیر اختصاصی جایگزین می‌شوند.</p> : null}
             <button type="button" className="btn-ghost" onClick={() => setApplyOpen(false)}>
               انصراف
             </button>
