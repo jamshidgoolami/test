@@ -47,7 +47,7 @@ import type {
   OnEdgesChange,
   OnNodesChange,
 } from '@xyflow/react';
-import { ChevronDown, ImageOff, Link2, Lock, Maximize2, MessageSquare, Minimize2, Minus, Plus, StickyNote } from 'lucide-react';
+import { ChevronDown, ImageOff, Link2, Maximize2, MessageSquare, Minimize2, Minus, Plus, StickyNote } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import '@xyflow/react/dist/style.css';
 import {
@@ -61,15 +61,13 @@ import {
 } from '../../lib/diagrams';
 import { composeExportSheet, downloadDataUrl, downloadDiagramPdf, safeFileName } from '../../lib/diagram-export';
 import type { ExportMeta } from '../../lib/diagram-export';
-import type { DiagramFlowEdge, DiagramFlowNode, DiagramStatusFilter, HandleSide } from '../../lib/diagrams';
+import type { DiagramFlowEdge, DiagramFlowNode, HandleSide } from '../../lib/diagrams';
 import type { Device, DiagramComment, DiagramConnectionKind } from '../../lib/types';
 import { faDigits, fmtMs, fmtPct, fmtRelative, statusMeta } from '../../lib/format';
 import { useDeviceLive } from '../../lib/store';
 import { DeviceGlyph } from './DeviceGlyph';
 
-const EMPTY_DEVICES = new Map<number, Device>();
-const EMPTY_COUNTS = new Map<string, number>();
-const EMPTY_IDS = new Set<string>();
+const EMPTY_DEVICES = new Map<number, Device>();
 
 type ZoomLevel = 'far' | 'mid' | 'near';
 
@@ -80,10 +78,6 @@ const TOOL_CONTEXT = createContext({
   exporting: false,
   zoomLevel: 'mid' as ZoomLevel,
   highlightNodeId: null as string | null,
-  showIp: true,
-  showConnectionInfo: true,
-  connectionCounts: EMPTY_COUNTS,
-  fadedNodeIds: EMPTY_IDS,
   devices: EMPTY_DEVICES,
   onOpenDevice: (_id: number) => {},
   onOpenDiagram: (_id: number) => {},
@@ -113,7 +107,7 @@ const POSITIONS: Record<HandleSide, Position> = {
   left: Position.Left,
 };
 
-function SideHandles({ color, selected }: { color: string; selected?: boolean }) {
+function SideHandles({ color }: { color: string }) {
   const { connectable, exporting } = useContext(TOOL_CONTEXT);
   // نقاط اتصال در خروجی تصویر دیده نمی‌شوند.
   if (exporting) return null;
@@ -126,7 +120,7 @@ function SideHandles({ color, selected }: { color: string; selected?: boolean })
           type="source"
           position={POSITIONS[side]}
           isConnectable={connectable}
-          className={`diagram-handle ${connectable || selected ? 'is-active' : ''}`}
+          className={`diagram-handle ${connectable ? 'is-active' : ''}`}
           style={{ borderColor: color }}
         />
       ))}
@@ -136,9 +130,8 @@ function SideHandles({ color, selected }: { color: string; selected?: boolean })
 
 const nodeFrame = 'relative h-full w-full';
 
-function DeviceNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
-  const { editing, exporting, devices, onOpenDevice, zoomLevel, showIp, showConnectionInfo, connectionCounts } =
-    useContext(TOOL_CONTEXT);
+function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+  const { editing, exporting, devices, onOpenDevice, zoomLevel } = useContext(TOOL_CONTEXT);
   const meta = deviceType(data.deviceType);
   const color = data.color || meta.color;
   const active = editing && selected && !exporting;
@@ -152,9 +145,7 @@ function DeviceNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const rtt = sample?.rtt ?? device?.lastRtt ?? null;
   const loss = sample?.lossPct ?? device?.lossPct ?? null;
   const lastCheck = sample?.ts ?? device?.lastCheckAt ?? null;
-  const statusColor = statusInfo && status !== 'unknown' ? statusInfo.chart : null;
-  const links = connectionCounts.get(id) ?? 0;
-  const showStatus = !!deviceId && !!statusInfo && status !== 'unknown';
+  const ring = statusInfo && status !== 'unknown' ? statusInfo.chart : null;
 
   return (
     <div className={nodeFrame} dir="rtl">
@@ -166,25 +157,16 @@ function DeviceNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color={color} selected={selected} />
+      <SideHandles color={color} />
       <CommentBadge comments={data.comments} />
-      {data.locked ? (
-        <span
-          className="absolute -bottom-1.5 -end-1.5 z-20 grid h-5 w-5 place-items-center rounded-full border border-ink-200 bg-surface text-ink-500 shadow-xs"
-          title="موقعیت این گره قفل است"
-        >
-          <Lock size={10} />
-        </span>
-      ) : null}
       <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-xl border-2 bg-surface px-2 py-1.5 text-right shadow-soft transition-shadow"
+        className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border bg-surface px-2 py-1 text-center shadow-soft transition-shadow"
         style={{
-          borderColor: active ? '#2563eb' : statusColor ? `${statusColor}cc` : `${color}55`,
-          background: statusColor ? `${statusColor}0a` : undefined,
+          borderColor: active ? color : ring ? `${ring}99` : 'rgb(var(--nw-ink-200))',
           boxShadow: active
-            ? '0 0 0 3px rgba(37,99,235,0.18)'
-            : statusColor
-              ? `0 1px 2px ${statusColor}1f`
+            ? `0 0 0 2px ${color}33`
+            : ring
+              ? `0 0 0 2px ${ring}33`
               : undefined,
         }}
         onDoubleClick={() => {
@@ -198,53 +180,35 @@ function DeviceNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
             : undefined
         }
       >
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span
-            className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md"
-            style={{ background: `${color}18`, color }}
-          >
-            <DeviceGlyph icon={meta.icon} size={13} />
+        <span
+          className="grid place-items-center rounded-lg p-1"
+          style={{ background: `${color}18`, color }}
+        >
+          <DeviceGlyph icon={meta.icon} size={16} />
+        </span>
+        <p className="max-w-full truncate text-[12px] font-semibold leading-4 text-ink-800">
+          {data.label || meta.label}
+        </p>
+        {deviceId && statusInfo && zoomLevel === 'far' ? (
+          <span className="flex items-center" title={statusInfo.label}>
+            <span className={`h-1.5 w-1.5 rounded-full ${statusInfo.dot}`} aria-hidden />
           </span>
-          <p className="min-w-0 flex-1 truncate text-[11.5px] font-semibold leading-4 text-ink-800">
-            {data.label || meta.label}
+        ) : null}
+        {deviceId && statusInfo && zoomLevel !== 'far' ? (
+          <span className="flex max-w-full items-center gap-1 text-[9.5px] leading-3">
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusInfo.dot}`} aria-hidden />
+            <span className={`truncate font-medium ${statusInfo.text}`}>{statusInfo.label}</span>
+            {rtt != null ? <span className="num truncate text-ink-400">· {fmtMs(rtt)}</span> : null}
+            {loss != null && loss > 0 ? <span className="num truncate text-ink-400">· {fmtPct(loss, 0)}</span> : null}
+          </span>
+        ) : null}
+        {!statusInfo && zoomLevel !== 'far' ? (
+          <p className="max-w-full truncate text-[9.5px] leading-3 text-ink-400">
+            {data.model ? data.model : meta.label}
           </p>
-          {showStatus && statusInfo ? (
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ring-2 ring-surface ${statusInfo.dot}`}
-              title={statusInfo.label}
-              aria-label={statusInfo.label}
-            />
-          ) : null}
-        </div>
-        {zoomLevel !== 'far' ? (
-          <div className="mt-auto flex min-w-0 flex-col gap-px">
-            <div className="flex min-w-0 items-center gap-1 text-[9px] leading-3">
-              {showStatus && statusInfo ? (
-                <span className={`truncate font-medium ${statusInfo.text}`}>{statusInfo.label}</span>
-              ) : (
-                <span className="truncate text-ink-400">{data.model || meta.label}</span>
-              )}
-              {showConnectionInfo && rtt != null ? (
-                <span className="num shrink-0 text-ink-400">· {fmtMs(rtt)}</span>
-              ) : null}
-              {showConnectionInfo && loss != null && loss > 0 ? (
-                <span className="num shrink-0 text-danger">· {fmtPct(loss, 0)}</span>
-              ) : null}
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-1 text-[9px] leading-3 text-ink-400">
-              {showIp && data.ip ? (
-                <span className="ltr truncate">{String(data.ip)}</span>
-              ) : (
-                <span className="truncate">{data.model || (deviceId ? 'متصل به پایش' : 'بدون پایش')}</span>
-              )}
-              {showConnectionInfo && links > 0 ? (
-                <span className="inline-flex shrink-0 items-center gap-0.5" title={`${faDigits(links)} ارتباط`}>
-                  <Link2 size={8} />
-                  {faDigits(links)}
-                </span>
-              ) : null}
-            </div>
-          </div>
+        ) : null}
+        {zoomLevel === 'near' && data.ip ? (
+          <p className="ltr max-w-full truncate text-[9px] leading-3 text-ink-400">{String(data.ip)}</p>
         ) : null}
       </div>
     </div>
@@ -413,7 +377,7 @@ function NoteNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color="#ca8a04" selected={selected} />
+      <SideHandles color="#ca8a04" />
       <CommentBadge comments={data.comments} />
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-amber-300/80 p-2 text-right shadow-soft"
@@ -449,7 +413,7 @@ function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color={color} selected={selected} />
+      <SideHandles color={color} />
       <CommentBadge comments={data.comments} />
       <div
         className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 border-dashed bg-surface px-2 py-1 text-center shadow-soft"
@@ -486,7 +450,7 @@ function ConnectionEdge({
   data,
   selected,
 }: EdgeProps<DiagramFlowEdge>) {
-  const { exporting, highlightNodeId, fadedNodeIds } = useContext(TOOL_CONTEXT);
+  const { exporting, highlightNodeId } = useContext(TOOL_CONTEXT);
   const active = selected && !exporting;
   const meta = connectionType(data?.kind as DiagramConnectionKind | undefined);
   // مسیر خمیدهٔ بزیه از هر سمتی به هر سمت دیگر (حتی مورب) روان رسم می‌شود.
@@ -499,8 +463,7 @@ function ConnectionEdge({
     targetPosition,
     curvature: 0.32,
   });
-  const faded = fadedNodeIds.has(source) || fadedNodeIds.has(target);
-  const dimmed = faded || (!!highlightNodeId && highlightNodeId !== source && highlightNodeId !== target);
+  const dimmed = !!highlightNodeId && highlightNodeId !== source && highlightNodeId !== target;
   const width = active ? meta.width + 1.5 : meta.width;
   return (
     <>
@@ -512,7 +475,7 @@ function ConnectionEdge({
         style={{
           stroke: 'rgb(var(--nw-surface))',
           strokeWidth: width + (dimmed ? 2.5 : 3.5),
-          opacity: faded ? 0.1 : dimmed ? 0.3 : 0.94,
+          opacity: dimmed ? 0.3 : 0.94,
         }}
       />
       {/* بدون برچسب و فلش: نوع ارتباط فقط با رنگ/الگوی خط و راهنمای رنگ خوانده می‌شود. */}
@@ -525,7 +488,7 @@ function ConnectionEdge({
         strokeLinecap="round"
         strokeLinejoin="round"
         pointerEvents="none"
-        opacity={faded ? 0.05 : dimmed ? 0.16 : 1}
+        opacity={dimmed ? 0.16 : 1}
         style={{
           filter: active ? `drop-shadow(0 0 3px ${meta.color}66)` : undefined,
           transition: 'opacity 120ms ease',
@@ -553,9 +516,6 @@ export type DiagramExportFormat = 'png' | 'pdf';
 export interface DiagramCanvasHandle {
   /** خروجی گرفتن از کل بوم (همهٔ اجزا، نه فقط بخش دیده‌شده) */
   exportImage: (format: DiagramExportFormat) => Promise<void>;
-  fitView: () => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
 }
 
 export interface DiagramCanvasProps {
@@ -591,16 +551,6 @@ export interface DiagramCanvasProps {
   titleBlock?: boolean;
   /** چسبیدن به شبکه */
   snapToGrid?: boolean;
-  /** نمایش/مخفی کردن IP روی گره‌های تجهیز */
-  showIp?: boolean;
-  /** نمایش/مخفی کردن تأخیر، افت بسته و تعداد ارتباط */
-  showConnectionInfo?: boolean;
-  /** جست‌وجوی تجهیز؛ گره‌های نامرتبط کم‌رنگ می‌شوند */
-  searchQuery?: string;
-  /** فیلتر وضعیت واقعی تجهیزات */
-  statusFilter?: DiagramStatusFilter;
-  /** رها کردن تجهیز کشیده‌شده از پنل روی بوم */
-  onDropDevice?: (deviceId: number, position: { x: number; y: number }) => void;
   onDragStart?: () => void;
   onDragStop?: () => void;
 }
@@ -629,15 +579,10 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   exportMeta,
   titleBlock = true,
   snapToGrid = false,
-  showIp = true,
-  showConnectionInfo = true,
-  searchQuery = '',
-  statusFilter = 'all',
-  onDropDevice,
   onDragStart,
   onDragStop,
 }: DiagramCanvasProps, ref) {
-  const { screenToFlowPosition, flowToScreenPosition, getNodes, fitView, zoomIn, zoomOut } = useReactFlow();
+  const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   // فقط تغییر زوم باعث رندر دوباره می‌شود؛ جابه‌جایی بوم نباید کل گره‌ها را
   // دوباره رندر کند.
   const zoom = useStore((state) => state.transform[2]);
@@ -646,8 +591,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   const [fullscreen, setFullscreen] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(true);
   const [legendOpen, setLegendOpen] = useState(true);
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [dropActive, setDropActive] = useState(false);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   // در حالت نمایش، باز کردن موقت گروه‌های جمع‌شده نباید دادهٔ دیاگرام را تغییر دهد.
   const [localExpanded, setLocalExpanded] = useState<Set<string>>(() => new Set());
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -727,43 +671,6 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
     [editing, onToggleGroup]
   );
 
-  /** تعداد ارتباط هر گره؛ فقط برای نمایش روی گره، در داده ذخیره نمی‌شود. */
-  const connectionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const edge of edges) {
-      counts.set(edge.source, (counts.get(edge.source) ?? 0) + 1);
-      counts.set(edge.target, (counts.get(edge.target) ?? 0) + 1);
-    }
-    return counts;
-  }, [edges]);
-
-  /** جست‌وجو و فیلتر وضعیت: فقط گره‌های تجهیز نامرتبط کم‌رنگ می‌شوند. */
-  const fadedNodeIds = useMemo(() => {
-    const faded = new Set<string>();
-    if (exporting) return faded;
-    const needle = searchQuery.trim().toLowerCase();
-    if (!needle && statusFilter === 'all') return faded;
-    const deviceMap = devices ?? EMPTY_DEVICES;
-    for (const node of nodes) {
-      if (node.type !== 'device') continue;
-      if (needle) {
-        const haystack = [node.data.label, node.data.ip, node.data.model, node.data.deviceType]
-          .map((value) => String(value ?? ''))
-          .join(' ')
-          .toLowerCase();
-        if (!haystack.includes(needle)) {
-          faded.add(node.id);
-          continue;
-        }
-      }
-      if (statusFilter !== 'all') {
-        const device = node.data.deviceId ? deviceMap.get(Number(node.data.deviceId)) : null;
-        if (!device || device.status !== statusFilter) faded.add(node.id);
-      }
-    }
-    return faded;
-  }, [devices, exporting, nodes, searchQuery, statusFilter]);
-
   /** گروه‌های جمع‌شده و اجزای داخل آن‌ها؛ `hidden` فقط برای رندر است. */
   const collapsedGroups = useMemo(
     () =>
@@ -775,24 +682,10 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   );
 
   const { displayNodes, displayEdges } = useMemo(() => {
-    const decorate = (node: DiagramFlowNode): DiagramFlowNode => {
-      const faded = fadedNodeIds.has(node.id);
-      const locked = node.data.locked === true;
-      if (!faded && !locked) return node;
-      return {
-        ...node,
-        ...(locked ? { draggable: false } : {}),
-        ...(faded ? { style: { ...node.style, opacity: 0.18 } } : {}),
-      };
-    };
     if (!collapsedGroups.length) {
       return {
         displayNodes: nodes.map((node) =>
-          decorate(
-            node.type === 'group' && node.data.collapsed
-              ? { ...node, data: { ...node.data, collapsed: false } }
-              : node
-          )
+          node.type === 'group' && node.data.collapsed ? { ...node, data: { ...node.data, collapsed: false } } : node
         ),
         displayEdges: edges,
       };
@@ -826,22 +719,20 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
 
     return {
       displayNodes: nodes.map((node) => {
-        if (hidden.has(node.id)) return decorate({ ...node, hidden: true });
+        if (hidden.has(node.id)) return { ...node, hidden: true };
         if (collapsedIds.has(node.id)) {
-          return decorate({
+          return {
             ...node,
             height: 44,
             style: { ...node.style, height: 44 },
             data: { ...node.data, collapsed: true, collapsedCount: counts.get(node.id) ?? 0 },
-          });
+          };
         }
-        return decorate(
-          node.type === 'group' ? { ...node, data: { ...node.data, collapsed: false } } : node
-        );
+        return node.type === 'group' ? { ...node, data: { ...node.data, collapsed: false } } : node;
       }),
       displayEdges: edges.filter((edge) => !hidden.has(edge.source) && !hidden.has(edge.target)),
     };
-  }, [collapsedGroups, edges, fadedNodeIds, nodes]);
+  }, [collapsedGroups, edges, nodes]);
 
   /**
    * خطوط راهنمای تراز: اگر لبه/مرکز جزء در حرکت با لبه/مرکز جزء دیگری در
@@ -937,22 +828,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
     [diagramName, displayEdges.length, exportMeta, getNodes, titleBlock]
   );
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      exportImage,
-      fitView: () => {
-        void fitView({ padding: 0.22, duration: 260, maxZoom: 1.15 });
-      },
-      zoomIn: () => {
-        void zoomIn({ duration: 160 });
-      },
-      zoomOut: () => {
-        void zoomOut({ duration: 160 });
-      },
-    }),
-    [exportImage, fitView, zoomIn, zoomOut]
-  );
+  useImperativeHandle(ref, () => ({ exportImage }), [exportImage]);
 
   return (
     <TOOL_CONTEXT.Provider
@@ -963,10 +839,6 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
         exporting,
         zoomLevel,
         highlightNodeId: hoveredNode,
-        showIp,
-        showConnectionInfo,
-        connectionCounts,
-        fadedNodeIds,
         devices: devices ?? EMPTY_DEVICES,
         onOpenDevice: onOpenDevice ?? (() => {}),
         onOpenDiagram: onOpenDiagram ?? (() => {}),
@@ -979,24 +851,6 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
           fullscreen ? 'rounded-none border-0' : 'rounded-2xl border border-ink-200/70'
         }`}
         dir="ltr"
-        onDragOver={(event) => {
-          if (!editing || !onDropDevice) return;
-          if (!Array.from(event.dataTransfer.types).includes('application/x-netwatch-device')) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'copy';
-          if (!dropActive) setDropActive(true);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget === event.target) setDropActive(false);
-        }}
-        onDrop={(event) => {
-          setDropActive(false);
-          if (!editing || !onDropDevice) return;
-          const deviceId = Number(event.dataTransfer.getData('application/x-netwatch-device'));
-          if (!deviceId) return;
-          event.preventDefault();
-          onDropDevice(deviceId, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-        }}
       >
         <ReactFlow<DiagramFlowNode, DiagramFlowEdge>
           nodes={displayNodes}
@@ -1006,15 +860,6 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          isValidConnection={(connection) => {
-            if (!editing || !connectable) return false;
-            if (!connection.source || !connection.target || connection.source === connection.target) return false;
-            return !edges.some(
-              (edge) =>
-                (edge.source === connection.source && edge.target === connection.target) ||
-                (edge.source === connection.target && edge.target === connection.source)
-            );
-          }}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
           onNodeClick={onInspect}
@@ -1222,18 +1067,6 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
         {editing && connectable ? (
           <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-pill border border-ink-200 bg-surface/95 px-3 py-1 text-[10.5px] text-ink-500 shadow-soft" dir="rtl">
             از نقطهٔ اتصال یک جزء بکشید و روی نقطهٔ اتصال جزء دیگر رها کنید.
-          </div>
-        ) : null}
-
-        {dropActive ? (
-          <div
-            className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/40 backdrop-blur-[1px]"
-            dir="rtl"
-          >
-            <div className="flex items-center gap-2 rounded-xl border border-brand-200 bg-surface px-3 py-2 text-[12px] font-medium text-accent shadow-pop">
-              <Link2 size={14} />
-              تجهیز را برای افزودن روی بوم رها کنید
-            </div>
           </div>
         ) : null}
       </div>

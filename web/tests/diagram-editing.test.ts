@@ -7,8 +7,6 @@ import {
   deviceNodeSyncPatch,
   distributeNodes,
   pasteFromClipboard,
-  serializeNodes,
-  toFlowNode,
 } from '../src/lib/diagrams.ts';
 import type { DiagramFlowNode } from '../src/lib/diagrams.ts';
 import type { Device } from '../src/lib/types.ts';
@@ -129,17 +127,4 @@ test('device sync refreshes identity fields and only replaces a default colour',
     false
   );
   assert.equal(deviceNodeNeedsSync({ label: 'نام دیگر', deviceType: 'router', ip: '10.9.9.9' }, device), true);
-});
-
-test('locked position survives serialization and reload, and is omitted when off', () => {
-  const source = node('a', 10, 20, {
-    data: { label: 'a', ip: '10.0.0.1', locked: true },
-  });
-  const saved = serializeNodes([source])[0]!;
-  assert.equal(saved.data.locked, true);
-  assert.equal(saved.data.ip, '10.0.0.1');
-  assert.equal(toFlowNode(saved).data.locked, true);
-
-  const plain = serializeNodes([node('b', 0, 0)])[0]!;
-  assert.equal('locked' in plain.data, false);
 });

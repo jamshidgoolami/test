@@ -950,8 +950,6 @@ export interface DiagramNodeData extends Record<string, unknown> {
   comments?: DiagramComment[];
   /** فقط برای گروه: اجزای داخل کادر پنهان شده‌اند */
   collapsed?: boolean;
-  /** موقعیت گره قفل شده و چیدمان خودکار/کشیدن آن را جابه‌جا نمی‌کند */
-  locked?: boolean;
   /** فقط برای جزء پیوند: نوع و سمت‌های اتصال در نقشهٔ ارتباط */
   linkKind?: DiagramConnectionKind;
   fromSide?: DiagramLinkSide;

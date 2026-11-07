@@ -304,7 +304,6 @@ export function serializeNodes(nodes: DiagramFlowNode[]): DiagramNode[] {
       ...(node.data.toSide ? { toSide: node.data.toSide } : {}),
       ...(node.data.comments?.length ? { comments: serializeComments(node.data.comments) } : {}),
       ...(node.data.collapsed ? { collapsed: true } : {}),
-      ...(node.data.locked ? { locked: true } : {}),
     },
   }));
 }
@@ -464,9 +463,6 @@ export function deviceNodeNeedsSync(current: DiagramNodeData, device: Device): b
 /* ------------------------------------------------------------------ */
 export type AlignMode = 'left' | 'right' | 'center-x' | 'top' | 'bottom' | 'center-y';
 
-/** فیلتر نمایش گره‌های تجهیز بر اساس وضعیت واقعی مانیتورینگ */
-export type DiagramStatusFilter = 'all' | 'online' | 'offline' | 'warning';
-
 function nodeSize(node: DiagramFlowNode): { width: number; height: number } {
   return {
     width: node.width ?? node.measured?.width ?? 190,
@@ -476,7 +472,7 @@ function nodeSize(node: DiagramFlowNode): { width: number; height: number } {
 
 /** تراز کردن اجزای انتخاب‌شده نسبت به لبهٔ مشترک (بر اساس کادر محدودکننده) */
 export function alignNodes(nodes: DiagramFlowNode[], mode: AlignMode): DiagramFlowNode[] {
-  const selected = nodes.filter((node) => node.selected && !node.data.locked);
+  const selected = nodes.filter((node) => node.selected);
   if (selected.length < 2) return nodes;
   const boxes = selected.map((node) => ({ node, ...nodeSize(node) }));
   const minX = Math.min(...boxes.map((b) => b.node.position.x));
@@ -500,7 +496,7 @@ export function alignNodes(nodes: DiagramFlowNode[], mode: AlignMode): DiagramFl
 
 /** توزیع یکنواخت فاصلهٔ اجزای انتخاب‌شده در محور افقی یا عمودی */
 export function distributeNodes(nodes: DiagramFlowNode[], axis: 'x' | 'y'): DiagramFlowNode[] {
-  const selected = nodes.filter((node) => node.selected && !node.data.locked);
+  const selected = nodes.filter((node) => node.selected);
   if (selected.length < 3) return nodes;
   const boxes = selected
     .map((node) => ({ node, ...nodeSize(node) }))

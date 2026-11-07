@@ -170,9 +170,6 @@ function cleanNode(raw, index) {
   const height = Number(raw.height);
   const rawData = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : {};
   const data = { ...rawData };
-  // قفل موقعیت یک پرچم نمایشی/ویرایشی است؛ فقط مقدار درست پذیرفته می‌شود.
-  if (rawData.locked === true) data.locked = true;
-  else delete data.locked;
   if (Array.isArray(rawData.comments)) {
     const comments = cleanComments(rawData.comments);
     if (comments.length) data.comments = comments;
