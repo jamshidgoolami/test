@@ -6,6 +6,7 @@ import {
   deviceNodeNeedsSync,
   deviceNodeSyncPatch,
   distributeNodes,
+  parseDeviceDragPayload,
   pasteFromClipboard,
 } from '../src/lib/diagrams.ts';
 import type { DiagramFlowNode } from '../src/lib/diagrams.ts';
@@ -127,4 +128,24 @@ test('device sync refreshes identity fields and only replaces a default colour',
     false
   );
   assert.equal(deviceNodeNeedsSync({ label: 'نام دیگر', deviceType: 'router', ip: '10.9.9.9' }, device), true);
+});
+
+test('the device drag payload keeps a registered device and maps its type key', () => {
+  const payload = parseDeviceDragPayload(
+    JSON.stringify({ deviceKey: 'camera', deviceId: 12, label: '  دوربین ورودی ', model: 'DS-2CD' })
+  );
+  assert.deepEqual(payload, { deviceKey: 'camera', deviceId: 12, label: 'دوربین ورودی', model: 'DS-2CD' });
+});
+
+test('unknown or broken drag payloads never create a device', () => {
+  assert.equal(parseDeviceDragPayload(''), null);
+  assert.equal(parseDeviceDragPayload('not json'), null);
+  assert.equal(parseDeviceDragPayload('[]'), null);
+  assert.equal(parseDeviceDragPayload('null'), null);
+});
+
+test('a payload without a valid device id falls back to an unlinked catalog device', () => {
+  const payload = parseDeviceDragPayload(JSON.stringify({ deviceKey: 'switch', deviceId: -4 }));
+  assert.deepEqual(payload, { deviceKey: 'switch' });
+  assert.equal(parseDeviceDragPayload(JSON.stringify({ deviceId: 5 }))?.deviceKey, 'other');
 });

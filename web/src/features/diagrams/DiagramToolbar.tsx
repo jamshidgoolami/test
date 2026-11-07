@@ -23,6 +23,7 @@ import {
   Image as ImageIcon,
   Link2,
   MousePointer2,
+  Palette,
   Plus,
   Redo2,
   RefreshCw,
@@ -34,10 +35,10 @@ import {
 } from 'lucide-react';
 import { CONNECTION_TYPES, DEVICE_CATALOG, connectionType } from '../../lib/diagrams';
 import type { AlignMode } from '../../lib/diagrams';
-import type { DiagramConnectionKind, DiagramShape, DiagramSummary } from '../../lib/types';
+import type { Device, DiagramConnectionKind, DiagramShape, DiagramSummary } from '../../lib/types';
 import { faDigits } from '../../lib/format';
-import { DeviceGlyph } from './DeviceGlyph';
 import { ColorPickerPopover } from '../../components/ColorField';
+import DiagramDeviceTray from './DiagramDeviceTray';
 
 export type CanvasTool = 'select' | 'connect';
 export type PendingTool =
@@ -84,6 +85,11 @@ export interface DiagramToolbarProps {
   onAlign: (mode: AlignMode) => void;
   onDistribute: (axis: 'x' | 'y') => void;
   syncing?: boolean;
+  /** تجهیزات ثبت‌شدهٔ مانیتورینگ برای نوار باریک افزودن تجهیز */
+  devices?: Device[];
+  devicesLoading?: boolean;
+  onPickRegisteredDevice?: (device: Device) => void;
+  onReloadDevices?: () => void;
 }
 
 function ToolButton({
@@ -93,6 +99,7 @@ function ToolButton({
   label,
   title,
   disabled,
+  iconOnly,
 }: {
   active?: boolean;
   onClick: () => void;
@@ -100,6 +107,8 @@ function ToolButton({
   label: string;
   title: string;
   disabled?: boolean;
+  /** فقط آیکون دیده می‌شود؛ متن برای Tooltip و صفحه‌خوان می‌ماند. */
+  iconOnly?: boolean;
 }) {
   return (
     <button
@@ -109,10 +118,12 @@ function ToolButton({
       aria-label={label}
       aria-pressed={!!active}
       disabled={disabled}
-      className={`btn-ghost btn-xs ${active ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
+      className={`btn-ghost btn-xs ${iconOnly ? '!gap-0 !px-1.5' : ''} ${
+        active ? '!border-brand-300 !bg-brand-50 !text-accent' : ''
+      }`}
     >
       {icon}
-      <span className="whitespace-nowrap">{label}</span>
+      {iconOnly ? null : <span className="whitespace-nowrap">{label}</span>}
     </button>
   );
 }
@@ -122,11 +133,15 @@ function IconButton({
   icon,
   title,
   disabled,
+  active,
+  tone,
 }: {
   onClick: () => void;
   icon: React.ReactNode;
   title: string;
   disabled?: boolean;
+  active?: boolean;
+  tone?: 'danger';
 }) {
   return (
     <button
@@ -134,8 +149,15 @@ function IconButton({
       onClick={onClick}
       title={title}
       aria-label={title}
+      aria-pressed={active === undefined ? undefined : !!active}
       disabled={disabled}
-      className="grid h-7 w-7 place-items-center rounded-lg border border-transparent text-ink-500 transition hover:border-ink-200 hover:bg-surface hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+      className={`grid h-7 w-7 place-items-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        active
+          ? 'border-brand-300 bg-brand-50 text-accent'
+          : tone === 'danger'
+            ? 'border-transparent text-ink-500 hover:border-red-200 hover:bg-red-50 hover:text-danger'
+            : 'border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface hover:text-ink-700'
+      }`}
     >
       {icon}
     </button>
@@ -273,8 +295,12 @@ export default function DiagramToolbar({
   onAlign,
   onDistribute,
   syncing,
+  devices = [],
+  devicesLoading,
+  onPickRegisteredDevice,
+  onReloadDevices,
 }: DiagramToolbarProps) {
-  const [deviceMenu, setDeviceMenu] = useState(false);
+  const [deviceTray, setDeviceTray] = useState(false);
   const [diagramMenu, setDiagramMenu] = useState(false);
   const activeDevice = pending?.kind === 'device' ? pending.deviceKey : null;
   const multi = selectedCount >= 2;
@@ -299,56 +325,26 @@ export default function DiagramToolbar({
         title="ابزار انتخاب و جابه‌جایی"
       />
 
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setDeviceMenu((v) => !v)}
-          title="افزودن تجهیز"
-          className={`btn-ghost btn-xs ${pending?.kind === 'device' ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
-          aria-expanded={deviceMenu}
-        >
-          <Plus size={13} />
-          <span className="whitespace-nowrap">
-            {activeDevice
-              ? pending?.kind === 'device' && pending.label
-                ? pending.label
-                : DEVICE_CATALOG.find((d) => d.key === activeDevice)?.label
-              : 'تجهیز'}
-          </span>
-          <ChevronDown size={11} />
-        </button>
-        {deviceMenu ? (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-30 cursor-default"
-              aria-label="بستن فهرست تجهیزات"
-              onClick={() => setDeviceMenu(false)}
-            />
-            <div className="absolute right-0 top-full z-40 mt-1 max-h-[60vh] w-56 overflow-y-auto rounded-xl border border-ink-200 bg-surface p-1 shadow-pop">
-              <p className="px-2 py-1 text-[10px] font-semibold text-ink-400">یک تجهیز انتخاب کنید، سپس روی بوم کلیک کنید</p>
-              {DEVICE_CATALOG.map((type) => (
-                <button
-                  key={type.key}
-                  type="button"
-                  onClick={() => {
-                    onPickDevice(type.key);
-                    setDeviceMenu(false);
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[11.5px] transition hover:bg-ink-50 ${
-                    activeDevice === type.key ? 'bg-brand-50 text-accent' : 'text-ink-600'
-                  }`}
-                >
-                  <span className="grid h-6 w-6 place-items-center rounded-md" style={{ background: `${type.color}18`, color: type.color }}>
-                    <DeviceGlyph icon={type.icon} size={13} />
-                  </span>
-                  <span className="flex-1 truncate">{type.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        ) : null}
-      </div>
+      <button
+        type="button"
+        onClick={() => setDeviceTray((value) => !value)}
+        title="افزودن تجهیز — نوار تجهیزات زیر نوار ابزار باز می‌شود"
+        className={`btn-ghost btn-xs ${
+          pending?.kind === 'device' || deviceTray ? '!border-brand-300 !bg-brand-50 !text-accent' : ''
+        }`}
+        aria-expanded={deviceTray}
+        aria-controls="diagram-device-tray"
+      >
+        <Plus size={13} />
+        <span className="whitespace-nowrap">
+          {activeDevice
+            ? pending?.kind === 'device' && pending.label
+              ? pending.label
+              : DEVICE_CATALOG.find((d) => d.key === activeDevice)?.label
+            : 'افزودن تجهیز'}
+        </span>
+        <ChevronDown size={11} className={`transition ${deviceTray ? 'rotate-180' : ''}`} />
+      </button>
 
       <ToolButton
         active={pending?.kind === 'group'}
@@ -361,6 +357,7 @@ export default function DiagramToolbar({
         active={pending?.kind === 'shape' && pending.shape === 'rect'}
         onClick={() => onPickShape('rect')}
         icon={<Square size={13} />}
+        iconOnly
         label="مستطیل"
         title="افزودن مستطیل"
       />
@@ -368,6 +365,7 @@ export default function DiagramToolbar({
         active={pending?.kind === 'shape' && pending.shape === 'circle'}
         onClick={() => onPickShape('circle')}
         icon={<Circle size={13} />}
+        iconOnly
         label="دایره"
         title="افزودن دایره"
       />
@@ -375,12 +373,14 @@ export default function DiagramToolbar({
         active={pending?.kind === 'note'}
         onClick={onPickNote}
         icon={<StickyNote size={13} />}
+        iconOnly
         label="یادداشت"
         title="افزودن یادداشت"
       />
       <ToolButton
         onClick={onPickImage}
         icon={<ImageIcon size={13} />}
+        iconOnly
         label="تصویر"
         title="افزودن تصویر/لوگو (از پیوست‌های همین دیاگرام)"
       />
@@ -452,41 +452,46 @@ export default function DiagramToolbar({
 
       <span className="mx-0.5 h-5 w-px bg-ink-200" aria-hidden />
 
-      <ToolButton
+      <IconButton
         active={snapToGrid}
         onClick={onToggleSnap}
         icon={<Grid3x3 size={13} />}
-        label="شبکه"
-        title="چسبیدن اجزا به شبکهٔ ۱۰ پیکسلی"
+        title="شبکه: چسبیدن اجزا به شبکهٔ ۱۰ پیکسلی"
       />
 
       <ColorPickerPopover value={selectedColor ?? '#2563eb'} onChange={onColor} disabled={!selectedColor} title="تغییر رنگ انتخاب">
-        <span className="whitespace-nowrap">رنگ</span>
+        <Palette size={13} aria-hidden />
       </ColorPickerPopover>
 
-      <button
-        type="button"
-        className="btn-ghost btn-xs"
+      <IconButton
         onClick={onSyncDevices}
         disabled={syncing}
-        aria-label="همگام‌سازی تجهیزات بوم"
+        icon={<RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />}
         title="همگام‌سازی نام/نوع/مدل/IP همهٔ تجهیزات بوم با رکورد مانیتورینگ"
-      >
-        <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-        <span className="whitespace-nowrap">همگام‌سازی</span>
-      </button>
+      />
 
-      <button
-        type="button"
-        className="btn-ghost btn-xs hover:!border-red-200 hover:!text-danger"
+      <IconButton
         onClick={onDelete}
         disabled={!hasSelection}
-        aria-label="حذف انتخاب"
+        icon={<Trash size={13} />}
         title="حذف انتخاب (Delete)"
-      >
-        <Trash size={13} />
-        <span className="whitespace-nowrap">حذف</span>
-      </button>
+        tone="danger"
+      />
+
+      {/* نوار باریک تجهیزات: فقط با کلیک «افزودن تجهیز» باز می‌شود */}
+      {deviceTray ? (
+        <div id="diagram-device-tray" className="mt-1 w-full border-t border-ink-100 pt-1">
+          <DiagramDeviceTray
+            devices={devices}
+            loading={devicesLoading}
+            activeDeviceKey={activeDevice}
+            activeDeviceId={pending?.kind === 'device' ? pending.deviceId ?? null : null}
+            onPickCatalog={onPickDevice}
+            onPickDevice={(device) => onPickRegisteredDevice?.(device)}
+            onReload={onReloadDevices}
+          />
+        </div>
+      ) : null}
 
       {/* ردیف دوم: فقط با انتخاب چندگانه */}
       {multi ? (

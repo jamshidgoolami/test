@@ -55,7 +55,7 @@ import {
   toFlowEdge,
   toFlowNode,
 } from '../lib/diagrams';
-import type { AlignMode, DiagramFlowEdge, DiagramFlowNode } from '../lib/diagrams';
+import type { AlignMode, DiagramDeviceDragPayload, DiagramFlowEdge, DiagramFlowNode } from '../lib/diagrams';
 import type {
   Device,
   DiagramConnectionKind,
@@ -148,6 +148,8 @@ export default function Diagrams() {
   const [panelTab, setPanelTab] = useState<PanelTab>('tree');
   const [tool, setTool] = useState<CanvasTool>('select');
   const [pending, setPending] = useState<PendingTool>(null);
+  // مبدأ اتصال دوکلیکی: تجهیز اول انتخاب می‌شود و تجهیز دوم خط را می‌سازد.
+  const [linkSource, setLinkSource] = useState<string | null>(null);
   const [connectionKind, setConnectionKind] = useState<DiagramConnectionKind>('fiber');
   const [dialog, setDialog] = useState<EditorDialog | null>(null);
   const [formName, setFormName] = useState('');
@@ -235,6 +237,8 @@ export default function Diagrams() {
     for (const device of devicesAsync.data?.items ?? []) map.set(device.id, device);
     return map;
   }, [devicesAsync.data]);
+  /** فهرست مرتب تجهیزات برای نوار باریک افزودن تجهیز */
+  const deviceList = useMemo(() => Array.from(devicesById.values()), [devicesById]);
 
   // انتخاب خودکار نخستین دیاگرام وقتی آدرس شناسه ندارد
   useEffect(() => {
@@ -307,6 +311,11 @@ export default function Diagrams() {
   useEffect(() => {
     writeFlag('nw.diagrams.snap', snapToGrid);
   }, [snapToGrid]);
+
+  // با خروج از ابزار اتصال، مبدأ انتخاب‌شده پاک می‌شود.
+  useEffect(() => {
+    if (tool !== 'connect' || !editing) setLinkSource(null);
+  }, [tool, editing]);
 
   useEffect(() => {
     writeFlag('nw.diagrams.titleblock', titleBlock);
@@ -485,13 +494,12 @@ export default function Diagrams() {
       const sourceHandle = connection.sourceHandle ?? 'right';
       const targetHandle = connection.targetHandle ?? 'left';
       applyCanvas((prev) => {
+        // مسیر خط از هندسهٔ گره‌ها ساخته می‌شود، پس هر جفت جزء فقط یک یال دارد.
         if (
           prev.edges.some(
             (edge) =>
-              edge.source === connection.source &&
-              edge.target === connection.target &&
-              edge.sourceHandle === sourceHandle &&
-              edge.targetHandle === targetHandle
+              (edge.source === connection.source && edge.target === connection.target) ||
+              (edge.source === connection.target && edge.target === connection.source)
           )
         ) {
           return prev;
@@ -514,6 +522,50 @@ export default function Diagrams() {
       });
     },
     [applyCanvas]
+  );
+
+  /** اتصال دوکلیکی: کلیک روی تجهیز اول، سپس کلیک روی تجهیز دوم. */
+  const pickLinkNode = useCallback(
+    (nodeId: string) => {
+      if (!editing || tool !== 'connect') return;
+      if (!linkSource) {
+        setLinkSource(nodeId);
+        return;
+      }
+      if (linkSource === nodeId) {
+        setLinkSource(null);
+        return;
+      }
+      const source = linkSource;
+      setLinkSource(null);
+      const exists = canvas
+        .snapshot()
+        .edges.some(
+          (edge) =>
+            (edge.source === source && edge.target === nodeId) ||
+            (edge.source === nodeId && edge.target === source)
+        );
+      if (exists) {
+        push('این دو جزء از قبل به هم متصل هستند.', 'info');
+        return;
+      }
+      applyCanvas((prev) => ({
+        ...prev,
+        edges: [
+          ...prev.edges,
+          {
+            id: newId(),
+            type: 'diagram',
+            source,
+            target: nodeId,
+            sourceHandle: 'right',
+            targetHandle: 'left',
+            data: { kind: connectionKindRef.current, label: '' },
+          },
+        ],
+      }));
+    },
+    [applyCanvas, canvas, editing, linkSource, push, tool]
   );
 
   const handleNodesDelete = useCallback(
@@ -576,6 +628,44 @@ export default function Diagrams() {
       setTool('select');
     },
     [applyCanvas, devicesById, editing, pending]
+  );
+
+  /** کلیک روی بوم: در حالت اتصال، انتخاب مبدأ را لغو می‌کند. */
+  const handlePaneClickAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (tool === 'connect') {
+        setLinkSource(null);
+        return;
+      }
+      addAt(position);
+    },
+    [addAt, tool]
+  );
+
+  /** افزودن تجهیزی که از نوار ابزار روی بوم کشیده و رها شده است */
+  const dropDeviceOnCanvas = useCallback(
+    (payload: DiagramDeviceDragPayload, position: { x: number; y: number }) => {
+      if (!editing) return;
+      const created = createDeviceNode(payload.deviceKey, position);
+      const device = payload.deviceId ? devicesById.get(payload.deviceId) ?? null : null;
+      const node: DiagramFlowNode = {
+        ...created,
+        data: {
+          ...created.data,
+          ...(payload.label ? { label: payload.label } : {}),
+          ...(payload.model ? { model: payload.model } : {}),
+          ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
+          ...(device ? { ip: device.ip, syncedAt: Date.now(), serial: device.serial || created.data.serial } : {}),
+        },
+      };
+      applyCanvas((prev) => ({
+        ...prev,
+        nodes: [...prev.nodes.map((item) => ({ ...item, selected: false })), { ...node, selected: true }],
+      }));
+      setPending(null);
+      setTool('select');
+    },
+    [applyCanvas, devicesById, editing]
   );
 
   const patchNodeData = useCallback(
@@ -1144,6 +1234,9 @@ export default function Diagrams() {
     [currentId, list, navigate, push]
   );
 
+  const connectHint = linkSource
+    ? 'روی تجهیز دوم کلیک کنید تا ارتباط ساخته شود.'
+    : 'روی تجهیز اول کلیک کنید؛ سپس تجهیز دوم.';
   const pendingHint = !pending
     ? null
     : pending.kind === 'device'
@@ -1405,10 +1498,12 @@ export default function Diagrams() {
               onSelectTool={() => {
                 setTool('select');
                 setPending(null);
+                setLinkSource(null);
               }}
               onConnectTool={() => {
                 setTool('connect');
                 setPending(null);
+                setLinkSource(null);
               }}
               onPickDevice={(key) => {
                 setPending({ kind: 'device', deviceKey: key });
@@ -1452,6 +1547,10 @@ export default function Diagrams() {
               onDuplicate={duplicateSelection}
               onAlign={alignSelection}
               onDistribute={distributeSelection}
+              devices={deviceList}
+              devicesLoading={devicesAsync.loading}
+              onPickRegisteredDevice={pickDeviceFromList}
+              onReloadDevices={devicesAsync.reload}
             />
           ) : null}
 
@@ -1485,14 +1584,20 @@ export default function Diagrams() {
                   onConnect={handleConnect}
                   onNodesDelete={handleNodesDelete}
                   onEdgesDelete={handleEdgesDelete}
-                  onPaneClick={addAt}
+                  onPaneClick={handlePaneClickAt}
                   onInspect={() => openPanel('inspector')}
                   onEdgeInspect={() => openPanel('inspector')}
-                  pendingHint={pendingHint}
+                  pendingHint={editing && tool === 'connect' ? connectHint : pendingHint}
                   onCancelPending={() => {
+                    if (tool === 'connect') {
+                      setLinkSource(null);
+                      return;
+                    }
                     setPending(null);
                     setTool('select');
                   }}
+                  onPickLinkNode={pickLinkNode}
+                  linkSourceId={tool === 'connect' ? linkSource : null}
                   devices={devicesById}
                   onOpenDevice={openDevicePage}
                   onOpenDiagram={(targetId) => openDiagram(targetId, { fromLink: true })}
@@ -1517,6 +1622,7 @@ export default function Diagrams() {
                     const after = canvas.snapshot();
                     if (before.nodes !== after.nodes) canvas.pushSnapshot(before);
                   }}
+                  onDropDevice={dropDeviceOnCanvas}
                 />
               </ReactFlowProvider>
             ) : (

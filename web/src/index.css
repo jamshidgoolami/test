@@ -613,6 +613,16 @@
   background: rgb(var(--nw-brand-200));
 }
 
+/* در حالت اتصال، کل گره هدف کلیک است و گرهٔ مبدأ با خط‌چین مشخص می‌شود. */
+.diagram-picking .react-flow__node {
+  cursor: crosshair;
+}
+.diagram-link-source {
+  outline: 2px dashed #2563eb;
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
 /* بوم React Flow در تم تاریک: پس‌زمینهٔ نقطه‌چین، کنترل‌ها و مینی‌مپ */
 .dark .react-flow__controls {
   box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.9);

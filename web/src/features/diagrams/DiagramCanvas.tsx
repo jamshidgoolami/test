@@ -34,7 +34,7 @@ import {
   Position,
   ReactFlow,
   getNodesBounds,
-  getBezierPath,
+  useInternalNode,
   useReactFlow,
   useStore,
 } from '@xyflow/react';
@@ -42,6 +42,7 @@ import type {
   Connection,
   EdgeProps,
   EdgeTypes,
+  InternalNode,
   NodeProps,
   NodeTypes,
   OnEdgesChange,
@@ -52,16 +53,25 @@ import { toPng } from 'html-to-image';
 import '@xyflow/react/dist/style.css';
 import {
   CONNECTION_TYPES,
+  DEVICE_DRAG_MIME,
   GRID_SIZE,
   GROUP_DEFAULT_COLOR,
   HANDLE_SIDES,
   connectionType,
   contrastText,
   deviceType,
+  parseDeviceDragPayload,
 } from '../../lib/diagrams';
+import { shortestLinkPath } from '../../lib/diagram-geometry';
+import type { LinkRect } from '../../lib/diagram-geometry';
 import { composeExportSheet, downloadDataUrl, downloadDiagramPdf, safeFileName } from '../../lib/diagram-export';
 import type { ExportMeta } from '../../lib/diagram-export';
-import type { DiagramFlowEdge, DiagramFlowNode, HandleSide } from '../../lib/diagrams';
+import type {
+  DiagramDeviceDragPayload,
+  DiagramFlowEdge,
+  DiagramFlowNode,
+  HandleSide,
+} from '../../lib/diagrams';
 import type { Device, DiagramComment, DiagramConnectionKind } from '../../lib/types';
 import { faDigits, fmtMs, fmtPct, fmtRelative, statusMeta } from '../../lib/format';
 import { useDeviceLive } from '../../lib/store';
@@ -82,6 +92,7 @@ const TOOL_CONTEXT = createContext({
   onOpenDevice: (_id: number) => {},
   onOpenDiagram: (_id: number) => {},
   onToggleGroup: (_id: string) => {},
+  linkSourceId: null as string | null,
 });
 
 /** نشانگر تعداد کامنت‌های یک گره؛ در خروجی تصویر چاپ نمی‌شود. */
@@ -107,9 +118,13 @@ const POSITIONS: Record<HandleSide, Position> = {
   left: Position.Left,
 };
 
-function SideHandles({ color }: { color: string }) {
-  const { connectable, exporting } = useContext(TOOL_CONTEXT);
-  // نقاط اتصال در خروجی تصویر دیده نمی‌شوند.
+/**
+ * لنگرهای نامرئی چهار سمت. دیگر برای کشیدن خط استفاده نمی‌شوند و فقط باعث
+ * می‌شوند یال‌های ذخیره‌شدهٔ قبلی لنگر معتبر داشته باشند؛ مسیر خط با هندسهٔ
+ * خود گره‌ها محاسبه می‌شود.
+ */
+function SideHandles() {
+  const { exporting } = useContext(TOOL_CONTEXT);
   if (exporting) return null;
   return (
     <>
@@ -119,19 +134,26 @@ function SideHandles({ color }: { color: string }) {
           id={side}
           type="source"
           position={POSITIONS[side]}
-          isConnectable={connectable}
-          className={`diagram-handle ${connectable ? 'is-active' : ''}`}
-          style={{ borderColor: color }}
+          isConnectable={false}
+          className="diagram-handle"
+          style={{ opacity: 0, width: 1, height: 1, border: 0, background: 'transparent', pointerEvents: 'none' }}
         />
       ))}
     </>
   );
 }
 
+/** گرهٔ مبدأ در حالت اتصال با خط‌چین مشخص می‌شود. */
+function useLinkSourceClass(id: string): string {
+  const { linkSourceId } = useContext(TOOL_CONTEXT);
+  return linkSourceId && linkSourceId === id ? 'diagram-link-source' : '';
+}
+
 const nodeFrame = 'relative h-full w-full';
 
-function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+function DeviceNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const { editing, exporting, devices, onOpenDevice, zoomLevel } = useContext(TOOL_CONTEXT);
+  const linkSource = useLinkSourceClass(id);
   const meta = deviceType(data.deviceType);
   const color = data.color || meta.color;
   const active = editing && selected && !exporting;
@@ -148,7 +170,7 @@ function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
   const ring = statusInfo && status !== 'unknown' ? statusInfo.chart : null;
 
   return (
-    <div className={nodeFrame} dir="rtl">
+    <div className={`${nodeFrame} ${linkSource}`} dir="rtl">
       <NodeResizer
         isVisible={!!active}
         minWidth={110}
@@ -157,7 +179,7 @@ function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color={color} />
+      <SideHandles />
       <CommentBadge comments={data.comments} />
       <div
         className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border bg-surface px-2 py-1 text-center shadow-soft transition-shadow"
@@ -216,12 +238,13 @@ function DeviceNode({ data, selected }: NodeProps<DiagramFlowNode>) {
 }
 
 /** تصویر/لوگوی پیوست‌شده؛ در حالت نمایش فقط نمایش داده می‌شود. */
-function ImageNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+function ImageNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const { editing, exporting, zoomLevel } = useContext(TOOL_CONTEXT);
+  const linkSource = useLinkSourceClass(id);
   const active = editing && selected && !exporting;
   const src = typeof data.src === 'string' ? data.src : '';
   return (
-    <div className={nodeFrame} dir="rtl">
+    <div className={`${nodeFrame} ${linkSource}`} dir="rtl">
       <NodeResizer
         isVisible={!!active}
         minWidth={80}
@@ -326,14 +349,15 @@ function GroupNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   );
 }
 
-function ShapeNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+function ShapeNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const { editing, exporting } = useContext(TOOL_CONTEXT);
+  const linkSource = useLinkSourceClass(id);
   const color = data.color || '#dbeafe';
   const circle = data.shape === 'circle';
   const text = String(data.text ?? '');
   const active = selected && !exporting;
   return (
-    <div className={nodeFrame} dir="rtl">
+    <div className={`${nodeFrame} ${linkSource}`} dir="rtl">
       <NodeResizer
         isVisible={editing && !!active}
         minWidth={60}
@@ -342,7 +366,7 @@ function ShapeNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color="#64748b" />
+      <SideHandles />
       <CommentBadge comments={data.comments} />
       <div
         className={`flex h-full w-full items-center justify-center overflow-hidden border border-black/10 px-2 text-center ${
@@ -363,12 +387,13 @@ function ShapeNode({ data, selected }: NodeProps<DiagramFlowNode>) {
   );
 }
 
-function NoteNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+function NoteNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const { editing, exporting, zoomLevel } = useContext(TOOL_CONTEXT);
+  const linkSource = useLinkSourceClass(id);
   const color = data.color || '#fef08a';
   const active = editing && selected && !exporting;
   return (
-    <div className={nodeFrame} dir="rtl">
+    <div className={`${nodeFrame} ${linkSource}`} dir="rtl">
       <NodeResizer
         isVisible={!!active}
         minWidth={120}
@@ -377,7 +402,7 @@ function NoteNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color="#ca8a04" />
+      <SideHandles />
       <CommentBadge comments={data.comments} />
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-amber-300/80 p-2 text-right shadow-soft"
@@ -398,13 +423,14 @@ function NoteNode({ data, selected }: NodeProps<DiagramFlowNode>) {
 }
 
 /** گره پیوند به دیاگرام دیگر؛ دوبار کلیک، دیاگرام مقصد را باز می‌کند. */
-function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
+function DiagramLinkNode({ id, data, selected }: NodeProps<DiagramFlowNode>) {
   const { editing, exporting, onOpenDiagram, zoomLevel } = useContext(TOOL_CONTEXT);
+  const linkSource = useLinkSourceClass(id);
   const active = editing && selected && !exporting;
   const color = String(data.color || '#0369a1');
   const targetId = data.diagramId ? Number(data.diagramId) : null;
   return (
-    <div className={nodeFrame} dir="rtl">
+    <div className={`${nodeFrame} ${linkSource}`} dir="rtl">
       <NodeResizer
         isVisible={!!active}
         minWidth={140}
@@ -413,7 +439,7 @@ function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
         lineClassName="diagram-resize-line"
         handleClassName="diagram-resize-handle"
       />
-      <SideHandles color={color} />
+      <SideHandles />
       <CommentBadge comments={data.comments} />
       <div
         className="flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 border-dashed bg-surface px-2 py-1 text-center shadow-soft"
@@ -437,32 +463,29 @@ function DiagramLinkNode({ data, selected }: NodeProps<DiagramFlowNode>) {
   );
 }
 
-function ConnectionEdge({
-  id,
-  source,
-  target,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  data,
-  selected,
-}: EdgeProps<DiagramFlowEdge>) {
+function rectOf(node: InternalNode<DiagramFlowNode> | undefined): LinkRect | null {
+  if (!node) return null;
+  const point = node.internals.positionAbsolute;
+  const width = node.measured?.width ?? node.width ?? 0;
+  const height = node.measured?.height ?? node.height ?? 0;
+  if (!width || !height) return null;
+  return { x: point.x, y: point.y, width, height };
+}
+
+function ConnectionEdge({ id, source, target, data, selected }: EdgeProps<DiagramFlowEdge>) {
   const { exporting, highlightNodeId } = useContext(TOOL_CONTEXT);
+  const sourceNode = useInternalNode<DiagramFlowNode>(source);
+  const targetNode = useInternalNode<DiagramFlowNode>(target);
   const active = selected && !exporting;
   const meta = connectionType(data?.kind as DiagramConnectionKind | undefined);
-  // مسیر خمیدهٔ بزیه از هر سمتی به هر سمت دیگر (حتی مورب) روان رسم می‌شود.
-  const [path] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-    curvature: 0.32,
-  });
+  // مسیر از هندسهٔ خود گره‌ها ساخته می‌شود، پس لنگر ثابت و کشیدن دسته لازم نیست.
+  const path = useMemo(() => {
+    const a = rectOf(sourceNode);
+    const b = rectOf(targetNode);
+    if (!a || !b) return '';
+    return shortestLinkPath(a, b);
+  }, [sourceNode, targetNode]);
+  if (!path) return null;
   const dimmed = !!highlightNodeId && highlightNodeId !== source && highlightNodeId !== target;
   const width = active ? meta.width + 1.5 : meta.width;
   return (
@@ -534,6 +557,10 @@ export interface DiagramCanvasProps {
   onEdgesDelete: (edges: DiagramFlowEdge[]) => void;
   onPaneClick: (position: { x: number; y: number }) => void;
   onInspect: () => void;
+  /** در حالت اتصال، کلیک روی هر گره آن را به‌عنوان مبدأ/مقصد انتخاب می‌کند */
+  onPickLinkNode?: (nodeId: string) => void;
+  /** گرهٔ مبدأ اتصال (برای نمایش خط‌چین) */
+  linkSourceId?: string | null;
   onEdgeInspect: () => void;
   pendingHint: string | null;
   onCancelPending: () => void;
@@ -553,6 +580,8 @@ export interface DiagramCanvasProps {
   snapToGrid?: boolean;
   onDragStart?: () => void;
   onDragStop?: () => void;
+  /** رها کردن تجهیزی که از نوار ابزار کشیده شده است */
+  onDropDevice?: (payload: DiagramDeviceDragPayload, position: { x: number; y: number }) => void;
 }
 
 const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(function DiagramCanvas({
@@ -570,6 +599,8 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   onPaneClick,
   onInspect,
   onEdgeInspect,
+  onPickLinkNode,
+  linkSourceId = null,
   pendingHint,
   onCancelPending,
   devices,
@@ -581,6 +612,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   snapToGrid = false,
   onDragStart,
   onDragStop,
+  onDropDevice,
 }: DiagramCanvasProps, ref) {
   const { screenToFlowPosition, flowToScreenPosition, getNodes } = useReactFlow();
   // فقط تغییر زوم باعث رندر دوباره می‌شود؛ جابه‌جایی بوم نباید کل گره‌ها را
@@ -588,6 +620,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
   const zoom = useStore((state) => state.transform[2]);
   const hostRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(true);
   const [legendOpen, setLegendOpen] = useState(true);
@@ -843,14 +876,38 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
         onOpenDevice: onOpenDevice ?? (() => {}),
         onOpenDiagram: onOpenDiagram ?? (() => {}),
         onToggleGroup: handleToggleGroup,
+        linkSourceId,
       }}
     >
       <div
         ref={hostRef}
         className={`${fullscreen ? 'fixed inset-0 z-[1300]' : 'relative'} h-full w-full overflow-hidden bg-surface ${
           fullscreen ? 'rounded-none border-0' : 'rounded-2xl border border-ink-200/70'
-        }`}
+        } ${connectable ? 'diagram-picking' : ''}`}
         dir="ltr"
+        onDragOver={(event) => {
+          if (!editing || !onDropDevice) return;
+          if (!Array.from(event.dataTransfer.types).includes(DEVICE_DRAG_MIME)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          if (!dropActive) setDropActive(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          setDropActive(false);
+        }}
+        onDrop={(event) => {
+          if (!editing || !onDropDevice) return;
+          setDropActive(false);
+          // فقط دادهٔ تجهیز پذیرفته می‌شود؛ متن یا فایل کشیده‌شده روی بوم نادیده می‌ماند.
+          if (!Array.from(event.dataTransfer.types).includes(DEVICE_DRAG_MIME)) return;
+          const raw =
+            event.dataTransfer.getData(DEVICE_DRAG_MIME) || event.dataTransfer.getData('text/plain');
+          const payload = parseDeviceDragPayload(raw);
+          if (!payload) return;
+          event.preventDefault();
+          onDropDevice(payload, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+        }}
       >
         <ReactFlow<DiagramFlowNode, DiagramFlowEdge>
           nodes={displayNodes}
@@ -862,7 +919,15 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
           onConnect={onConnect}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
-          onNodeClick={onInspect}
+          onNodeClick={(_event, node) => {
+            if (connectable) {
+              // کادر گروه نقطهٔ اتصال ندارد و فقط ظرف است.
+              if (node.type === 'group') return;
+              onPickLinkNode?.(node.id);
+              return;
+            }
+            onInspect();
+          }}
           onEdgeClick={onEdgeInspect}
           onNodeMouseEnter={(_event, node) => setHoveredNode(node.id)}
           onNodeMouseLeave={() => setHoveredNode(null)}
@@ -886,8 +951,9 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
             const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
             if (position) onPaneClick(position);
           }}
-          nodesDraggable={editing}
-          nodesConnectable={editing && connectable}
+          nodesDraggable={editing && !connectable}
+          // اتصال فقط با کلیک روی تجهیز اول و دوم انجام می‌شود؛ دستهٔ کشیدنی نداریم.
+          nodesConnectable={false}
           // انتخاب یک جزء نباید ترتیب لایه‌ها را عوض کند؛ وگرنه گروه انتخاب‌شده
           // روی تجهیزات می‌آید و کلیک آن‌ها را می‌گیرد.
           elevateNodesOnSelect={false}
@@ -949,6 +1015,14 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
             )}
           </div>
         </ReactFlow>
+
+        {dropActive ? (
+          <div className="pointer-events-none absolute inset-3 z-40 grid place-items-center rounded-xl border-2 border-dashed border-brand-400 bg-brand-50/70">
+            <span className="rounded-full border border-brand-200 bg-surface px-3 py-1 text-[11.5px] font-medium text-accent shadow-soft">
+              تجهیز را همین‌جا رها کنید
+            </span>
+          </div>
+        ) : null}
 
         {/* راهنمای رنگ: تنها مرجع نوع ارتباط، چون برچسب متنی روی خطوط حذف شده است. */}
         <div className="absolute bottom-3 right-3 z-20" dir="rtl">
@@ -1057,7 +1131,7 @@ const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(functi
               <p className="text-sm font-semibold text-ink-700">بوم این دیاگرام خالی است</p>
               <p className="mt-1 text-[11.5px] leading-5 text-ink-500">
                 {editing
-                  ? 'از نوار ابزار، تجهیز یا شکل اضافه کنید؛ سپس با ابزار اتصال، نقاط کنار اجزا را به هم وصل کنید.'
+                  ? 'از نوار ابزار، تجهیز یا شکل اضافه کنید؛ سپس با ابزار اتصال، یک تجهیز و بعد تجهیز دیگر را انتخاب کنید.'
                   : 'برای افزودن تجهیز و ارتباط، حالت ویرایش را فعال کنید.'}
               </p>
             </div>

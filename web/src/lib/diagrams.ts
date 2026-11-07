@@ -69,6 +69,47 @@ export function deviceCatalogKey(deviceType: string | undefined): string {
   return DEVICE_CATALOG.some((d) => d.key === value) ? value : 'other';
 }
 
+/** نوع MIME دادهٔ کشیدن تجهیز از نوار ابزار به بوم */
+export const DEVICE_DRAG_MIME = 'application/x-netwatch-device';
+
+export interface DiagramDeviceDragPayload {
+  deviceKey: string;
+  deviceId?: number;
+  label?: string;
+  model?: string;
+}
+
+/**
+ * خواندن امن دادهٔ Drag & Drop. هر ورودی ناقص یا نامعتبر نادیده گرفته می‌شود
+ * تا رها کردن متن ناخواسته روی بوم هیچ جزئی نسازد.
+ */
+export function parseDeviceDragPayload(raw: string): DiagramDeviceDragPayload | null {
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const deviceKey = deviceCatalogKey(typeof record.deviceKey === 'string' ? record.deviceKey : undefined);
+  const deviceId =
+    typeof record.deviceId === 'number' && Number.isInteger(record.deviceId) && record.deviceId > 0
+      ? record.deviceId
+      : undefined;
+  const label =
+    typeof record.label === 'string' && record.label.trim() ? record.label.trim().slice(0, 120) : undefined;
+  const model =
+    typeof record.model === 'string' && record.model.trim() ? record.model.trim().slice(0, 120) : undefined;
+  return {
+    deviceKey,
+    ...(deviceId ? { deviceId } : {}),
+    ...(label ? { label } : {}),
+    ...(model ? { model } : {}),
+  };
+}
+
 export interface ConnectionType {
   kind: DiagramConnectionKind;
   label: string;
