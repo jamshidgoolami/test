@@ -623,6 +623,40 @@
   border-radius: 14px;
 }
 
+/* Tooltip شناور برای دکمه‌های فقط‌آیکون نوار ابزار دیاگرام.
+   نام دکمه روی هاور/فوکوس بالای آیکون ظاهر می‌شود و چیدمان را جابه‌جا نمی‌کند. */
+.nw-tip {
+  position: relative;
+}
+.nw-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 80;
+  bottom: calc(100% + 7px);
+  right: 50%;
+  transform: translateX(50%) translateY(3px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgb(var(--nw-ink-800));
+  color: rgb(var(--nw-surface));
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.55);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.nw-tip:hover::after,
+.nw-tip:focus-visible::after {
+  opacity: 1;
+  transform: translateX(50%) translateY(0);
+}
+.nw-tip:disabled::after {
+  display: none;
+}
+
 /* بوم React Flow در تم تاریک: پس‌زمینهٔ نقطه‌چین، کنترل‌ها و مینی‌مپ */
 .dark .react-flow__controls {
   box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.9);

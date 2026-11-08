@@ -1547,10 +1547,6 @@ export default function Diagrams() {
               onDuplicate={duplicateSelection}
               onAlign={alignSelection}
               onDistribute={distributeSelection}
-              devices={deviceList}
-              devicesLoading={devicesAsync.loading}
-              onPickRegisteredDevice={pickDeviceFromList}
-              onReloadDevices={devicesAsync.reload}
             />
           ) : null}
 

@@ -62,7 +62,7 @@ import {
   deviceType,
   parseDeviceDragPayload,
 } from '../../lib/diagrams';
-import { shortestLinkPath } from '../../lib/diagram-geometry';
+import { computeLink } from '../../lib/diagram-geometry';
 import type { LinkRect } from '../../lib/diagram-geometry';
 import { composeExportSheet, downloadDataUrl, downloadDiagramPdf, safeFileName } from '../../lib/diagram-export';
 import type { ExportMeta } from '../../lib/diagram-export';
@@ -479,13 +479,14 @@ function ConnectionEdge({ id, source, target, data, selected }: EdgeProps<Diagra
   const active = selected && !exporting;
   const meta = connectionType(data?.kind as DiagramConnectionKind | undefined);
   // مسیر از هندسهٔ خود گره‌ها ساخته می‌شود، پس لنگر ثابت و کشیدن دسته لازم نیست.
-  const path = useMemo(() => {
+  const link = useMemo(() => {
     const a = rectOf(sourceNode);
     const b = rectOf(targetNode);
-    if (!a || !b) return '';
-    return shortestLinkPath(a, b);
+    if (!a || !b) return null;
+    return computeLink(a, b);
   }, [sourceNode, targetNode]);
-  if (!path) return null;
+  if (!link) return null;
+  const path = link.path;
   const dimmed = !!highlightNodeId && highlightNodeId !== source && highlightNodeId !== target;
   const width = active ? meta.width + 1.5 : meta.width;
   return (
@@ -517,6 +518,20 @@ function ConnectionEdge({ id, source, target, data, selected }: EdgeProps<Diagra
           transition: 'opacity 120ms ease',
         }}
       />
+      {/* نقطهٔ اتصال در دو سر خط: محل نشستن خط روی تجهیز تمیز و خوانا می‌شود. */}
+      {[link.start, link.end].map((point, index) => (
+        <circle
+          key={index}
+          cx={Math.round(point.x * 10) / 10}
+          cy={Math.round(point.y * 10) / 10}
+          r={3.4}
+          fill="rgb(var(--nw-surface))"
+          stroke={meta.color}
+          strokeWidth={1.7}
+          opacity={dimmed ? 0.2 : 1}
+          pointerEvents="none"
+        />
+      ))}
     </>
   );
 }

@@ -33,9 +33,9 @@ import {
   Undo2,
   Workflow,
 } from 'lucide-react';
-import { CONNECTION_TYPES, DEVICE_CATALOG, connectionType } from '../../lib/diagrams';
+import { CONNECTION_TYPES, connectionType } from '../../lib/diagrams';
 import type { AlignMode } from '../../lib/diagrams';
-import type { Device, DiagramConnectionKind, DiagramShape, DiagramSummary } from '../../lib/types';
+import type { DiagramConnectionKind, DiagramShape, DiagramSummary } from '../../lib/types';
 import { faDigits } from '../../lib/format';
 import { ColorPickerPopover } from '../../components/ColorField';
 import DiagramDeviceTray from './DiagramDeviceTray';
@@ -85,11 +85,6 @@ export interface DiagramToolbarProps {
   onAlign: (mode: AlignMode) => void;
   onDistribute: (axis: 'x' | 'y') => void;
   syncing?: boolean;
-  /** تجهیزات ثبت‌شدهٔ مانیتورینگ برای نوار باریک افزودن تجهیز */
-  devices?: Device[];
-  devicesLoading?: boolean;
-  onPickRegisteredDevice?: (device: Device) => void;
-  onReloadDevices?: () => void;
 }
 
 function ToolButton({
@@ -114,11 +109,12 @@ function ToolButton({
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      title={iconOnly ? undefined : title}
+      data-tip={iconOnly ? title : undefined}
       aria-label={label}
       aria-pressed={!!active}
       disabled={disabled}
-      className={`btn-ghost btn-xs ${iconOnly ? '!gap-0 !px-1.5' : ''} ${
+      className={`btn-ghost btn-xs ${iconOnly ? 'nw-tip !gap-0 !px-1.5' : ''} ${
         active ? '!border-brand-300 !bg-brand-50 !text-accent' : ''
       }`}
     >
@@ -147,11 +143,11 @@ function IconButton({
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      data-tip={title}
       aria-label={title}
       aria-pressed={active === undefined ? undefined : !!active}
       disabled={disabled}
-      className={`grid h-7 w-7 place-items-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`nw-tip grid h-7 w-7 place-items-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? 'border-brand-300 bg-brand-50 text-accent'
           : tone === 'danger'
@@ -295,10 +291,6 @@ export default function DiagramToolbar({
   onAlign,
   onDistribute,
   syncing,
-  devices = [],
-  devicesLoading,
-  onPickRegisteredDevice,
-  onReloadDevices,
 }: DiagramToolbarProps) {
   const [deviceTray, setDeviceTray] = useState(false);
   const [diagramMenu, setDiagramMenu] = useState(false);
@@ -322,13 +314,14 @@ export default function DiagramToolbar({
         onClick={onSelectTool}
         icon={<MousePointer2 size={13} />}
         label="انتخاب"
-        title="ابزار انتخاب و جابه‌جایی"
+        title="انتخاب و جابه‌جایی"
+        iconOnly
       />
 
       <button
         type="button"
         onClick={() => setDeviceTray((value) => !value)}
-        title="افزودن تجهیز — نوار تجهیزات زیر نوار ابزار باز می‌شود"
+        title="افزودن تجهیز عمومی — نوار تجهیزات زیر نوار ابزار باز می‌شود"
         className={`btn-ghost btn-xs ${
           pending?.kind === 'device' || deviceTray ? '!border-brand-300 !bg-brand-50 !text-accent' : ''
         }`}
@@ -336,13 +329,7 @@ export default function DiagramToolbar({
         aria-controls="diagram-device-tray"
       >
         <Plus size={13} />
-        <span className="whitespace-nowrap">
-          {activeDevice
-            ? pending?.kind === 'device' && pending.label
-              ? pending.label
-              : DEVICE_CATALOG.find((d) => d.key === activeDevice)?.label
-            : 'افزودن تجهیز'}
-        </span>
+        <span className="whitespace-nowrap">افزودن</span>
         <ChevronDown size={11} className={`transition ${deviceTray ? 'rotate-180' : ''}`} />
       </button>
 
@@ -447,7 +434,8 @@ export default function DiagramToolbar({
         onClick={onConnectTool}
         icon={<Link2 size={13} />}
         label="اتصال"
-        title="رسم ارتباط بین اجزا"
+        title="اتصال دو تجهیز"
+        iconOnly
       />
 
       <span className="mx-0.5 h-5 w-px bg-ink-200" aria-hidden />
@@ -481,15 +469,7 @@ export default function DiagramToolbar({
       {/* نوار باریک تجهیزات: فقط با کلیک «افزودن تجهیز» باز می‌شود */}
       {deviceTray ? (
         <div id="diagram-device-tray" className="mt-1 w-full border-t border-ink-100 pt-1">
-          <DiagramDeviceTray
-            devices={devices}
-            loading={devicesLoading}
-            activeDeviceKey={activeDevice}
-            activeDeviceId={pending?.kind === 'device' ? pending.deviceId ?? null : null}
-            onPickCatalog={onPickDevice}
-            onPickDevice={(device) => onPickRegisteredDevice?.(device)}
-            onReload={onReloadDevices}
-          />
+          <DiagramDeviceTray activeDeviceKey={activeDevice} onPickCatalog={onPickDevice} />
         </div>
       ) : null}
 
