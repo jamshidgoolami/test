@@ -64,7 +64,7 @@ import reportsRouter from './routes/reports.js';
 import opsRouter from './routes/ops.js';
 import inventoryRouter from './routes/inventory.js';
 import markersRouter from './routes/markers.js';
-import diagramsRouter from './routes/diagrams.js';
+import diagramsRouter, { pruneBrokenDiagramLinks } from './routes/diagrams.js';
 import credentialsRouter from './routes/credentials.js';
 import auditRouter from './routes/audit.js';
 import systemRouter from './routes/system.js';
@@ -132,6 +132,16 @@ try {
   }
 } catch (e) {
   log('warn', `پاک‌سازی فایل‌های یتیم نقشه ناموفق بود: ${e?.message || e}`);
+}
+// ارجاع‌های شکستهٔ دیاگرام‌ها (لینک به دیاگرام حذف‌شده یا خود) از نسخه‌های قبل
+// پاک می‌شوند تا نقشهٔ ارتباط و بوم‌ها دادهٔ یتیم نشان ندهند.
+try {
+  const pruned = pruneBrokenDiagramLinks();
+  if (pruned.links || pruned.diagrams) {
+    logEvent('warn', 'diagram_links_pruned', pruned);
+  }
+} catch (e) {
+  log('warn', `پاک‌سازی لینک‌های شکستهٔ دیاگرام ناموفق بود: ${e?.message || e}`);
 }
 const app = express();
 app.locals.seedIfEmpty = seedIfEmpty;

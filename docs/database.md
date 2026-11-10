@@ -33,6 +33,10 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | `diagrams` | دیاگرام‌های ماژولار شبکه | `parent_id` برای ساختار درختی، `data` شامل همهٔ اجزای همان دیاگرام (JSON)، `revision` برای جلوگیری از بازنویسی هم‌زمان؛ حذف والد زیرمجموعه‌ها را Cascade می‌کند |
 | `diagram_attachments` | تصویر/لوگوی روی بوم دیاگرام | فایل در همان `<DATA_DIR>/attachments`؛ حذف دیاگرام ردیف‌ها را Cascade می‌کند و فایل بی‌استفاده در Sweep بعدی پاک می‌شود |
 | `users`, `sessions` | احراز هویت و نشست | `sessions` با هش توکن؛ قفل حساب در `users` |
+| `users.extra_permissions` | مجوز اختصاصی کاربر | JSON؛ فقط `credentials:reveal` قابل اعطاست و نقش پایه را تغییر نمی‌دهد |
+| `credentials` | خزانهٔ اعتبارنامهٔ تجهیزات | نام کاربری/رمز/یادداشت با AES-256-GCM؛ حذف تجهیز فقط `device_id` را `NULL` می‌کند |
+| `sites` | ایستگاه‌های جغرافیایی | هر تجهیز حداکثر یک `site_id`؛ حذف ایستگاه آن را `NULL` می‌کند |
+| `device_attachments`, `device_types`, `device_templates`, `device_group_members` | پیوست، نوع، قالب و عضویت چندگروهی تجهیز | فایل پیوست در `<DATA_DIR>/attachments` |
 | `settings` | تنظیمات برنامه | کلید/مقدار متنی JSON؛ مقدارهای محیطی اولویت بالاتر دارند |
 | `audit_log` | حسابرسی تغییرات | هر تغییر حساس با کاربر، IP، هدف و جزئیات |
 | `engine_log` | لاگ موتور | هرس دوره‌ای بر اساس `engine_log_retention_days` |
@@ -66,6 +70,9 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | ۱۷ | `diagram-attachments` | ساخت جدول `diagram_attachments` برای تصویر/لوگوی روی بوم دیاگرام |
 | ۱۸ | `device-identity-and-types` | `devices.mac_address/asset_tag` و جدول `device_types` |
 | ۱۹ | `device-credentials` | ستون‌های رمزنگاری‌شدهٔ `devices.access_username_enc/access_password_enc` برای اعتبارنامهٔ دسترسی تجهیز |
+| ۲۰ | `device-sites` | جدول `sites` و ستون `devices.site_id` |
+| ۲۱ | `credentials-vault` | جدول `credentials` برای چند اعتبارنامهٔ رمزنگاری‌شده در هر تجهیز |
+| ۲۲ | `user-extra-permissions` | ستون `users.extra_permissions` برای مجوز اختصاصی قابل‌اعطا |
 
 قواعد:
 

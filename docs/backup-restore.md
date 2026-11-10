@@ -1,7 +1,7 @@
 # پشتیبان‌گیری و بازیابی
 
-NetWatch همهٔ داده را در یک فایل SQLite (به‌همراه WAL) و فایل‌های MBTiles نگه
-می‌دارد. پشتیبان‌گیری **نسخه‌دار، اعتبارسنجی‌شده و اتمیک** است: پشتیبان نیمه‌کاره
+NetWatch داده را در یک فایل SQLite (به‌همراه WAL)، فایل‌های MBTiles، پیوست‌ها و
+کلید رمزنگاری اعتبارنامه نگه می‌دارد. پشتیبان‌گیری **نسخه‌دار، اعتبارسنجی‌شده و اتمیک** است: پشتیبان نیمه‌کاره
 هرگز با نام معتبر دیده نمی‌شود و تا زمانی که `integrity_check` و checksum تأیید
 نشوند، موفق اعلام نمی‌شود.
 
@@ -9,7 +9,7 @@ NetWatch همهٔ داده را در یک فایل SQLite (به‌همراه WAL
 | --- | --- |
 | مسیر پیش‌فرض | `<DATA_DIR>/backups` (`NETWATCH_BACKUP_DIR`) |
 | نام پوشهٔ پشتیبان | `netwatch-YYYYMMDD-HHMMSS-<rand6>` |
-| محتوای پشتیبان | `netwatch.db` + `manifest.json` + `mbtiles/*.mbtiles` (اختیاری) |
+| محتوای پشتیبان | `netwatch.db` + `manifest.json` + `mbtiles/*.mbtiles` + `attachments/*` + `secrets/device-credentials.key` |
 | سیاست نگهداری پیش‌فرض | `backup_keep=7`، هرس روزانه/هفتگی (`backup_daily_keep`, `backup_weekly_keep`) |
 | بازهٔ خودکار | `backup_interval_hours` (پیش‌فرض ۲۴ ساعت، `backup_enabled`) |
 
@@ -18,7 +18,7 @@ NetWatch همهٔ داده را در یک فایل SQLite (به‌همراه WAL
 ## ۱. پشتیبان دستی
 
 ```bash
-# پشتیبان کامل (DB + MBTiles) با اعتبارسنجی
+# پشتیبان کامل (DB + MBTiles + پیوست‌ها + کلید اعتبارنامه) با اعتبارسنجی
 npm run db:backup
 
 # فقط پایگاه‌داده (سریع‌تر؛ برای پشتیبان ساعتی)
@@ -34,7 +34,7 @@ npm run db:backup -- --no-mbtiles --keep=14
   "name": "netwatch-20261020-122824-fa813b",
   "dir": "/var/lib/netwatch/backups/netwatch-20261020-122824-fa813b",
   "dbBytes": 9097216,
-  "counts": { "devices": 50, "samples": 84674, "outages": 1292, "alerts": 77, "users": 3 },
+  "counts": { "devices": 50, "samples": 84674, "outages": 1292, "alerts": 77, "users": 3, "credentials": 4, "attachments": 12 },
   "backups": 4
 }
 ```
@@ -108,11 +108,16 @@ sudo -u netwatch env NETWATCH_DATA_DIR=/var/lib/netwatch npm run db:doctor
 
 ## ۳. اعتبارسنجی پشتیبان (پیش از اعتماد)
 
-هر پشتیبان باید سه شرط را داشته باشد:
+هر پشتیبان باید این شرط‌ها را داشته باشد:
 
 1. `manifest.json` با `appVersion`، `schemaVersion`، حجم و `sha256` هر فایل.
 2. checksum فایل SQLite با manifest بخواند.
 3. `PRAGMA integrity_check` مقدار `ok` بدهد و جدول‌های الزامی موجود باشند.
+4. checksum همهٔ فایل‌های MBTiles و پیوست‌ها با manifest بخواند و هیچ فایل
+   اعلام‌شده‌ای غایب نباشد.
+5. اگر پایگاه‌داده اعتبارنامه دارد، `secrets/device-credentials.key` موجود و
+   checksum آن درست باشد. (اگر کلید از `NETWATCH_CREDENTIAL_KEY` آمده باشد،
+   مانیفست `source:"env"` و هشدار نگه‌داری جداگانه ثبت می‌کند.)
 
 بررسی سریع بدون بازیابی:
 
@@ -120,8 +125,16 @@ sudo -u netwatch env NETWATCH_DATA_DIR=/var/lib/netwatch npm run db:doctor
 npm run db:restore -- <backup-dir> --dry-run
 ```
 
-پشتیبان نامعتبر (checksum نادرست، فایل ناقص، manifest مفقود، schema ناشناخته)
+پشتیبان نامعتبر (checksum نادرست، فایل ناقص، پیوست/کلید غایب، manifest مفقود، schema ناشناخته)
 با پیام روشن رد می‌شود و **هیچ فایلی جایگزین نمی‌شود**.
+
+### بازیابی روی `DATA_DIR` خالی
+
+اگر سرور از دست رفته باشد، یک `NETWATCH_DATA_DIR` خالی بسازید و همان دستور
+`db:restore` را اجرا کنید. اسکریپت پایگاه‌داده، MBTiles، پیوست‌ها و کلید
+اعتبارنامه را از همان مجموعه نصب می‌کند. کلید **آخر از همه** نصب می‌شود تا
+رمزگشایی در میانهٔ بازیابی با کلید قدیمی/ناقص انجام نشود. اگر مجموعه ناقص باشد،
+پیش از هر تغییری متوقف می‌شود.
 
 ---
 
@@ -178,6 +191,8 @@ rsync -a --delete /var/lib/netwatch/backups/ /mnt/backup/netwatch/
 | فایل پایگاه‌داده خراب (`quick_check` خطا) | توقف سرویس → `db:restore --dry-run` روی آخرین پشتیبان معتبر → بازیابی → `db:doctor` |
 | فضای دیسک تمام‌شده | آزادسازی/افزایش دیسک؛ پشتیبان‌گیری تا رسیدن به `NETWATCH_MIN_FREE_BYTES` انجام نمی‌شود |
 | فایل پشتیبان ناقص | با `--dry-run` رد می‌شود؛ از پشتیبان قبلی استفاده کنید |
+| پیوست یا کلید اعتبارنامه در پشتیبان غایب | مجموعه ناقص است؛ `db:restore` قبل از تغییر چیزی متوقف می‌شود. از پشتیبان کامل استفاده کنید |
+| بازیابی بدون کلید اعتبارنامه | اعتبارنامه‌ها قابل رمزگشایی نیستند؛ کلید را از `secrets/device-credentials.key` یا `NETWATCH_CREDENTIAL_KEY` تأمین کنید |
 | بازیابی اشتباه | فایل `netwatch.db.pre-restore-<ts>` در همان پوشهٔ داده موجود است |
 | قطع برق در حین بازیابی | سرویس را دوباره اجرا و بازیابی را تکرار کنید؛ نسخهٔ ایمنی موجود است |
 

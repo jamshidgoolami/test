@@ -2,15 +2,16 @@
 
 این سند نتیجهٔ **اجرای واقعی** آزمون‌ها، فهرست تغییرات، وضعیت هر باگ ممیزی و
 محدودیت‌های باقی‌مانده را ثبت می‌کند. هر عدد این‌جا از خروجی همان اجرا گرفته شده
-است؛ موردی که اجرا نشده با برچسب «نیازمند آزمون عملی» آمده و PASS فرض نشده است.
+است؛ موردی که اجرا نشده با برچسب «اجرا نشده» آمده و PASS فرض نشده است.
 
 | مورد | مقدار |
 | --- | --- |
-| تاریخ اجرا | ۲۰۲۶-۱۰-۲۲ |
+| تاریخ اجرا | ۲۰۲۶-۱۱-۱۰ |
 | شاخه | `ui-fix` |
-| Node.js | `v24.x` (پیش‌نیاز پروژه `>= 22.12.0`) |
-| سیستم‌عامل | Linux (کانتینر Cloud) |
-| نسخهٔ ساختار داده | `SCHEMA_VERSION = 12` |
+| Node.js | `v26.10.0` (پیش‌نیاز پروژه `>= 22.12.0`) |
+| سیستم‌عامل | macOS (Darwin) |
+| نسخهٔ نرم‌افزار | `1.4.1` |
+| نسخهٔ ساختار داده | `SCHEMA_VERSION = 22` |
 
 ---
 
@@ -21,109 +22,158 @@
 | `npm run lint` | ✅ PASS (exit 0) | کل مخزن، بدون خطا |
 | `npm run typecheck` | ✅ PASS (exit 0) | `tsc -p web/tsconfig.json --noEmit` |
 | `npm run build` | ✅ PASS | Vite، خروجی در `web/dist` |
-| `npm run test:unit` | ✅ ۲۴۳ / ۲۴۳ | `fail 0` |
-| `npm run test:web` | ✅ ۴۶ / ۴۶ | `fail 0` |
-| `npm run test:integration` | ✅ ۱۵۹ / ۱۵۹ | ۱۳۷ ثانیه، `fail 0` |
-| `npm run test:e2e` | ✅ PASS | smoke ۸۷ / ۸۷، e2e ۱۱ / ۱۱ |
-| `npm run test:ui` | ⏸ اجرا نشده | نیازمند مرورگر Playwright در محیط محلی |
+| `npm run test:unit` | ✅ ۲۶۶ / ۲۶۶ | `fail 0` |
+| `npm run test:web` | ✅ ۵۸ / ۵۸ | `fail 0` |
+| `npm run test:integration` | ✅ ۱۵۱ / ۱۵۱ | `fail 0` |
+| `npm run test:e2e` | ✅ PASS | smoke ۸۹ / ۸۹، e2e ۱۱ / ۱۱ |
+| `npm run test:ui` | ✅ ۱۰ / ۱۰ | Playwright با Google Chrome نصب‌شدهٔ سیستم؛ مرورگر bundled نصب نبود |
 | `npm run test:heavy` | ⏸ اجرا نشده | آزمون ۵۰٬۰۰۰ ردیفی/طولانی |
 | `npm run qa:load` / `qa:soak72` | ⏸ اجرا نشده | نیازمند اجرای طولانی روی سرور اختصاصی |
 
-جمع بررسی‌های موفق در پنج فرمان آزمون: **۵۴۶** (۲۴۳ Unit + ۴۶ Web + ۱۵۹
-Integration + ۸۷ Smoke + ۱۱ E2E).
+جمع بررسی‌های موفق: **۵۸۵** (۲۶۶ Unit + ۵۸ Web + ۱۵۱ Integration + ۸۹
+Smoke + ۱۱ E2E + ۱۰ UI).
+
+> در محیط شل این دستگاه متغیر `PORT=0` تنظیم بود؛ اجرای آزمون‌ها با
+> `env -u PORT ...` انجام شد. `PORT=0` برای سرور معتبر نیست و به‌صورت خطای
+> پیکربندی رد می‌شود.
 
 ---
 
-## ۲. وضعیت باگ‌های ممیزی
+## ۲. آزمون‌های هدفمند اصلاحات
 
-| # | موضوع | وضعیت | توضیح |
-| --- | --- | --- | --- |
-| BUG-01 | اعتبارسنجی CIDR | **رفع شد** | تجزیه‌گر سخت‌گیرانه: `/` تکی، prefix فقط رقم اعشار بدون صفر پیشرو، بدون `+`/`-`/هگز/فاصله/تهی. `10.1.2.3/` دیگر به `/0` تبدیل نمی‌شود و کل allowlist را باز نمی‌کند. ورودی نامعتبر در راه‌اندازی سرور رد می‌شود. |
-| BUG-02 | اجرای هم‌زمان نامحدود Ping گروهی | **رفع شد** | صف مرکزی `server/probe-queue.js`: سقف هم‌زمانی (پیش‌فرض ۴)، ظرفیت صف ۶۴، ضدتکرار بر اساس کلید، مهلت سخت ۴۵ ثانیه، لغو با AbortSignal و خاموشی تمیز. Ping گروهی به Job قابل پیگیری تبدیل شد (`202` + `statusUrl`). |
-| BUG-03 | نقص Rate Limit مسیرهای Probe | **رفع شد** | limiter اختصاصی Probe روی `POST /devices/:id/ping`، `/probe`، `POST /devices/bulk` با `action=ping`، `engine/check-all` و اسکن Discovery اعمال می‌شود. سقف پیش‌فرض ۶۰ درخواست در دقیقه (`NETWATCH_PROBE_RATE_LIMIT_MAX`). |
-| BUG-04 | نبود سقف برای Poll توپولوژی | **منتفی شد** | ماژول توپولوژی از محصول حذف شد؛ دیاگرام‌های جدید فقط درخواست‌های خواندن/ذخیرهٔ ساده دارند و Poll دوره‌ای ندارند. |
-| BUG-05 | هم‌پوشانی عملیات Poll | **منتفی شد** | Poll وضعیت/تحلیل همراه ماژول توپولوژی حذف شد. |
-| BUG-06 | اعتبارسنجی ناقص OID در SNMP | **منتفی شد** | کل SNMP و کد اعتبارسنجی OID حذف شد. |
-| BUG-07 | اعتبارسنجی ناقص پاسخ SNMP | **منتفی شد** | با حذف SNMP حذف شد. |
-| BUG-08 | Community پیش‌فرض ناامن | **منتفی شد** | هیچ community، متغیر محیطی یا مقدار پیش‌فرضی باقی نمانده است. |
-| BUG-09 | ناسازگاری Timeout کلاینت | **رفع شد** | مهلت پیش‌فرض از ۱۵ به ۳۰ ثانیه رسید؛ عملیات سنگین (گزارش، پشتیبان، بازیابی نسخه، Retention) مهلت ۱۸۰ ثانیه دارند؛ Ping گروهی به Job تبدیل شد تا تکرار ناخواسته ایجاد نشود. |
-| BUG-10 | تشخیص نادرست سلامت سرویس | **رفع شد** | `tcpPing` سه مفهوم را جدا می‌کند: `ok` (پاسخ هدف پایش)، `reachable` (پاسخ شبکه‌ای مثل RST) و `service` (available/unavailable/unknown). ستون‌های `service_status`/`service_port`/`service_checked_at` اضافه شد، علت قطعی «سرویس پورت X پاسخ نمی‌دهد» ثبت می‌شود و رابط کاربری نشان «سرویس قطع» را نشان می‌دهد. رفتار قبلی Online/Offline و Uptime حفظ شده است. |
-| BUG-11 | وابستگی ICMP به محیط | **موجود با محدودیت** | تشخیص توانمندی ICMP با کش، سقوط خودکار `auto`→`tcp`، آزادسازی تایمرها و فرآیندها، و آزمون روی Linux کانتینر انجام شد. رفتار روی ویندوز/سوییچ‌های با ACL و محیط بدون `ping` باید در محیط واقعی همان استقرار آزموده شود. |
-| BUG-12 | نبود آزمون پایداری ۷۲ ساعته | **نیازمند آزمون عملی** | هارنس `npm run qa:soak72` موجود و اجرای کوتاه آن سالم است، اما حکم نهایی نشت حافظه/سوکت فقط با اجرای تمام‌مدت روی سرور هدف صادر می‌شود. |
-| BUG-13 | محدودیت چندنمونه‌ای | **محدودیت معماری** | SQLite تک‌فایل و Rate Limit درون‌حافظه‌ای برای چند نمونهٔ پشت Load Balancer طراحی نشده‌اند. قفل رهبری موتور با TTL و Fencing Token از اجرای دو موتور هم‌زمان جلوگیری می‌کند، اما مقیاس افقی نیازمند پایگاه‌دادهٔ شبکه‌ای و محدودیت توزیع‌شده است. |
-| BUG-14 | پوشش ناقص آزمون مرورگر | **نیازمند آزمون عملی** | سناریوهای Playwright روی Chromium تعریف شده‌اند؛ Firefox/Safari و دستگاه واقعی اجرا نشده و در این گزارش PASS ثبت نمی‌شوند. |
+| آزمون | نتیجه | پوشش |
+| --- | --- | --- |
+| `server/tests/integration/credentials-api.test.mjs` | ✅ ۱۱ / ۱۱ | Operator بدون `credentials:reveal`؛ ۴۰۳ برای reveal/export/اعتبارنامهٔ تجهیز؛ رد اعطای مجوز دیگر؛ دسترسی پس از grant و ۴۰۳ پس از revoke |
+| `server/tests/integration/rbac-matrix.test.mjs` | ✅ ۵ / ۵ | ماتریس نقش‌ها و مسیرهای اعتبارنامه |
+| `server/tests/integration/endpoints.test.mjs` | ✅ ۹ / ۹ | حذف فایل MBTiles ناموجود → ۴۰۴ |
+| `server/tests/integration/mbtiles-layers.test.mjs` | ✅ ۳ / ۳ | جلوگیری از حذف فایل فعال، نبود رکورد بدون فایل، staging حذف مشترک |
+| `server/tests/integration/diagram-links.test.mjs` | ✅ ۳ / ۳ | پیوند دوطرفه، Revision، ظرفیت/Rollback، حذف و پاک‌سازی ارجاع |
+| `server/tests/unit/diagram-prune.test.mjs` | ✅ ۱ / ۱ | پاک‌سازی یال‌ها و ارجاع‌های شکسته |
+| `server/tests/unit/db-backup-restore.test.mjs` | ✅ ۹ / ۹ | Backup/Restore پیوست، کلید، checksum و Backup ناقص |
+| `server/tests/integration/backup-complete.test.mjs` | ✅ ۲ / ۲ | Restore روی `DATA_DIR` خالی و توقف روی Backup ناقص |
+| `server/tests/unit/db-query-plan.test.mjs` | ✅ ۵ / ۵ | کارایی پرس‌وجوها و بازبینی درج SQL |
+| `server/tests/unit/engine-detection.test.mjs` + `engine-flap.test.mjs` | ✅ ۹ / ۹ | گذار وضعیت، آستانه‌ها، ضدتکرار و Flapping |
 
 ---
 
 ## ۳. تغییرات کلیدی
 
-### حذف کامل SNMP
+### ۳.۱ امنیت دسترسی‌ها
 
-| مورد | تغییر |
+| فایل | تغییر |
 | --- | --- |
-| `server/snmp.js` | حذف شد |
-| `server/link-telemetry.js` | حذف شد |
-| `server/tests/snmp-mock.mjs`, `server/tests/unit/snmp.test.mjs` | حذف شدند |
-| `NETWATCH_SNMP_*` | از `.env.example`، `config.js` و مستندات حذف شد |
-| UI بازرسی لینک | فیلدهای سنجش حذف و فقط ظرفیت اسمی/تجهیز مرجع ماند |
+| `server/permissions.js` | حذف پیش‌فرض `credentials:reveal` از Operator؛ افزودن `DELEGABLE_PERMISSIONS`، `normalizeExtraPermissions` و `permissionsForUser`؛ `hasPermission` مجوز اختصاصی را می‌بیند |
+| `server/db.js` | `SCHEMA_VERSION = 22`؛ ستون `users.extra_permissions` و Migration 22 (`user-extra-permissions`) |
+| `server/auth.js` | خواندن/نوشتن مجوز اختصاصی، اعتبارسنجی آن، اعطا/لغو با `PUT /auth/users/:id` و بازگرداندن مجوزهای مؤثر در `/auth/me` |
+| `server/routes/credentials.js` | reveal/export فقط با `credentials:reveal` |
+| `server/routes/devices.js` | `GET /api/devices/:id/credentials` علاوه بر `devices:write` مجوز `credentials:reveal` می‌خواهد |
+| `web/src/lib/types.ts`, `web/src/lib/api.ts` | افزودن `extraPermissions` به تایپ کاربر و ساخت کاربر |
+| `web/src/pages/DeviceDetail.tsx` | پنهان‌کردن نمایش/کپی رمز بدون مجوز و نمایش راهنما |
+| `web/src/pages/Settings.tsx` | اعطا/لغو «اجازهٔ نمایش رمز» توسط Administrator |
 
-### صف Probe و Jobهای گروهی
+تنها مجوز قابل تفویض `credentials:reveal` است؛ از این مسیر هیچ مجوز مدیریتی
+دیگری باز نمی‌شود. Operator پیش‌فرض به رمز واقعی دسترسی ندارد.
 
-- `server/probe-queue.js` (جدید): اجرای محدود، صف‌بندی، ضدتکرار، مهلت، لغو و
-  آمار برای صفحهٔ سلامت.
-- `POST /api/devices/bulk` با `action=ping` → `202` + `jobId` + `statusUrl`.
-- `GET /api/devices/bulk/probe/:jobId` → وضعیت/نتیجه با کنترل مالکیت Job.
-- مسیرهای دستی، زنده و Discovery هم از همین صف عبور می‌کنند.
+### ۳.۲ Backup و Restore
 
-### Rate Limiting
+| فایل | تغییر |
+| --- | --- |
+| `server/backup.js` | پشتیبان‌گیری `data/attachments/`؛ کپی مستقل کلید در `secrets/device-credentials.key` با مجوز `0600`؛ checksum و verify؛ stage/restore پیوست‌ها و کلید؛ `tableCounts` شامل credentials/attachments؛ خطای مشخص برای Backup ناقص |
+| `server/credential-crypto.js` | مسیر `CREDENTIAL_KEY_FILE`، `credentialKeySource()` و `resetCredentialKeyCache()` |
+| `server/scripts/db-backup.mjs` | خلاصهٔ attachments و منبع کلید در خروجی CLI |
 
-- سهمیهٔ مستقل: عمومی، Probe، Import، مدیریتی و ورود.
-- کلید هر سهمیه ترکیب IP و شناسهٔ کاربر است؛ تعداد کلیدها سقف دارد
-  (`NETWATCH_RATE_LIMIT_MAX_KEYS`) تا حافظه بی‌مرز رشد نکند.
-- پاسخ ۴۲۹ با هدر `Retry-After`.
+Restore ابتدا دیتابیس و فایل‌های MBTiles و پیوست‌ها را stage/verify می‌کند و
+کلید رمزنگاری را آخر از همه نصب می‌کند. Backupهای قدیمی بدون بخش‌های جدید
+همچنان معتبرند. اگر Backup ناقص باشد، Restore پیش از تغییر `DATA_DIR` متوقف
+می‌شود.
 
-### تشخیص وضعیت و تفکیک سرویس
+### ۳.۳ فایل‌های MBTiles
 
-- `devices.service_status` / `service_port` / `service_checked_at` (مهاجرت ۱۲).
-- `stats.serviceUnavailable` در وضعیت موتور.
-- استدلال قطعی: «میزبان پاسخ می‌دهد اما سرویس پورت … در دسترس نیست».
-- نشان «سرویس قطع» در صفحهٔ جزئیات تجهیز.
+| فایل | تغییر |
+| --- | --- |
+| `server/routes/inventory.js` | `layersUsingFile`/`mbtilesFileExists`؛ اعتبارسنجی create/update؛ حذف لایه و فایل در تراکنش؛ `DELETE /mbtiles/files/:name` با ۴۰۹ برای فایل در استفاده و ۴۰۴ برای ناموجود |
 
-### Timeout و منابع
+حذف فایل در حال استفاده مسدود می‌شود. حذف لایهٔ دارای فایل مشترک با نام موقت
+`.deleting-<uuid>` مرحله‌بندی می‌شود، رکورد در تراکنش حذف می‌شود و در خطا نام
+فایل برمی‌گردد. رکورد لایهٔ بدون فایل ساخته یا به‌روزرسانی نمی‌شود.
 
-- `DEFAULT_TIMEOUT_MS` = ۳۰s، `LONG_TIMEOUT_MS` = ۱۸۰s.
-- آزادسازی تایمر/سوکت/فرآیند در ICMP و TCP (شامل مسیر Abort).
-- بستن صف Probe و همهٔ limiterها در خاموشی سرور.
+### ۳.۴ ارتباط دیاگرام‌ها
+
+| فایل | تغییر |
+| --- | --- |
+| `server/routes/diagrams.js` | `assertLinkCapacity`، `ensureReciprocalLink(..., {strict:true})`، تراکنش create/update/delete/content، `cleanDiagramGraph` و `cleanupDiagramReferences` |
+
+ایجاد/حذف پیوند دوطرفه در یک تراکنش انجام می‌شود، ظرفیت و اعتبار هر دو
+دیاگرام پیش از ذخیره بررسی می‌شود، در خطا هر دو طرف Rollback می‌شوند و Revision
+هر دو به‌روزرسانی می‌شود. ارتباط یک‌طرفه یا ناسازگار باقی نمی‌ماند.
+
+### ۳.۵ حذف دیاگرام و دادهٔ یتیم
+
+| فایل | تغییر |
+| --- | --- |
+| `server/routes/diagrams.js` | حذف دیاگرام با stage/commit پیوست‌ها؛ پاک‌سازی ارجاع‌های `type:'diagram'` در بوم‌های دیگر؛ حذف یال‌های معلق؛ افزایش Revision بوم‌های متأثر؛ `pruneBrokenDiagramLinks()` |
+| `server/index.js` | اجرای `pruneBrokenDiagramLinks()` در Startup با try/catch و لاگ |
+
+حذف اطلاعات و اصلاح ارتباطات در یک تراکنش است؛ ارجاع خارجی به دیاگرام حذف‌شده
+باقی نمی‌ماند و بوم‌های وابسته Revision تازه می‌گیرند.
+
+### ۳.۶ پایداری و بازبینی SQL
+
+| فایل | تغییر |
+| --- | --- |
+| `server/engine.js` | جلوگیری از Rollback بررسی هنگام برخورد یکتای `(device_id, started_at)` با انتخاب زمان شروع یکتا و retry محدود |
+| `server/routes/dashboard.js` | حذف درج متن SQL پویا از `labelSql`/`groupMemberships`؛ استفاده از پارامتر `CASE` و زیرپرس‌وجوی ثابت |
+
+این دو مورد در اجرای کامل Unit به‌عنوان شکست واقعی دیده شدند و بدون تضعیف
+assertionها اصلاح شدند.
+
+### ۳.۷ مستندات و نسخه
+
+- `package.json` و `package-lock.json` → `1.4.1`.
+- هماهنگ‌سازی `SCHEMA_VERSION = 22` در `docs/database.md`، `docs/fa/05-database.md`،
+  `docs/fa/01-introduction.md`، `docs/fa/15-upgrade-release.md` و READMEها.
+- به‌روزرسانی `docs/security.md`، `docs/fa/08-security.md`،
+  `docs/session-rbac-policy.md`، `docs/backup-restore.md`،
+  `docs/fa/11-backup-restore.md`، `docs/fa/06-api.md`، `docs/changelog.md` و
+  `docs/fa/17-changelog.md`.
 
 ---
 
-## ۴. آزمون‌های Regression افزوده‌شده
+## ۴. اصلاح آزمون‌های محیطی/ناپایدار
 
-| فایل | پوشش |
-| --- | --- |
-| `server/tests/unit/probe-queue.test.mjs` | سقف هم‌زمانی، ظرفیت صف، ضدتکرار، مهلت، لغو، خاموشی |
-| `server/tests/integration/probe-bulk.test.mjs` | Job گروهی، مالکیت، سقف ۵۰۰ تجهیز، عبور از Rate Limit |
-| `server/tests/unit/rate-limit.test.mjs` | سهمیهٔ Probe/Import/مدیریتی، ۴۲۹ و `Retry-After` |
-| `server/tests/unit/security.test.mjs` | CIDR ناقص/مبهم، محدودهٔ Probe، IPv4/IPv6 |
-| `server/tests/unit/ping.test.mjs` | تفکیک reachable/service، Abort، آزادسازی تایمر |
-| `server/tests/unit/engine-detection.test.mjs` | قطعی سرویس روی میزبان زنده، ثبت `service_status`، حفظ Uptime |
-| `server/tests/unit/db-management-migration.test.mjs` | مهاجرت گروه مدیریت، ستون‌های سرویس و جدول دیاگرام‌ها |
-| `web/tests/*` | هم‌خوانی تایپ‌ها و کمک‌تابع‌های وضعیت زنده پس از حذف فیلدهای سنجش |
+در جریان اجرای کامل، سه شکست مربوط به خود آزمون‌ها (نه منطق محصول) پیدا و
+اصلاح شد:
+
+1. `sse-load.test.mjs` فقط `/proc/<pid>/status` لینوکس را می‌خواند. اندازه‌گیری
+   RSS با `ps` برای macOS نیز اضافه شد؛ آستانه‌ها تغییر نکردند.
+2. `probe-bulk.test.mjs` در حالت `simulate` وضعیت دقیق `online` را انتظار داشت،
+   در حالی که تأخیر/قطعی شبیه‌سازی تصادفی است. اکنون ثبت نمونه و هم‌خوانی
+   وضعیت نمونه با تجهیز بررسی می‌شود؛ این همان هدف آزمون صف است.
+3. `dashboard.js` و `engine.js` شکست‌های واقعی Unit را نشان دادند و اصلاح شدند
+   (بخش ۳.۶).
 
 ---
 
 ## ۵. محدودیت‌ها و ریسک‌های باقی‌مانده
 
-1. **Soak ۷۲ ساعته اجرا نشده** — هارنس آماده است؛ نتیجهٔ نهایی پس از اجرای واقعی.
-2. **مرورگرهای غیر Chromium** آزمون خودکار ندارند.
-3. **ICMP** به مجوز و ابزار سیستم وابسته است؛ `auto` در نبود ICMP به TCP سقوط
-   می‌کند و این رفتار باید در هر محیط استقرار بازبینی شود.
-4. **مقیاس افقی** با SQLite ممکن نیست (BUG-13)؛ برای چند نمونه به پایگاه‌داده
+1. **Soak ۷۲ ساعته اجرا نشده** — هارنس آماده است؛ حکم نهایی نشت حافظه/سوکت
+   پس از اجرای واقعی روی سرور هدف صادر می‌شود.
+2. **مرورگر bundled در Playwright نصب نشد** — دانلود Chromium کامل نشد؛ UI E2E
+   با Google Chrome نصب‌شدهٔ سیستم اجرا و ۱۰/۱۰ پاس شد. مرورگرهای Firefox/Safari
+   آزمون خودکار ندارند.
+4. **ICMP** به مجوز و ابزار سیستم وابسته است؛ `auto` در نبود ICMP به TCP سقوط
+   می‌کند و باید در هر محیط استقرار بازبینی شود.
+5. **مقیاس افقی** با SQLite ممکن نیست (BUG-13)؛ برای چند نمونه به پایگاه‌دادهٔ
    شبکه‌ای و محدودیت توزیع‌شده نیاز است.
-5. **رمزنگاری سکون/پشتیبان** وجود ندارد؛ امنیت به مجوز فایل و میزبان وابسته است.
-6. **بدون اعلان بیرونی** (ایمیل/SMS/Webhook)؛ اعلان درون برنامه است.
-7. **ظرفیت و اشغال لینک** پس از حذف SNMP تنها به‌صورت پهنای باند اسمی ثبت می‌شود؛
-   هیچ عدد مصرفی حدس زده نمی‌شود.
+6. **رمزنگاری سکون دیتابیس** وجود ندارد؛ کلید اعتبارنامه‌ها جدا نگهداری می‌شود،
+   اما امنیت فایل‌های Backup به کنترل دسترسی میزبان/مسیر وابسته است. نسخهٔ
+   پشتیبان باید در محل امن و جدا از کلید نگهداری شود.
+7. **بدون اعلان بیرونی** (ایمیل/SMS/Webhook)؛ اعلان درون برنامه است.
+8. **ظرفیت و اشغال لینک** پس از حذف SNMP تنها به‌صورت پهنای باند اسمی ثبت
+   می‌شود؛ هیچ عدد مصرفی حدس زده نمی‌شود.
+9. **Benchmark عملکرد جدید اجرا نشد**؛ اعداد `performance-report.md` مربوط به
+   فاز ۵ و محیط Linux قبلی‌اند. تغییرات این نسخه عمدتاً امنیت/یکپارچگی داده است
+   و ادعای بهبود عملکرد جدید نمی‌شود.
 
 ---
 
@@ -131,13 +181,14 @@ Integration + ۸۷ Smoke + ۱۱ E2E).
 
 ```bash
 npm ci
-npm run lint
-npm run typecheck
-npm run build
-npm run test:unit
-npm run test:web
-npm run test:integration
-npm run test:e2e
+env -u PORT npm run lint
+env -u PORT npm run typecheck
+env -u PORT npm run build
+env -u PORT npm run test:unit
+env -u PORT npm run test:web
+env -u PORT npm run test:integration
+env -u PORT npm run test:e2e
 ```
 
-هر فرمان را جدا اجرا کنید؛ `npm run verify` همین زنجیره را پشت‌سرهم می‌آورد.
+`npm run verify` همین زنجیره را پشت‌سرهم می‌آورد. در محیط این اجرا `PORT=0`
+تنظیم بود؛ آن را برای آزمون‌ها حذف کنید تا سرور از پورت معتبر استفاده کند.

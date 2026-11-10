@@ -19,6 +19,8 @@ const dir = useTempDataDir('db-backup');
 const { db, DB_PATH, MBTILES_DIR, checkDatabaseHealth } = await import('../../db.js');
 const { createBackup, verifyBackup, restoreBackup, listBackups, runCheckpoint, BACKUP_DIR } = await import('../../backup.js');
 const { seedIfEmpty } = await import('../../db.js');
+const { ATTACHMENTS_DIR, ALLOWED_TYPES, writeAttachmentFile } = await import('../../attachments.js');
+const { CREDENTIAL_KEY_FILE } = await import('../../credential-crypto.js');
 
 const counts = () => ({
   devices: db.prepare('SELECT COUNT(*) AS c FROM devices').get().c,
@@ -120,6 +122,48 @@ test('MBTiles files are backed up and restored in the same set', () => {
   assert.ok(result.mbtiles.includes(tileName));
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(tilePath)).digest('hex'), tileEntry.sha256);
   fs.unlinkSync(tilePath);
+});
+
+test('attachments and the credential key are backed up with checksums and restored', () => {
+  // کلید ۳۲ بایتی فایلی (نه env) تا مسیر Disaster Recovery واقعی آزموده شود.
+  fs.writeFileSync(CREDENTIAL_KEY_FILE, `${crypto.randomBytes(32).toString('base64')}\n`, { mode: 0o600 });
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const written = writeAttachmentFile(png, ALLOWED_TYPES.png);
+  const attachmentPath = path.join(ATTACHMENTS_DIR, written.storedName);
+
+  const backup = createBackup({ reason: 'attachments-key' });
+  assert.equal(backup.manifest.attachments.length, 1);
+  assert.equal(backup.manifest.credentialsKey.source, 'file');
+  assert.ok(backup.manifest.credentialsKey.sha256);
+
+  const verification = verifyBackup(backup.dir);
+  assert.equal(verification.ok, true, verification.errors.join(', '));
+  assert.equal(verification.attachments.length, 1);
+  assert.equal(verification.credentialsKey.source, 'file');
+
+  fs.unlinkSync(attachmentPath);
+  fs.unlinkSync(CREDENTIAL_KEY_FILE);
+  const result = restoreBackup(backup.dir, { force: true });
+  assert.ok(result.attachments.includes(written.storedName));
+  assert.equal(result.credentialsKey, 'file');
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(attachmentPath)).digest('hex'), backup.manifest.attachments[0].sha256);
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(CREDENTIAL_KEY_FILE)).digest('hex'), backup.manifest.credentialsKey.sha256);
+  fs.unlinkSync(attachmentPath);
+  fs.unlinkSync(CREDENTIAL_KEY_FILE);
+});
+
+test('a backup missing an attachment or key is rejected as incomplete', () => {
+  fs.writeFileSync(CREDENTIAL_KEY_FILE, `${crypto.randomBytes(32).toString('base64')}\n`, { mode: 0o600 });
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const written = writeAttachmentFile(png, ALLOWED_TYPES.png);
+  const backup = createBackup({ reason: 'incomplete' });
+  fs.unlinkSync(path.join(backup.dir, 'attachments', written.storedName));
+  const report = verifyBackup(backup.dir);
+  assert.equal(report.ok, false);
+  assert.ok(report.errors.some((e) => /پیوست/.test(e)), report.errors.join(' | '));
+  assert.throws(() => restoreBackup(backup.dir, { force: true }), (e) => e.code === 'DB_BACKUP_INVALID');
+  fs.unlinkSync(path.join(ATTACHMENTS_DIR, written.storedName));
+  fs.unlinkSync(CREDENTIAL_KEY_FILE);
 });
 
 test('checkpoint does not lose acknowledged data', () => {

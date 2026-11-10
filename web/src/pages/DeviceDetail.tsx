@@ -57,6 +57,8 @@ export default function DeviceDetail() {
   const liveState = useLiveState();
   const { can } = useAuth();
   const canWrite = can('devices:write');
+  // نمایش رمز تجهیز علاوه بر ویرایش، مجوز اختصاصی credentials:reveal می‌خواهد.
+  const canReveal = can('credentials:reveal');
   const canProbe = can('probe:run');
   const canMaintenance = can('maintenance:write');
 
@@ -118,7 +120,7 @@ export default function DeviceDetail() {
   };
 
   const copyPassword = async () => {
-    if (!device || !canWrite || passwordBusy) return;
+    if (!device || !canReveal || passwordBusy) return;
     setPasswordBusy(true);
     try {
       const creds = await api.deviceCredentials(device.id);
@@ -201,7 +203,7 @@ export default function DeviceDetail() {
                 label="رمز عبور"
                 value={
                   device.hasAccessPassword ? (
-                    canWrite ? (
+                    canReveal ? (
                       <button
                         type="button"
                         onClick={copyPassword}
@@ -219,7 +221,13 @@ export default function DeviceDetail() {
                     'ثبت نشده'
                   )
                 }
-                sub={device.hasAccessPassword ? (canWrite ? 'برای کپی روی رمز کلیک کنید' : 'برای مشاهدهٔ رمز به مجوز ویرایش نیاز است') : undefined}
+                sub={
+                  device.hasAccessPassword
+                    ? canReveal
+                      ? 'برای کپی روی رمز کلیک کنید'
+                      : 'برای مشاهدهٔ رمز به مجوز اختصاصی «نمایش رمز» نیاز است'
+                    : undefined
+                }
               />
               <InfoRow label="مسئول" value={device.owner || '—'} />
               <InfoRow label="موقعیت جغرافیایی" value={device.latitude != null ? <span className="num">{device.latitude.toFixed(5)}, {device.longitude?.toFixed(5)}</span> : 'ثبت نشده'} />

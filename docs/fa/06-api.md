@@ -49,13 +49,22 @@ sequenceDiagram
 | `dashboard:read`, `devices:read`, `reports:read` | ✅ | ✅ | ✅ |
 | `alerts:read`, `maintenance:read`, `inventory:read` | ✅ | ✅ | ✅ |
 | `markers:read`, `settings:read`, `engine:read`, `ops:read` | ✅ | ✅ | ✅ |
+| `diagrams:read` | ✅ | ✅ | ✅ |
 | `devices:write`, `alerts:write`, `maintenance:write` | ✅ | ✅ | ❌ |
 | `inventory:write`, `markers:write`, `ops:write` | ✅ | ✅ | ❌ |
+| `diagrams:write`, `credentials:read`, `credentials:write` | ✅ | ✅ | ❌ |
+| `credentials:reveal` | ✅ | ❌ (فقط با مجوز اختصاصی) | ❌ |
 | `engine:control`, `probe:run`, `system:health` | ✅ | ✅ | ❌ |
 | `settings:write`, `users:manage`, `audit:read`, `demo:reset` | ✅ | ❌ | ❌ |
 
 مجوزهای واقعی هر کاربر در پاسخ `GET /api/auth/me` در فیلد `user.permissions`
 برگردانده می‌شود؛ کلاینت باید همان را مبنا بگیرد، نه حدس از نام نقش.
+
+مجوز اختصاصی `credentials:reveal` را فقط مدیر می‌تواند با
+`PUT /api/auth/users/:id` و فیلد `extraPermissions` بدهد یا بگیرد. Operator
+به‌صورت پیش‌فرض نه رمز خام را می‌بیند و نه فایل خروجی رمزها را می‌گیرد؛
+`GET /api/devices/:id/credentials` هم هم‌زمان `devices:write` و
+`credentials:reveal` می‌خواهد.
 
 ---
 

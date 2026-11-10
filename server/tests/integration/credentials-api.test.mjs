@@ -115,6 +115,56 @@ test('reveal returns the secret uncached and is audited', async () => {
   assert.equal(missing.status, 404);
 });
 
+test('operator cannot reveal or export secrets unless an admin grants the dedicated permission', async () => {
+  const createdUser = await api(server.base, 'POST', '/api/auth/users', {
+    username: 'credoperator',
+    password: 'cred-operator-123456',
+    role: 'operator',
+  });
+  assert.equal(createdUser.status, 201, JSON.stringify(createdUser.data));
+  const operatorId = createdUser.data.id;
+  assert.equal(createdUser.data.permissions.includes('credentials:reveal'), false);
+
+  const device = await api(server.base, 'POST', '/api/devices', {
+    name: 'Operator credential device',
+    ip: '10.9.9.10',
+    access_username: 'operator-view',
+    access_password: 'DeviceSecret!42',
+  });
+  assert.equal(device.status, 201, JSON.stringify(device.data));
+
+  await login(server.base, 'credoperator', 'cred-operator-123456');
+  assert.equal((await api(server.base, 'GET', '/api/credentials')).status, 200, 'operator keeps read access');
+  assert.equal((await api(server.base, 'GET', `/api/credentials/${created.id}/reveal`)).status, 403);
+  assert.equal((await api(server.base, 'GET', '/api/credentials/export')).status, 403);
+  assert.equal((await api(server.base, 'GET', `/api/devices/${device.data.id}/credentials`)).status, 403);
+
+  await login(server.base);
+  const invalid = await api(server.base, 'PUT', `/api/auth/users/${operatorId}`, {
+    extraPermissions: ['users:manage'],
+  });
+  assert.equal(invalid.status, 400, 'only dedicated delegable permissions may be granted');
+
+  const granted = await api(server.base, 'PUT', `/api/auth/users/${operatorId}`, {
+    extraPermissions: ['credentials:reveal'],
+  });
+  assert.equal(granted.status, 200, JSON.stringify(granted.data));
+  assert.deepEqual(granted.data.extraPermissions, ['credentials:reveal']);
+
+  await login(server.base, 'credoperator', 'cred-operator-123456');
+  const me = await api(server.base, 'GET', '/api/auth/me');
+  assert.equal(me.data.user.permissions.includes('credentials:reveal'), true);
+  assert.equal((await api(server.base, 'GET', `/api/credentials/${created.id}/reveal`)).status, 200);
+  assert.equal((await api(server.base, 'GET', '/api/credentials/export')).status, 200);
+  assert.equal((await api(server.base, 'GET', `/api/devices/${device.data.id}/credentials`)).status, 200);
+
+  await login(server.base);
+  await api(server.base, 'PUT', `/api/auth/users/${operatorId}`, { extraPermissions: [] });
+  await login(server.base, 'credoperator', 'cred-operator-123456');
+  assert.equal((await api(server.base, 'GET', `/api/credentials/${created.id}/reveal`)).status, 403);
+  await login(server.base);
+});
+
 test('editing the secret recalculates strength and records the rotation time', async () => {
   const patch = await api(server.base, 'PATCH', `/api/credentials/${created.id}`, {
     secret: 'vT7#pQ2!mK9@zR4$wX8&',

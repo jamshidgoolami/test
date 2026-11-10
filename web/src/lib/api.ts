@@ -223,7 +223,13 @@ export const api = {
       roles: { value: string; label: string }[];
       passwordPolicy: PasswordPolicy;
     }>('/auth/users', { signal }),
-  createUser: (body: { username: string; password: string; role: 'admin' | 'operator' | 'viewer'; displayName?: string }) =>
+  createUser: (body: {
+    username: string;
+    password: string;
+    role: 'admin' | 'operator' | 'viewer';
+    displayName?: string;
+    extraPermissions?: string[];
+  }) =>
     request<AuthUser>('/auth/users', { method: 'POST', body: JSON.stringify(body) }),
   updateUser: (id: number, body: Record<string, unknown>) =>
     request<AuthUser>(`/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

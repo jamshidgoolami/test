@@ -1402,7 +1402,7 @@ function UsersTab() {
       <Card>
         <CardHeader
           title="مدیریت کاربران"
-          subtitle="نقش‌ها: Administrator (همه)، Operator (عملیات روزمره) و Viewer (فقط مشاهده)"
+          subtitle="Administrator همهٔ مجوزها؛ Operator عملیات روزمره بدون نمایش رمز؛ Viewer فقط مشاهده. نمایش رمز را می‌توان جدا به هر کاربر داد."
           icon={<Users size={18} />}
           action={
             <button type="button" className="btn-primary btn-xs" onClick={() => setCreateOpen(true)}>
@@ -1471,6 +1471,23 @@ function UsersTab() {
                     <td className="text-[11px] text-ink-500">{u.lastLoginAt ? fmtDateTime(u.lastLoginAt, tzOffset) : 'هرگز'}</td>
                     <td>
                       <div className="flex flex-wrap items-center justify-center gap-1">
+                        {u.role !== 'admin' ? (
+                          <button
+                            type="button"
+                            className={`btn-xs ${(u.extraPermissions ?? []).includes('credentials:reveal') ? 'btn-soft' : 'btn-ghost'}`}
+                            disabled={busy}
+                            title="اعطا یا لغو مجوز اختصاصی نمایش رمزهای واقعی"
+                            onClick={() => {
+                              const granted = (u.extraPermissions ?? []).includes('credentials:reveal');
+                              void run(
+                                () => api.updateUser(u.id, { extraPermissions: granted ? [] : ['credentials:reveal'] }),
+                                granted ? 'مجوز نمایش رمز لغو شد' : 'مجوز نمایش رمز داده شد'
+                              );
+                            }}
+                          >
+                            {(u.extraPermissions ?? []).includes('credentials:reveal') ? 'لغو نمایش رمز' : 'اجازهٔ نمایش رمز'}
+                          </button>
+                        ) : null}
                         {u.locked ? (
                           <button type="button" className="btn-ghost btn-xs" disabled={busy} onClick={() => run(() => api.unlockUser(u.id), 'قفل حساب باز شد')}>
                             بازکردن قفل

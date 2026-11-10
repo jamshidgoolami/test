@@ -13,7 +13,7 @@ import express from 'express';
 import multer from 'multer';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { db, getSettings, log } from '../db.js';
+import { db, getSettings, log, transaction } from '../db.js';
 import { routePermission } from '../permissions.js';
 import {
   attachmentMaxBytes,
@@ -250,13 +250,28 @@ function linkTargets(graph) {
   return targets;
 }
 
+/** پیش‌شرط ظرفیت یک بوم برای افزودن جزء پیوند. */
+function assertLinkCapacity(graph, label) {
+  const links = graph.nodes.filter((node) => node && node.type === 'diagram');
+  if (links.length >= MAX_LINKS) {
+    throw new DiagramError(`${label} حداکثر ${MAX_LINKS} پیوند می‌تواند داشته باشد.`);
+  }
+  if (graph.nodes.length >= MAX_NODES) {
+    throw new DiagramError(`${label} حداکثر ${MAX_NODES} جزء می‌تواند داشته باشد.`);
+  }
+}
+
 /** جزء پیوند برگشتی را در دیاگرام مقصد می‌سازد (یا نوعش را همگام می‌کند). */
-function ensureReciprocalLink(sourceRow, targetId, linkKind) {
-  if (!Number.isInteger(targetId) || targetId <= 0 || targetId === sourceRow.id) return false;
+function ensureReciprocalLink(sourceRow, targetId, linkKind, { strict = true } = {}) {
+  if (!Number.isInteger(targetId) || targetId <= 0 || targetId === sourceRow.id) {
+    if (strict) throw new DiagramError('دیاگرام مقصد نامعتبر است.');
+    return false;
+  }
   let targetRow;
   try {
     targetRow = getRow(targetId);
   } catch {
+    if (strict) throw new DiagramError('دیاگرام مقصد پیدا نشد.', 404);
     return false;
   }
   const graph = readGraph(targetRow);
@@ -277,6 +292,11 @@ function ensureReciprocalLink(sourceRow, targetId, linkKind) {
   }
   const links = graph.nodes.filter((node) => node && node.type === 'diagram');
   if (links.length >= MAX_LINKS || graph.nodes.length >= MAX_NODES) {
+    if (strict) {
+      throw new DiagramError(
+        `دیاگرام «${targetRow.name}» ظرفیت پیوند ندارد (حداکثر ${MAX_LINKS} پیوند و ${MAX_NODES} جزء).`
+      );
+    }
     log('warn', `پیوند برگشتی «${targetRow.name}» → «${sourceRow.name}» ساخته نشد: ظرفیت دیاگرام پر است.`);
     return false;
   }
@@ -294,7 +314,10 @@ function ensureReciprocalLink(sourceRow, targetId, linkKind) {
     },
   };
   const next = { nodes: [...graph.nodes, node], edges: graph.edges };
-  if (Buffer.byteLength(JSON.stringify(next), 'utf8') > MAX_DATA_BYTES) return false;
+  if (Buffer.byteLength(JSON.stringify(next), 'utf8') > MAX_DATA_BYTES) {
+    if (strict) throw new DiagramError(`حجم دیاگرام «${targetRow.name}» بیش از حد مجاز است.`);
+    return false;
+  }
   writeGraph(targetRow.id, next, nowMs());
   return true;
 }
@@ -499,54 +522,62 @@ function linkPosition(nodes, linkCount) {
 router.post('/:id/links', (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const row = getRow(id);
     const targetId = Number(req.body?.targetId);
     if (!Number.isInteger(targetId) || targetId <= 0) throw new DiagramError('دیاگرام مقصد را انتخاب کنید.');
     if (targetId === id) throw new DiagramError('پیوند یک دیاگرام به خودش مجاز نیست.');
     const target = getRow(targetId);
-    const graph = readGraph(row);
-    if (
-      readGraph(target).nodes.some(
-        (node) => node && node.type === 'diagram' && Number(node.data?.diagramId) === id
-      )
-    ) {
-      throw new DiagramError('این دو دیاگرام از قبل به هم پیوند دارند.');
-    }
-    const links = graph.nodes.filter((node) => node && node.type === 'diagram');
-    if (links.length >= MAX_LINKS) {
-      throw new DiagramError(`هر دیاگرام حداکثر ${MAX_LINKS} پیوند می‌تواند داشته باشد.`);
-    }
-    if (links.some((node) => Number(node.data?.diagramId) === targetId)) {
-      throw new DiagramError(`این دیاگرام از قبل به «${target.name}» پیوند دارد.`);
-    }
-    if (graph.nodes.length >= MAX_NODES) throw new DiagramError(`حداکثر ${MAX_NODES} جزء در هر دیاگرام مجاز است.`);
     const label = text(req.body?.label, 120) || target.name;
     const description = text(req.body?.description, 300);
     const linkKind = cleanLinkKind(req.body?.linkKind ?? req.body?.kind);
     const fromSide = cleanLinkSide(req.body?.fromSide);
     const toSide = cleanLinkSide(req.body?.toSide);
-    const node = {
-      id: `link-${crypto.randomUUID()}`,
-      type: 'diagram',
-      position: linkPosition(graph.nodes, links.length),
-      width: 220,
-      height: 80,
-      data: {
-        label,
-        diagramId: targetId,
-        color: '#0369a1',
-        linkKind,
-        ...(fromSide ? { fromSide } : {}),
-        ...(toSide ? { toSide } : {}),
-        ...(description ? { description } : {}),
+    // ایجاد هر دو طرف در یک تراکنش: اگر طرف مقابل ظرفیت نداشته باشد یا نوشتن
+    // آن شکست بخورد، پیوند یک‌طرفه در مبدأ باقی نمی‌ماند.
+    const saved = transaction(
+      () => {
+        const row = getRow(id);
+        const graph = readGraph(row);
+        const targetGraph = readGraph(target);
+        if (
+          targetGraph.nodes.some(
+            (node) => node && node.type === 'diagram' && Number(node.data?.diagramId) === id
+          )
+        ) {
+          throw new DiagramError('این دو دیاگرام از قبل به هم پیوند دارند.');
+        }
+        const links = graph.nodes.filter((node) => node && node.type === 'diagram');
+        if (links.some((node) => Number(node.data?.diagramId) === targetId)) {
+          throw new DiagramError(`این دیاگرام از قبل به «${target.name}» پیوند دارد.`);
+        }
+        assertLinkCapacity(graph, 'دیاگرام مبدأ');
+        assertLinkCapacity(targetGraph, `دیاگرام «${target.name}»`);
+        const node = {
+          id: `link-${crypto.randomUUID()}`,
+          type: 'diagram',
+          position: linkPosition(graph.nodes, links.length),
+          width: 220,
+          height: 80,
+          data: {
+            label,
+            diagramId: targetId,
+            color: '#0369a1',
+            linkKind,
+            ...(fromSide ? { fromSide } : {}),
+            ...(toSide ? { toSide } : {}),
+            ...(description ? { description } : {}),
+          },
+        };
+        const next = { nodes: [...graph.nodes, node], edges: graph.edges };
+        if (Buffer.byteLength(JSON.stringify(next), 'utf8') > MAX_DATA_BYTES) {
+          throw new DiagramError('حجم دیاگرام بیش از حد مجاز است.');
+        }
+        writeGraph(id, next, nowMs());
+        ensureReciprocalLink(getRow(id), targetId, linkKind, { strict: true });
+        return getRow(id);
       },
-    };
-    const next = { nodes: [...graph.nodes, node], edges: graph.edges };
-    if (Buffer.byteLength(JSON.stringify(next), 'utf8') > MAX_DATA_BYTES) {
-      throw new DiagramError('حجم دیاگرام بیش از حد مجاز است.');
-    }
-    const saved = writeGraph(id, next, nowMs());
-    ensureReciprocalLink(saved, targetId, linkKind);
+      { label: 'diagram.link.create' }
+    );
+    const row = getRow(id);
     log('info', `پیوند دوطرفهٔ «${row.name}» ↔ «${target.name}» ساخته شد.`);
     res.status(201).json(serialize(saved));
   } catch (e) {
@@ -576,6 +607,11 @@ router.patch('/:id/links/:nodeId', (req, res, next) => {
     ) {
       throw new DiagramError(`این دیاگرام از قبل به «${target.name}» پیوند دارد.`);
     }
+    const targetGraph = readGraph(target);
+    const targetAlreadyLinks = targetGraph.nodes.some(
+      (node) => node && node.type === 'diagram' && Number(node.data?.diagramId) === id
+    );
+    if (!targetAlreadyLinks) assertLinkCapacity(targetGraph, `دیاگرام «${target.name}»`);
     const label =
       req.body?.label === undefined
         ? text(current.data?.label, 120) || target.name
@@ -608,9 +644,15 @@ router.patch('/:id/links/:nodeId', (req, res, next) => {
       ),
       edges: graph.edges,
     };
-    const saved = writeGraph(id, next, nowMs());
-    if (previousTargetId !== targetId) removeReciprocalLink(id, previousTargetId);
-    ensureReciprocalLink(saved, targetId, linkKind);
+    const saved = transaction(
+      () => {
+        const savedRow = writeGraph(id, next, nowMs());
+        if (previousTargetId !== targetId) removeReciprocalLink(id, previousTargetId);
+        ensureReciprocalLink(savedRow, targetId, linkKind, { strict: true });
+        return getRow(id);
+      },
+      { label: 'diagram.link.update' }
+    );
     log('info', `پیوند دوطرفهٔ «${row.name}» ↔ «${target.name}» به‌روزرسانی شد.`);
     res.json(serialize(saved));
   } catch (e) {
@@ -631,8 +673,14 @@ router.delete('/:id/links/:nodeId', (req, res, next) => {
       nodes: graph.nodes.filter((node) => node.id !== nodeId),
       edges: graph.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
     };
-    const saved = writeGraph(id, next, nowMs());
-    removeReciprocalLink(id, previousTargetId);
+    const saved = transaction(
+      () => {
+        writeGraph(id, next, nowMs());
+        removeReciprocalLink(id, previousTargetId);
+        return getRow(id);
+      },
+      { label: 'diagram.link.delete' }
+    );
     log('info', `پیوند دوطرفهٔ دیاگرام «${row.name}» حذف شد.`);
     res.json(serialize(saved));
   } catch (e) {
@@ -759,15 +807,23 @@ router.put('/:id/content', (req, res, next) => {
     }
     const graph = normalizeGraph(req.body);
     const previousGraph = readGraph(row);
-    const nextRevision = row.revision + 1;
-    db.prepare('UPDATE diagrams SET data = ?, revision = ?, updated_at = ? WHERE id = ?').run(
-      JSON.stringify(graph),
-      nextRevision,
-      nowMs(),
-      id
+    // ذخیرهٔ بوم و همگام‌سازی هر دو طرف پیوندها یک تراکنش است؛ اگر ظرفیت یک
+    // دیاگرام مقصد پر باشد، ذخیرهٔ مبدأ هم برمی‌گردد و پیوند یک‌طرفه ساخته نمی‌شود.
+    const savedRow = transaction(
+      () => {
+        const nextRevision = row.revision + 1;
+        db.prepare('UPDATE diagrams SET data = ?, revision = ?, updated_at = ? WHERE id = ?').run(
+          JSON.stringify(graph),
+          nextRevision,
+          nowMs(),
+          id
+        );
+        const saved = getRow(id);
+        syncReciprocalLinks(saved, previousGraph, graph);
+        return getRow(id);
+      },
+      { label: 'diagram.content.save' }
     );
-    const savedRow = getRow(id);
-    syncReciprocalLinks(savedRow, previousGraph, graph);
     res.json(serialize(savedRow));
   } catch (e) {
     next(e);
@@ -896,14 +952,110 @@ router.delete('/:id/attachments/:attachmentId', (req, res, next) => {
   }
 });
 
+/**
+ * حذف ارجاع‌های خارجی به دیاگرام‌های حذف‌شده و یال‌های معلق از یک بوم.
+ * فقط گرافِ تغییرکرده نوشته می‌شود و revision آن بالا می‌رود.
+ */
+function cleanDiagramGraph(graph, ownerId, removedIds) {
+  const removedNodes = new Set();
+  const nodes = graph.nodes.filter((node) => {
+    if (!node || node.type !== 'diagram') return true;
+    const target = Number(node.data?.diagramId);
+    if (!Number.isInteger(target) || target <= 0 || target === ownerId || removedIds.has(target)) {
+      removedNodes.add(node.id);
+      return false;
+    }
+    return true;
+  });
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  return {
+    graph: { nodes, edges },
+    removedNodes: removedNodes.size,
+    changed: nodes.length !== graph.nodes.length || edges.length !== graph.edges.length,
+  };
+}
+
+/** پاک‌سازی ارجاع‌ها در همهٔ بوم‌های باقی‌مانده (داخل تراکنش فراخوانده می‌شود). */
+function cleanupDiagramReferences(removedIds) {
+  const rows = db.prepare('SELECT id, data FROM diagrams').all();
+  let cleanedLinks = 0;
+  let cleanedDiagrams = 0;
+  for (const row of rows) {
+    const result = cleanDiagramGraph(readGraph(row), row.id, removedIds);
+    if (!result.changed) continue;
+    writeGraph(row.id, result.graph, nowMs());
+    cleanedLinks += result.removedNodes;
+    cleanedDiagrams += 1;
+  }
+  return { cleanedLinks, cleanedDiagrams };
+}
+
+/**
+ * پاک‌سازی لینک‌های شکسته (ارجاع به دیاگرام ناموجود یا خود) در شروع سرور.
+ * حذف دیاگرام این کار را در همان تراکنش انجام می‌دهد؛ این تابع برای دادهٔ
+ * بازمانده از نسخه‌های قبل و اصلاح دستی پایگاه‌داده است.
+ */
+export function pruneBrokenDiagramLinks() {
+  return transaction(
+    () => {
+      const rows = db.prepare('SELECT id, data FROM diagrams').all();
+      const valid = new Set(rows.map((row) => row.id));
+      let links = 0;
+      let diagrams = 0;
+      for (const row of rows) {
+        const graph = readGraph(row);
+        const kept = graph.nodes.filter((node) => {
+          if (!node || node.type !== 'diagram') return true;
+          const target = Number(node.data?.diagramId);
+          return Number.isInteger(target) && target > 0 && target !== row.id && valid.has(target);
+        });
+        const nodeIds = new Set(kept.map((node) => node.id));
+        const edges = graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+        const removed = graph.nodes.length - kept.length;
+        if (!removed && edges.length === graph.edges.length) continue;
+        writeGraph(row.id, { nodes: kept, edges }, nowMs());
+        links += removed;
+        diagrams += 1;
+      }
+      return { links, diagrams };
+    },
+    { label: 'diagram.links.prune_broken' }
+  );
+}
+
 router.delete('/:id', (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const row = getRow(id);
     const ids = descendantIds(id);
-    db.prepare('DELETE FROM diagrams WHERE id = ?').run(id);
-    log('info', `دیاگرام «${row.name}» و ${ids.length - 1} زیرمجموعهٔ آن حذف شد.`);
-    res.json({ deleted: ids.length });
+    const idSet = new Set(ids);
+    const placeholders = ids.map(() => '?').join(',');
+    const attachments = db
+      .prepare(`SELECT stored_name FROM diagram_attachments WHERE diagram_id IN (${placeholders})`)
+      .all(...ids);
+    // فایل‌ها پیش از حذف رکوردها کنار گذاشته می‌شوند؛ اگر تراکنش شکست بخورد
+    // برگردانده می‌شوند و در غیر این صورت پس از Commit پاک می‌شوند.
+    const staged = attachments.map((attachment) => stageAttachmentRemoval(attachment.stored_name)).filter(Boolean);
+    let cleanup;
+    try {
+      cleanup = transaction(
+        () => {
+          db.prepare(`DELETE FROM diagrams WHERE id IN (${placeholders})`).run(...ids);
+          return cleanupDiagramReferences(idSet);
+        },
+        { label: 'diagram.delete' }
+      );
+    } catch (e) {
+      for (const item of staged) item.restore?.();
+      throw e;
+    }
+    for (const item of staged) item.commit?.();
+    log(
+      'info',
+      `دیاگرام «${row.name}» و ${ids.length - 1} زیرمجموعهٔ آن حذف شد؛ ${cleanup.cleanedLinks} ارجاع در ${cleanup.cleanedDiagrams} دیاگرام پاک‌سازی شد.`
+    );
+    res.json({ deleted: ids.length, ...cleanup });
   } catch (e) {
     next(e);
   }

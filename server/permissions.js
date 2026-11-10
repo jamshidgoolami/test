@@ -72,10 +72,10 @@ const VIEWER_PERMISSIONS = Object.freeze([
 const OPERATOR_PERMISSIONS = Object.freeze([
   ...VIEWER_PERMISSIONS,
   'devices:write',
-  // اپراتور برای عیب‌یابی روزمره به اعتبارنامهٔ تجهیزات نیاز دارد؛ Viewer نه.
+  // اپراتور فهرست و مدیریت اعتبارنامه‌ها را دارد، اما نمایش/خروجی رمز خام
+  // پیش‌فرض نیست؛ این مجوز فقط با اعطای صریح مدیر به یک کاربر داده می‌شود.
   'credentials:read',
   'credentials:write',
-  'credentials:reveal',
   'alerts:write',
   'maintenance:write',
   'inventory:write',
@@ -92,6 +92,35 @@ const BY_ROLE = Object.freeze({
   operator: new Set(OPERATOR_PERMISSIONS),
   viewer: new Set(VIEWER_PERMISSIONS),
 });
+
+/**
+ * مجوزهایی که می‌توان جدا از نقش، به یک کاربر مشخص داد. عمداً محدود است تا
+ * «مجوز اختصاصی» به دری برای ارتقای سطح دسترسی (مثل users:manage) تبدیل نشود.
+ */
+export const DELEGABLE_PERMISSIONS = Object.freeze(['credentials:reveal']);
+
+/** تبدیل ورودی/ستون JSON به فهرست مجوزهای معتبر و قابل‌اعطا */
+export function normalizeExtraPermissions(value) {
+  let list = value;
+  if (typeof value === 'string') {
+    try {
+      list = JSON.parse(value);
+    } catch {
+      list = [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const allowed = new Set(DELEGABLE_PERMISSIONS);
+  return [...new Set(list.map((item) => String(item)).filter((item) => allowed.has(item)))];
+}
+
+/** مجوزهای مؤثر یک کاربر: نقش + مجوزهای اختصاصی معتبر */
+export function permissionsForUser(user) {
+  const role = normalizeRole(user?.role);
+  if (!role) return [];
+  const extra = normalizeExtraPermissions(user?.extraPermissions ?? user?.extra_permissions);
+  return [...new Set([...BY_ROLE[role], ...extra])];
+}
 
 /** پذیرش نام‌های رایج نقش و برگرداندن نام استاندارد؛ نامعتبر → null */
 export function normalizeRole(role) {
@@ -115,7 +144,9 @@ export function permissionsForRole(role) {
 export function hasPermission(user, permission) {
   const normalized = normalizeRole(user?.role);
   if (!normalized) return false;
-  return BY_ROLE[normalized].has(String(permission));
+  const needed = String(permission);
+  if (BY_ROLE[normalized].has(needed)) return true;
+  return normalizeExtraPermissions(user?.extraPermissions ?? user?.extra_permissions).includes(needed);
 }
 
 export function isAdmin(user) {
@@ -158,9 +189,12 @@ export default {
   ROLES,
   ROLE_LABELS,
   ALL_PERMISSIONS,
+  DELEGABLE_PERMISSIONS,
   normalizeRole,
   isValidRole,
   permissionsForRole,
+  permissionsForUser,
+  normalizeExtraPermissions,
   hasPermission,
   isAdmin,
   requirePermission,

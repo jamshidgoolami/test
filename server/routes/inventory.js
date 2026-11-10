@@ -370,8 +370,41 @@ router.get('/layers', (_req, res) => {
   res.json({ items, files: mbtiles.listFiles(), tilesDir: MBTILES_DIR, settings: getSettings() });
 });
 
+/** لایه‌هایی که به یک فایل MBTiles مشخص ارجاع می‌دهند. */
+function layersUsingFile(fileName) {
+  const safe = path.basename(String(fileName || ''));
+  if (!safe || safe !== String(fileName) || !/\.mbtiles$/i.test(safe)) return [];
+  return db
+    .prepare('SELECT id, name, visible, is_default FROM map_layers WHERE file_name = ? ORDER BY id')
+    .all(safe);
+}
+
+function mbtilesFileExists(fileName) {
+  const safe = path.basename(String(fileName || ''));
+  return Boolean(safe) && safe === String(fileName) && fs.existsSync(path.join(MBTILES_DIR, safe));
+}
+
 router.post('/layers', async (req, res) => {
   const b = req.body || {};
+  const requestedFile = b.file_name ? path.basename(String(b.file_name)).slice(0, 200) : null;
+  const requestedKind =
+    b.kind === undefined
+      ? requestedFile
+        ? 'mbtiles'
+        : 'empty'
+      : ['builtin', 'mbtiles', 'empty'].includes(b.kind)
+        ? b.kind
+        : 'empty';
+  // لایهٔ MBTiles بدون فایل موجود، رکورد یتیم می‌سازد؛ پیش از درج رد می‌شود.
+  if (requestedFile && requestedKind !== 'mbtiles') {
+    return res.status(400).json({ error: 'فایل MBTiles فقط برای لایهٔ از نوع mbtiles مجاز است.' });
+  }
+  if (requestedKind === 'mbtiles' && !requestedFile) {
+    return res.status(400).json({ error: 'لایهٔ MBTiles باید فایل مشخص داشته باشد.' });
+  }
+  if (requestedFile && !mbtilesFileExists(requestedFile)) {
+    return res.status(400).json({ error: `فایل MBTiles یافت نشد: ${requestedFile}` });
+  }
   const r = db
     .prepare(
       'INSERT INTO map_layers(name, description, kind, file_name, min_zoom, max_zoom, attribution, visible, is_default, tile_count, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
@@ -379,8 +412,8 @@ router.post('/layers', async (req, res) => {
     .run(
       text(b.name, 120) || 'لایه جدید',
       text(b.description, 500),
-      ['builtin', 'mbtiles', 'empty'].includes(b.kind) ? b.kind : 'empty',
-      b.file_name ? path.basename(String(b.file_name)).slice(0, 200) : null,
+      requestedKind,
+      requestedFile,
       zoom(b.min_zoom, 0),
       zoom(b.max_zoom, 19),
       text(b.attribution, 200),
@@ -390,10 +423,10 @@ router.post('/layers', async (req, res) => {
       Date.now()
     );
   const id = Number(r.lastInsertRowid);
-  if (b.file_name) {
+  if (requestedFile) {
     // خواندن metadata و شمارش کاشی برای فایل موجود هم در Worker انجام می‌شود
     try {
-      const filePath = path.join(MBTILES_DIR, path.basename(String(b.file_name)));
+      const filePath = path.join(MBTILES_DIR, requestedFile);
       if (fs.existsSync(filePath)) {
         const info = await runJob('mbtilesInfo', { filePath }, { timeoutMs: 120000 });
         if (info) {
@@ -416,19 +449,41 @@ router.post('/layers', async (req, res) => {
 router.put('/layers/:id', (req, res) => {
   const b = req.body || {};
   const id = Number(req.params.id);
+  const layer = db.prepare('SELECT * FROM map_layers WHERE id=?').get(id);
+  if (!layer) return res.status(404).json({ error: 'لایه یافت نشد' });
+  if (b.kind !== undefined && !['builtin', 'mbtiles', 'empty'].includes(b.kind)) {
+    return res.status(400).json({ error: 'نوع لایه نامعتبر است.' });
+  }
+  const nextKind = b.kind === undefined ? layer.kind : b.kind;
+  const nextFile =
+    b.file_name === undefined
+      ? nextKind === 'mbtiles'
+        ? layer.file_name
+        : null
+      : b.file_name
+        ? path.basename(String(b.file_name)).slice(0, 200)
+        : null;
+  if (nextKind === 'mbtiles' && !nextFile) {
+    return res.status(400).json({ error: 'لایهٔ MBTiles باید فایل مشخص داشته باشد.' });
+  }
+  if (nextFile && (nextKind !== 'mbtiles' || !mbtilesFileExists(nextFile))) {
+    return res.status(400).json({
+      error: nextKind !== 'mbtiles' ? 'فایل MBTiles فقط برای لایهٔ mbtiles مجاز است.' : `فایل MBTiles یافت نشد: ${nextFile}`,
+    });
+  }
   // «صفر کردن پیش‌فرض قبلی + تعیین پیش‌فرض جدید» اتمیک است؛ وگرنه شکست میانی،
   // نقشه را بدون لایهٔ پیش‌فرض رها می‌کرد.
   const n = transaction(() => {
   if (Number(b.is_default)) db.prepare('UPDATE map_layers SET is_default = 0').run();
   return db
     .prepare(
-      'UPDATE map_layers SET name=COALESCE(?,name), description=COALESCE(?,description), kind=COALESCE(?,kind), file_name=COALESCE(?,file_name), min_zoom=COALESCE(?,min_zoom), max_zoom=COALESCE(?,max_zoom), attribution=COALESCE(?,attribution), visible=COALESCE(?,visible), is_default=COALESCE(?,is_default) WHERE id=?'
+      'UPDATE map_layers SET name=COALESCE(?,name), description=COALESCE(?,description), kind=?, file_name=?, min_zoom=COALESCE(?,min_zoom), max_zoom=COALESCE(?,max_zoom), attribution=COALESCE(?,attribution), visible=COALESCE(?,visible), is_default=COALESCE(?,is_default) WHERE id=?'
     )
     .run(
       b.name === undefined ? null : text(b.name, 120),
       b.description === undefined ? null : text(b.description, 500),
-      ['builtin', 'mbtiles', 'empty'].includes(b.kind) ? b.kind : null,
-      b.file_name ? path.basename(String(b.file_name)).slice(0, 200) : null,
+      nextKind,
+      nextFile,
       b.min_zoom === undefined ? null : zoom(b.min_zoom, 0),
       b.max_zoom === undefined ? null : zoom(b.max_zoom, 19),
       b.attribution === undefined ? null : text(b.attribution, 200),
@@ -443,18 +498,56 @@ router.put('/layers/:id', (req, res) => {
 router.delete('/layers/:id', (req, res) => {
   const id = Number(req.params.id);
   const layer = db.prepare('SELECT * FROM map_layers WHERE id=?').get(id);
+  if (!layer) return res.status(404).json({ error: 'لایه یافت نشد' });
   const removeFile = String(req.query.removeFile || '') === '1';
-  // ترتیب امن (BUG-19): ابتدا رکورد حذف می‌شود؛ اگر حذف فایل شکست بخورد لایهٔ
-  // نیمه‌کاره در پایگاه‌داده نمی‌ماند و فایل یتیم در شروع بعدی پاک می‌شود.
-  const deleted = db.prepare('DELETE FROM map_layers WHERE id=?').run(id).changes;
-  if (deleted && layer?.file_name && removeFile) {
+  // فایل فقط وقتی پاک می‌شود که لایهٔ دیگری (فعال یا غیرفعال) از آن استفاده
+  // نکند. برای جلوگیری از رکوردِ بدون فایل در صورت خطای میانی، فایل ابتدا
+  // به نام موقت تغییر می‌کند، سپس رکورد در تراکنش حذف می‌شود؛ اگر تراکنش
+  // شکست بخورد نام فایل به حالت اول برمی‌گردد.
+  const othersUseFile = layer.file_name ? layersUsingFile(layer.file_name).filter((l) => l.id !== id) : [];
+  const shouldRemoveFile = Boolean(removeFile && layer.file_name && othersUseFile.length === 0);
+  const filePath = layer.file_name ? path.join(MBTILES_DIR, layer.file_name) : null;
+  const stagedPath = shouldRemoveFile && filePath && fs.existsSync(filePath) ? `${filePath}.deleting-${crypto.randomUUID()}` : null;
+  if (stagedPath) {
     try {
-      mbtiles.deleteFile(layer.file_name);
+      fs.renameSync(filePath, stagedPath);
+    } catch (e) {
+      return res.status(500).json({ error: `آماده‌سازی حذف فایل نقشه ناموفق بود: ${e.message}` });
+    }
+  }
+  let deleted;
+  try {
+    deleted = transaction(() => db.prepare('DELETE FROM map_layers WHERE id=?').run(id).changes, {
+      label: 'inventory.layer.delete',
+    });
+  } catch (e) {
+    if (stagedPath) {
+      try {
+        fs.renameSync(stagedPath, filePath);
+      } catch {
+        /* خطای اصلی گزارش می‌شود؛ فایل موقت برای پاک‌سازی دستی می‌ماند */
+      }
+    }
+    throw e;
+  }
+  if (!deleted && stagedPath) {
+    try {
+      fs.renameSync(stagedPath, filePath);
+    } catch {
+      /* بی‌اثر */
+    }
+  }
+  let fileDeleted = false;
+  const fileKept = Boolean(removeFile && layer.file_name && !shouldRemoveFile);
+  if (deleted && stagedPath) {
+    try {
+      fs.unlinkSync(stagedPath);
+      fileDeleted = true;
     } catch (e) {
       logEvent('warn', 'map_layer_file_delete_failed', { layerId: id, message: String(e?.message || e) });
     }
   }
-  res.json({ deleted });
+  res.json({ deleted, fileDeleted, fileKept });
 });
 
 /** بارگذاری فایل .mbtiles (موقت → اعتبارسنجی → انتقال اتمیک) */
@@ -584,8 +677,24 @@ router.get('/mbtiles/files', (_req, res) => {
 });
 
 router.delete('/mbtiles/files/:name', (req, res) => {
-  mbtiles.deleteFile(req.params.name);
-  res.json({ ok: true });
+  const name = String(req.params.name || '');
+  const safe = path.basename(name);
+  if (!safe || safe !== name || !/\.mbtiles$/i.test(safe)) {
+    return res.status(400).json({ error: 'نام فایل MBTiles نامعتبر است.' });
+  }
+  const usedBy = layersUsingFile(safe);
+  if (usedBy.length) {
+    return res.status(409).json({
+      error: `این فایل توسط ${usedBy.length} لایه استفاده می‌شود و حذف آن مجاز نیست: ${usedBy
+        .map((layer) => layer.name)
+        .join('، ')}`,
+      layers: usedBy,
+    });
+  }
+  if (!mbtilesFileExists(safe)) return res.status(404).json({ error: 'فایل MBTiles یافت نشد.' });
+  const deleted = mbtiles.deleteFile(safe);
+  if (!deleted) return res.status(500).json({ error: 'حذف فایل MBTiles ناموفق بود.' });
+  res.json({ ok: true, deleted: true });
 });
 
 export default router;

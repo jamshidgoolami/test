@@ -28,6 +28,8 @@ try {
     dbBytes: result.manifest.db.size,
     counts: result.manifest.db.counts,
     mbtiles: result.manifest.mbtiles.length,
+    attachments: result.manifest.attachments.length,
+    credentialsKey: result.manifest.credentialsKey.source,
     durationMs: result.manifest.durationMs,
     errors: verification.errors,
     backups: listBackups().length,

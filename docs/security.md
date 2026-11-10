@@ -39,9 +39,12 @@
 | `dashboard:read` (شامل SSE) | ✅ | ✅ | ✅ |
 | `devices:read` | ✅ | ✅ | ✅ |
 | `devices:write` | ✅ | ✅ | ❌ |
+| `credentials:read` / `credentials:write` | ✅ | ✅ / ✅ | ❌ / ❌ |
+| `credentials:reveal` (نمایش/خروجی رمز خام) | ✅ | ❌ (فقط با مجوز اختصاصی) | ❌ |
 | `reports:read` | ✅ | ✅ | ✅ |
 | `alerts:read` / `alerts:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `maintenance:read` / `maintenance:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
+| `diagrams:read` / `diagrams:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `inventory:read` / `inventory:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `markers:read` / `markers:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `ops:read` / `ops:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
@@ -57,6 +60,13 @@
 
 پیاده‌سازی: `server/permissions.js` (مدل نقش/مجوز و میدل‌ورهای `requirePermission`
 و `routePermission`).
+
+**مجوز اختصاصی:** مدیر می‌تواند از `PUT /api/auth/users/:id` مجوز
+`credentials:reveal` را به یک کاربر غیرمدیر بدهد یا بگیرد. این مجوز در ستون
+`users.extra_permissions` ذخیره می‌شود و فقط برای همین یک مجوز قابل اعطاست؛
+نقش پایه، `users:manage`، `settings:write` و سایر مجوزهای مدیریتی از این مسیر
+قابل ارتقا نیستند. Operator به‌صورت پیش‌فرض نه رمز را می‌بیند و نه خروجی آن را
+می‌گیرد.
 
 ---
 
@@ -93,6 +103,11 @@
 | `/api/marker-types*`، `/api/markers*`، `/api/markers/import*` | POST/PUT/DELETE | `markers:write` |
 | `/api/system/health` | GET | `system:health` |
 | `/api/audit` | GET | `audit:read` |
+| `/api/credentials`، `/summary`، `/kinds`، `/checkup`، `/:id` | GET | `credentials:read` |
+| `/api/credentials` (POST/PATCH/DELETE)، `/generate`، `/import`، `/import-devices`، `/:id/rotated` | POST/PATCH/DELETE | `credentials:write` |
+| `/api/credentials/:id/reveal`، `/api/credentials/export` | GET | `credentials:reveal` + سقف نرخ اختصاصی + Audit |
+| `/api/devices/:id/credentials` | GET | `devices:write` **و** `credentials:reveal` |
+| `/api/diagrams` و زیرمسیرهای آن | GET/POST/PUT/PATCH/DELETE | `diagrams:read` / `diagrams:write` |
 
 مسیرهای ناشناختهٔ `/api` پاسخ `404` JSON می‌دهند؛ هیچ مسیر عملیاتی بدون
 احراز هویت باقی نمانده است (آزمون `every operational API rejects anonymous requests`).
@@ -173,6 +188,13 @@
   Argon2id در پایگاه‌داده ذخیره می‌شود و رمز اولیه‌ای در محیط/فایل نگه‌داری
   نمی‌شود. `.env` در `.gitignore` است و فقط `.env.example` بدون مقدار حساس
   نگه‌داری می‌شود.
+  اعتبارنامهٔ تجهیزات (نام کاربری، رمز و یادداشت خزانه) با **AES-256-GCM**
+  رمزنگاری می‌شود؛ کلید از `NETWATCH_CREDENTIAL_KEY` (۳۲ بایت base64) یا فایل
+  مستقل `<DATA_DIR>/device-credentials.key` با مجوز `0600` خوانده می‌شود. متن
+  خام فقط از مسیر `credentials:reveal` و با ثبت Audit و `no-store` برمی‌گردد؛
+  فهرست، جزئیات و بررسی امنیت هرگز رمز را برنمی‌گردانند. پشتیبان، کلید را در
+  `secrets/device-credentials.key` جدا از فایل‌های عادی نگه می‌دارد تا بازیابی
+  کامل ممکن باشد.
 - **هدرهای امنیتی:** `X-Content-Type-Options`, `X-Frame-Options: DENY`,
   `Referrer-Policy`, `Cross-Origin-Opener-Policy`, `Permissions-Policy`,
   `X-Permitted-Cross-Domain-Policies: none`, CSP سخت‌گیرانه در تولید و HSTS در HTTPS.
@@ -207,6 +229,10 @@
 ## ۵. گزارش آزمون امنیتی
 
 تاریخ اجرا: ۱۴۰۵-۰۷-۲۸ (2026-10-20) — محیط: Node.js 24.21، Linux.
+
+> این جدول سابقهٔ اجرای فاز ۳ است و اعداد آن مربوط به همان نسخه/محیط است.
+> نتایج جاری نسخهٔ 1.4.1 (Unit ۲۶۶، Web ۵۸، Integration ۱۵۱، Smoke ۸۹،
+> E2E ۱۱ و UI ۱۰) در `docs/verification-report.md` ثبت شده است.
 
 | فرمان | نتیجه |
 | --- | --- |

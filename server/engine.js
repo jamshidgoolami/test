@@ -104,6 +104,7 @@ function S() {
       `INSERT INTO samples(device_id, ts, rtt_ms, packets_sent, packets_recv, loss_pct, status, ok, mode, scheduled_at, started_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     ),
+    lastSampleStarted: db.prepare('SELECT MAX(started_at) AS started FROM samples WHERE device_id = ?'),
     openOutage: db.prepare(
       'INSERT INTO outages(device_id, started_at, ended_at, duration_sec, cause, detail, lat, lng, open) VALUES (?,?,?,?,?,?,?,?,1)'
     ),
@@ -1516,19 +1517,36 @@ export class MonitoringEngine extends EventEmitter {
     // میزبان زنده جداگانه در stats.serviceUnavailable شمرده می‌شود.
     const okInt = result.ok ? 1 : 0;
     if (!reachable) this.stats.networkFailures++;
-    S().insertSample.run(
-      device.id,
-      ts,
-      result.rtt ?? null,
-      result.packetsSent ?? count,
-      result.packetsRecv ?? 0,
-      result.lossPct ?? (okInt ? 0 : 100),
-      status,
-      okInt,
-      result.mode,
-      scheduledAt || null,
-      startedAt
-    );
+    // قید یکتای (device_id, started_at) از ثبت دوبارهٔ یک بررسی در یک
+    // میلی‌ثانیه جلوگیری می‌کند. دو بررسی دستی پشت‌سرهم می‌توانند همان
+    // میلی‌ثانیه را بگیرند؛ در آن حالت یک میلی‌ثانیه جلو می‌رویم و دوباره
+    // تلاش می‌کنیم تا نتیجه و به‌روزرسانی وضعیت به‌خاطر برخورد زمانی از دست نرود.
+    const previousSampleStart = Number(S().lastSampleStarted.get(device.id)?.started) || 0;
+    let sampleStartedAt = Math.max(startedAt, previousSampleStart + 1);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        S().insertSample.run(
+          device.id,
+          ts,
+          result.rtt ?? null,
+          result.packetsSent ?? count,
+          result.packetsRecv ?? 0,
+          result.lossPct ?? (okInt ? 0 : 100),
+          status,
+          okInt,
+          result.mode,
+          scheduledAt || null,
+          sampleStartedAt
+        );
+        break;
+      } catch (e) {
+        const uniqueSample = /UNIQUE constraint failed: samples\.device_id, samples\.started_at/.test(
+          String(e?.message || '')
+        );
+        if (!uniqueSample || attempt >= 20) throw e;
+        sampleStartedAt += 1;
+      }
+    }
 
     const hasRtt = result.ok && result.rtt != null;
     const nextMin = hasRtt ? Math.min(device.min_rtt_ms ?? result.rtt, result.rtt) : device.min_rtt_ms ?? null;

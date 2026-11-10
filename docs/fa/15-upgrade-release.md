@@ -93,7 +93,7 @@ sudo -u netwatch env \
 
 ---
 
-## ۴. Migrationها در نسخهٔ ۱.۲.۰
+## ۴. Migrationها در نسخهٔ ۱.۴.۱
 
 | نسخه | نام | محتوا |
 | --- | --- | --- |
@@ -102,8 +102,12 @@ sudo -u netwatch env \
 | ۳ | `retention-policy` | `retention_runs`، `retention_state`، `runtime_state` |
 | ۴ | `auth-security` | قفل حساب، `password_changed_at`، ایندکس نشست‌ها |
 | ۵ | `performance-indexes` | ایندکس‌های هشدار/قطعی/آمار روزانه |
+| ۱۹ | `device-credentials` | ستون‌های رمزنگاری‌شدهٔ دسترسی تجهیز |
+| ۲۰ | `device-sites` | جدول `sites` و `devices.site_id` |
+| ۲۱ | `credentials-vault` | جدول `credentials` |
+| ۲۲ | `user-extra-permissions` | `users.extra_permissions` |
 
-`SCHEMA_VERSION = 18` است. اگر `PRAGMA user_version` بزرگ‌تر از نسخهٔ برنامه
+`SCHEMA_VERSION = 22` است. اگر `PRAGMA user_version` بزرگ‌تر از نسخهٔ برنامه
 باشد، برنامه راه‌اندازی نمی‌شود (پایگاه‌داده از کد جدیدتر است).
 
 ---

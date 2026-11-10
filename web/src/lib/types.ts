@@ -684,6 +684,8 @@ export interface AuthUser {
   role: AuthRole;
   roleLabel?: string;
   permissions?: string[];
+  /** مجوزهای اختصاصیِ اعطاشده توسط مدیر (خارج از نقش پایه) */
+  extraPermissions?: string[];
   displayName: string;
   disabled?: boolean;
   createdAt?: number;

@@ -7,12 +7,12 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | مورد | مقدار واقعی |
 | --- | --- |
 | فایل پیش‌فرض | `<NETWATCH_DATA_DIR>/netwatch.db` → `data/netwatch.db` |
-| نسخهٔ ساختار | `SCHEMA_VERSION = 18` در `server/db.js` |
+| نسخهٔ ساختار | `SCHEMA_VERSION = 22` در `server/db.js` |
 | Journal | `WAL` |
 | `synchronous` | `FULL` (قابل تغییر با `NETWATCH_SQLITE_SYNC`) |
 | `foreign_keys` | `ON` |
 | `busy_timeout` | `NETWATCH_BUSY_TIMEOUT_MS` (پیش‌فرض `5000`) |
-| تعداد جدول | **۲۵** جدول پایه |
+| تعداد جدول | **۳۳** جدول پایه |
 | Migration | `schema_migrations` + `PRAGMA user_version` |
 | زمان | epoch میلی‌ثانیه، UTC |
 
@@ -63,6 +63,9 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | جدول | نقش |
 | --- | --- |
 | `users`, `sessions` | حساب‌ها و نشست‌ها (فقط هش توکن) |
+| `credentials` | خزانهٔ اعتبارنامه (نام کاربری/رمز رمزنگاری‌شده با AES-256-GCM) |
+| `sites` | ایستگاه‌های جغرافیایی و عضویت تجهیزات |
+| `device_attachments`, `device_types`, `device_templates`, `device_group_members` | پیوست، نوع، قالب و عضویت چندگروهی تجهیز |
 | `engine_lock`, `engine_meta` | رهبری موتور و Fencing Token (`epoch`) |
 | `retention_runs`, `retention_state` | تاریخچه و قفل اجرای Retention |
 | `runtime_state` | وضعیت کوچک زمان اجرا |
@@ -101,6 +104,20 @@ erDiagram
 | ۳ | `retention-policy` | `retention_runs`، `retention_state`، `runtime_state` |
 | ۴ | `auth-security` | قفل حساب و زمان تغییر رمز، ایندکس نشست |
 | ۵ | `performance-indexes` | ایندکس‌های هشدار، قطعی و آمار روزانه |
+| ۶–۹ | `retired-topology*` | گام‌های بازنشسته؛ فقط شمارهٔ نسخه را حفظ می‌کنند |
+| ۱۰ | `management-extensions` | گروه چندگانه، قالب، پیوست و سرویس |
+| ۱۱ | `retired-snmp-removal` | حذف کامل SNMP |
+| ۱۲ | `service-availability` | `service_status`, `service_port`, `service_checked_at` |
+| ۱۳ | `attachment-limit-50mb` | سقف پیوست ۵۰ مگابایت |
+| ۱۴ | `retired-topology-hierarchy` | گام بازنشسته |
+| ۱۵ | `modular-diagrams` | جدول `diagrams` |
+| ۱۶ | `retired-network-discovery` | حذف کشف شبکه |
+| ۱۷ | `diagram-attachments` | جدول `diagram_attachments` |
+| ۱۸ | `device-identity-and-types` | `mac_address`, `asset_tag`, `device_types` |
+| ۱۹ | `device-credentials` | ستون‌های رمزنگاری‌شدهٔ دسترسی تجهیز |
+| ۲۰ | `device-sites` | جدول `sites` و `devices.site_id` |
+| ۲۱ | `credentials-vault` | جدول `credentials` |
+| ۲۲ | `user-extra-permissions` | `users.extra_permissions` برای مجوز اختصاصی |
 
 قواعد:
 

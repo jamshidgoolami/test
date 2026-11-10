@@ -1,6 +1,6 @@
 # سیاست Session و RBAC — NetWatch
 
-**نسخه:** 1.1.0 (فاز ۳) · **مخاطب:** مدیر سامانه/تیم عملیات/توسعه‌دهنده
+**نسخه:** 1.4.1 · **آخرین به‌روزرسانی:** 2026-11-10 · **مخاطب:** مدیر سامانه/تیم عملیات/توسعه‌دهنده
 **مرجع کد:** `server/auth.js`، `server/permissions.js`، `server/password-policy.js`،
 `server/rate-limit.js`، `server/index.js`.
 
@@ -25,9 +25,12 @@
 | `dashboard:read` (و SSE) | ✅ | ✅ | ✅ |
 | `devices:read` | ✅ | ✅ | ✅ |
 | `devices:write` | ✅ | ✅ | ❌ |
+| `credentials:read` / `credentials:write` | ✅ | ✅ / ✅ | ❌ / ❌ |
+| `credentials:reveal` | ✅ | ❌ (فقط با مجوز اختصاصی) | ❌ |
 | `reports:read` | ✅ | ✅ | ✅ |
 | `alerts:read` / `alerts:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `maintenance:read` / `maintenance:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
+| `diagrams:read` / `diagrams:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `inventory:read` / `inventory:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `markers:read` / `markers:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
 | `ops:read` / `ops:write` | ✅ | ✅ / ✅ | ✅ / ❌ |
@@ -50,6 +53,9 @@
 3. Probe علاوه بر مجوز، باید مقصدش در allowlist شبکه باشد (دو شرط مستقل).
 4. کنترل در Backend است؛ UI فقط برای تجربهٔ کاربر دکمه‌ها را پنهان می‌کند.
 5. مسیرهای ناشناختهٔ `/api` → ۴۰۴ JSON؛ مسیر محافظت‌شده بدون نشست → ۴۰۱.
+6. `credentials:reveal` در نقش Operator نیست. Admin می‌تواند آن را با
+   `PUT /api/auth/users/:id` و فیلد `extraPermissions` به یک کاربر مشخص بدهد؛
+   فقط همین مجوز قابل اعطاست و سایر مجوزهای مدیریتی از این مسیر باز نمی‌شوند.
 
 ---
 
@@ -161,6 +167,11 @@ Lockout در پایگاه‌داده ذخیره می‌شود و با ری‌ا�
 | `PUT /api/auth/users/:id` | `users:manage` | نقش/رمز/غیرفعال + رفع قفل |
 | `POST /api/auth/users/:id/unlock` | `users:manage` | رفع دستی قفل |
 | `DELETE /api/auth/users/:id` | `users:manage` | حذف (آخرین Admin نه) |
+
+`PUT /api/auth/users/:id` فیلد `extraPermissions` را می‌پذیرد. مقدار مجاز فقط
+`["credentials:reveal"]` است؛ مقدار ناشناخته یا تلاش برای اعطای مجوز دیگر با
+`400` رد می‌شود. اعطا/لغو در همان درخواست بعدی اثر می‌کند و در `/auth/me`
+به‌صورت فهرست مجوزهای مؤثر دیده می‌شود.
 
 همهٔ تغییرها CSRF و Origin معتبر می‌خواهند و در Audit ثبت می‌شوند.
 

@@ -29,7 +29,15 @@ import { db, DATA_DIR, transaction } from './db.js';
 import { logEvent } from './logger.mjs';
 import { config } from './config.js';
 import { createRateLimiter, clientIp } from './rate-limit.js';
-import { normalizeRole, permissionsForRole, ROLE_LABELS, requirePermission, ALL_PERMISSIONS } from './permissions.js';
+import {
+  normalizeRole,
+  permissionsForUser,
+  normalizeExtraPermissions,
+  DELEGABLE_PERMISSIONS,
+  ROLE_LABELS,
+  requirePermission,
+  ALL_PERMISSIONS,
+} from './permissions.js';
 import { assertPassword, describePasswordPolicy } from './password-policy.js';
 
 const SESSION_COOKIE = 'nw_session';
@@ -218,7 +226,7 @@ export function attachUser(req, res, next) {
     const row = db
       .prepare(
         `SELECT s.token_hash, s.csrf_hash, s.expires_at, s.last_seen_at,
-                u.id AS userId, u.username, u.role, u.disabled, u.display_name
+                u.id AS userId, u.username, u.role, u.disabled, u.display_name, u.extra_permissions
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ?`
       )
@@ -242,6 +250,7 @@ export function attachUser(req, res, next) {
       username: row.username,
       role: row.role,
       displayName: row.display_name || row.username,
+      extraPermissions: normalizeExtraPermissions(row.extra_permissions),
     };
     // نشست‌هایی که با کوکی می‌آیند فقط با هدر CSRF هم‌خوان پذیرفته می‌شوند
     req.csrfToken = cookies[CSRF_COOKIE] || null;
@@ -297,7 +306,7 @@ export function findUserByUsername(username) {
 export function listUsers() {
   return db
     .prepare(
-      'SELECT id, username, role, display_name, disabled, created_at, updated_at, last_login_at, failed_login_count, locked_until FROM users ORDER BY id'
+      'SELECT id, username, role, display_name, disabled, created_at, updated_at, last_login_at, failed_login_count, locked_until, extra_permissions FROM users ORDER BY id'
     )
     .all();
 }
@@ -305,13 +314,15 @@ export function listUsers() {
 function publicUser(row) {
   if (!row) return null;
   const role = normalizeRole(row.role) || 'viewer';
+  const extraPermissions = normalizeExtraPermissions(row.extra_permissions);
   return {
     id: row.id,
     username: row.username,
     role,
     roleLabel: ROLE_LABELS[role],
     displayName: row.display_name || row.username,
-    permissions: permissionsForRole(role),
+    permissions: permissionsForUser({ role, extraPermissions }),
+    extraPermissions,
     disabled: Boolean(row.disabled),
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at || null,
@@ -323,6 +334,26 @@ function publicUser(row) {
   };
 }
 
+/**
+ * اعتبارسنجی مجوز اختصاصی؛ فقط مجوزهای قابل‌اعطا پذیرفته می‌شوند تا مدیر
+ * نتواند با این مسیر مجوز مدیریت کاربران یا تنظیمات را به کسی بدهد.
+ */
+function cleanExtraPermissions(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw Object.assign(new Error('فهرست مجوزهای اختصاصی نامعتبر است.'), { status: 400 });
+  }
+  const allowed = new Set(DELEGABLE_PERMISSIONS);
+  const invalid = value.map((item) => String(item)).find((item) => !allowed.has(item));
+  if (invalid) {
+    throw Object.assign(
+      new Error(`مجوز «${invalid}» قابل‌اعطا نیست؛ فقط ${DELEGABLE_PERMISSIONS.join('، ')} مجاز است.`),
+      { status: 400 }
+    );
+  }
+  return normalizeExtraPermissions(value);
+}
+
 /** پاک‌کردن فایل رمز بوت‌استرپِ بازمانده از نسخه‌های قبلی پس از ورود مدیر */
 function removeLegacyBootstrapPasswordFile() {
   try {
@@ -332,7 +363,7 @@ function removeLegacyBootstrapPasswordFile() {
   }
 }
 
-export function createUser({ username, password, role = 'viewer', displayName = '' }) {
+export function createUser({ username, password, role = 'viewer', displayName = '', extraPermissions = [] }) {
   const name = String(username || '').trim();
   if (!USERNAME_RE.test(name)) {
     throw Object.assign(new Error('نام کاربری باید ۳ تا ۳۲ نویسهٔ لاتین، رقم، نقطه، خط تیره یا زیرخط باشد.'), { status: 400 });
@@ -343,11 +374,14 @@ export function createUser({ username, password, role = 'viewer', displayName = 
   if (!normalizedRole) {
     throw Object.assign(new Error('نقش نامعتبر است؛ نقش‌های مجاز: admin، operator، viewer.'), { status: 400 });
   }
+  const extra = cleanExtraPermissions(extraPermissions) ?? [];
   const now = Date.now();
   try {
     const r = db
-      .prepare('INSERT INTO users(username, password_hash, role, display_name, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-      .run(name, hashPassword(password), normalizedRole, String(displayName || '').slice(0, 80), now, now);
+      .prepare(
+        'INSERT INTO users(username, password_hash, role, display_name, extra_permissions, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+      )
+      .run(name, hashPassword(password), normalizedRole, String(displayName || '').slice(0, 80), JSON.stringify(extra), now, now);
     return publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(Number(r.lastInsertRowid)));
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) {
@@ -572,7 +606,13 @@ authRouter.get('/me', (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'نشست معتبری وجود ندارد.' });
   const role = normalizeRole(req.user.role) || 'viewer';
   res.json({
-    user: { ...req.user, role, roleLabel: ROLE_LABELS[role], permissions: permissionsForRole(role) },
+    user: {
+      ...req.user,
+      role,
+      roleLabel: ROLE_LABELS[role],
+      extraPermissions: normalizeExtraPermissions(req.user.extraPermissions),
+      permissions: permissionsForUser(req.user),
+    },
   });
 });
 
@@ -598,6 +638,7 @@ authRouter.post('/users', manageUsers, (req, res) => {
       password: req.body?.password,
       role: req.body?.role ?? 'viewer',
       displayName: req.body?.displayName,
+      extraPermissions: req.body?.extraPermissions,
     });
     logEvent('info', 'auth_user_created', { username: user.username, role: user.role, by: req.user.username });
     res.status(201).json(user);
@@ -613,6 +654,15 @@ authRouter.put('/users/:id', manageUsers, (req, res) => {
   const role = req.body?.role === undefined ? normalizeRole(row.role) : normalizeRole(req.body.role);
   if (!role) return res.status(400).json({ error: 'نقش نامعتبر است؛ نقش‌های مجاز: admin، operator، viewer.' });
   const disabled = req.body?.disabled === undefined ? row.disabled : req.body.disabled ? 1 : 0;
+  let extraPermissions;
+  try {
+    extraPermissions =
+      req.body?.extraPermissions === undefined
+        ? normalizeExtraPermissions(row.extra_permissions)
+        : cleanExtraPermissions(req.body.extraPermissions);
+  } catch (e) {
+    return res.status(e.status || 400).json({ error: e.message });
+  }
   // آخرین مدیر فعال نباید تنزل یا غیرفعال شود؛ وگرنه سامانه بی‌مدیر می‌ماند.
   const admins = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role='admin' AND disabled=0").get().c;
   const losesAdmin = normalizeRole(row.role) === 'admin' && !row.disabled && (role !== 'admin' || disabled === 1);
@@ -634,12 +684,13 @@ authRouter.put('/users/:id', manageUsers, (req, res) => {
   transaction(
     () => {
       db.prepare(
-        'UPDATE users SET role=?, disabled=?, password_hash=?, display_name=?, updated_at=?, password_changed_at=?, failed_login_count=0, locked_until=NULL WHERE id=?'
+        'UPDATE users SET role=?, disabled=?, password_hash=?, display_name=?, extra_permissions=?, updated_at=?, password_changed_at=?, failed_login_count=0, locked_until=NULL WHERE id=?'
       ).run(
         role,
         disabled,
         passwordHash,
         String(req.body?.displayName ?? row.display_name ?? '').slice(0, 80),
+        JSON.stringify(extraPermissions),
         Date.now(),
         passwordChangedAt,
         id
@@ -648,7 +699,13 @@ authRouter.put('/users/:id', manageUsers, (req, res) => {
     },
     { label: 'auth.user.update' }
   );
-  logEvent('info', 'auth_user_updated', { username: row.username, role, disabled: Boolean(disabled), by: req.user.username });
+  logEvent('info', 'auth_user_updated', {
+    username: row.username,
+    role,
+    disabled: Boolean(disabled),
+    extraPermissions,
+    by: req.user.username,
+  });
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id)));
 });
 

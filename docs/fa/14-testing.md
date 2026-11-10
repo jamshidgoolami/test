@@ -49,17 +49,19 @@ flowchart LR
 
 ## ۳. نتیجهٔ اجرای واقعی
 
+آخرین اجرا: ۲۰۲۶-۱۱-۱۰ — macOS، Node.js 26.10.0، نسخهٔ 1.4.1.
+
 | فرمان | نتیجه | جزئیات |
 | --- | --- | --- |
-| `npm ci` | ✅ موفق | ۲۹۰ بسته |
+| `npm ci` | ⏸ اجرا نشد | وابستگی‌های موجود پروژه استفاده شد؛ نصب مجدد انجام نشد |
 | `npm run lint` | ✅ PASS (exit 0) | بدون خطا |
 | `npm run typecheck` | ✅ PASS (exit 0) | بدون خطای نوع |
-| `npm run build` | ✅ PASS | ساخته‌شده در `web/dist`، حدود ۲ ثانیه |
-| `npm run test:web` | ✅ ۴۶/۴۶ PASS | `fail 0` |
-| `npm run test:unit` | ✅ ۲۴۳/۲۴۳ PASS | `fail 0` |
-| `npm run test:integration` | ✅ ۱۵۹/۱۵۹ PASS | ۱۳۷ ثانیه |
-| `npm run test:e2e` | ✅ PASS | smoke: ۸۷ موفق / ۰ ناموفق؛ e2e: ۱۱/۱۱ |
-| `npm run test:ui` | ⏸ اجرا نشده | نیازمند دانلود مرورگر Playwright |
+| `npm run build` | ✅ PASS | ساخته‌شده در `web/dist` |
+| `npm run test:web` | ✅ ۵۸/۵۸ PASS | `fail 0` |
+| `npm run test:unit` | ✅ ۲۶۶/۲۶۶ PASS | `fail 0` |
+| `npm run test:integration` | ✅ ۱۵۱/۱۵۱ PASS | `fail 0` |
+| `npm run test:e2e` | ✅ PASS | smoke: ۸۹ موفق / ۰ ناموفق؛ e2e: ۱۱/۱۱ |
+| `npm run test:ui` | ✅ ۱۰/۱۰ PASS | Playwright با Google Chrome نصب‌شدهٔ سیستم (مرورگر bundled نصب نبود) |
 | `npm run test:heavy` | ⏸ اجرا نشده | آزمون سنگین/طولانی |
 | `npm run qa:load` / `qa:soak` | ⏸ اجرا نشده | نیازمند اجرای طولانی و منابع |
 

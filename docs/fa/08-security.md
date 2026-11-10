@@ -76,7 +76,7 @@ stateDiagram-v2
 
 ## ۳. مجوزها (RBAC)
 
-سه نقش `admin`، `operator` و `viewer` وجود دارد و ۲۳ مجوز `<منبع>:<کنش>` تعریف
+سه نقش `admin`، `operator` و `viewer` وجود دارد و ۲۸ مجوز `<منبع>:<کنش>` تعریف
 شده است. جدول کامل در [API](06-api.md#۲-نقشها-و-مجوزها) آمده است.
 
 قاعده‌های پیاده‌سازی:
@@ -86,8 +86,17 @@ stateDiagram-v2
 - عملیات مخرب یا کل‌داده (`backups/*`، `db/checkpoint`، `retention/run`) علاوه بر
   `system:health`، بررسی `isAdmin` هم دارد.
 - `audit:read`، `users:manage` و `demo:reset` فقط برای Administrator است.
+- `credentials:reveal` (نمایش/خروجی رمز خام) در نقش Operator نیست. فقط
+  Administrator یا کاربری که مدیر صریحاً این مجوز را از `PUT /api/auth/users/:id`
+  گرفته است، به آن دسترسی دارد. این مجوز در `users.extra_permissions` ذخیره
+  می‌شود و تنها مجوز قابل‌اعطا است.
 - کلاینت باید مجوزها را از `GET /api/auth/me` بخواند و دکمه‌های غیرمجاز را نشان
   ندهد؛ اما **سرور** مرجع نهایی است و همان‌جا هم بررسی می‌کند.
+
+اعتبارنامهٔ خزانه با AES-256-GCM رمزنگاری می‌شود؛ کلید در فایل مستقل
+`<DATA_DIR>/device-credentials.key` (مجوز `0600`) یا `NETWATCH_CREDENTIAL_KEY`
+نگه‌داری می‌شود. فهرست/جزئیات هرگز رمز را برنمی‌گردانند و مسیر `reveal` و
+خروجی، `no-store`، Audit و سقف نرخ اختصاصی دارند.
 
 ---
 

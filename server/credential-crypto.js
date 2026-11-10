@@ -26,6 +26,21 @@ const PREFIX_AAD = 'v2';
 const KEY_FILE = path.join(config.dataDir, 'device-credentials.key');
 let cachedKey = null;
 
+/** مسیر فایل کلید (برای پشتیبان‌گیری/بازیابی Disaster Recovery) */
+export const CREDENTIAL_KEY_FILE = KEY_FILE;
+
+/** منبع کلید: env (خارج از DATA_DIR)، file (فایل ۰۶۰۰) یا none */
+export function credentialKeySource() {
+  const fromEnv = process.env.NETWATCH_CREDENTIAL_KEY;
+  if (fromEnv && String(fromEnv).trim()) return 'env';
+  return fs.existsSync(KEY_FILE) ? 'file' : 'none';
+}
+
+/** پس از بازیابی فایل کلید، کلید کش‌شدهٔ همین فرآیند را دور می‌ریزیم. */
+export function resetCredentialKeyCache() {
+  cachedKey = null;
+}
+
 function parseKey(raw, source) {
   const value = String(raw || '').trim();
   let key;

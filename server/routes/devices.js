@@ -903,22 +903,27 @@ router.get('/map', (req, res) => {
 /* --------------------------- CRUD --------------------------- */
 
 /**
- * دریافت صریح اعتبارنامه برای کپی در صفحهٔ جزئیات. برخلاف سایر خواندن‌ها،
- * این مسیر به `devices:write` نیاز دارد تا Viewer رمز تجهیزات را نبیند.
- * هیچ پاسخی کش نمی‌شود و رمز در فهرست/جزئیات عادی برنمی‌گردد.
+ * دریافت صریح اعتبارنامه برای کپی در صفحهٔ جزئیات. علاوه بر مجوز ویرایش
+ * تجهیزات، مجوز اختصاصی `credentials:reveal` لازم است؛ Operator به‌صورت
+ * پیش‌فرض این مجوز را ندارد و فقط Administrator یا کاربر با اعطای صریح مدیر
+ * می‌تواند رمز واقعی را ببیند. هیچ پاسخی کش نمی‌شود.
  */
-router.get('/:id/credentials', requirePermission('devices:write'), (req, res) => {
-  const device = getDevice(req.params.id, { withTags: false });
-  if (!device) return res.status(404).json({ error: 'تجهیز یافت نشد' });
-  try {
-    const password = getDeviceAccessPassword(device.id);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Pragma', 'no-cache');
-    res.json({ username: device.accessUsername || '', password: password ?? '' });
-  } catch {
-    res.status(500).json({ error: 'خواندن اعتبارنامه ممکن نشد؛ کلید رمزنگاری را بررسی کنید.' });
+router.get(
+  '/:id/credentials',
+  requirePermission('devices:write', 'credentials:reveal'),
+  (req, res) => {
+    const device = getDevice(req.params.id, { withTags: false });
+    if (!device) return res.status(404).json({ error: 'تجهیز یافت نشد' });
+    try {
+      const password = getDeviceAccessPassword(device.id);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Pragma', 'no-cache');
+      res.json({ username: device.accessUsername || '', password: password ?? '' });
+    } catch {
+      res.status(500).json({ error: 'خواندن اعتبارنامه ممکن نشد؛ کلید رمزنگاری را بررسی کنید.' });
+    }
   }
-});
+);
 
 router.get('/:id', (req, res) => {
   const d = getDevice(req.params.id);

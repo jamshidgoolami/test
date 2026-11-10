@@ -162,7 +162,7 @@ test('inventory endpoints: groups, tags, layers, tiles and mbtiles', async () =>
 
   const missingFile = await api(srv.base, 'DELETE', '/api/mbtiles/files/missing.mbtiles');
   track('DELETE', '/api/mbtiles/files/missing.mbtiles');
-  assert.equal(missingFile.status, 200, 'deleting an unknown MBTiles file is idempotent');
+  assert.equal(missingFile.status, 404, 'deleting an unknown MBTiles file is reported, not silently accepted');
 
   // پاک‌سازی پس از استفاده در پایان همین آزمون
   await call('DELETE', `/api/layers/${layer.data.id}`);

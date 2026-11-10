@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { useTempDataDir, cleanupDir, startServer, api, sessionFor, waitFor } from '../helpers.mjs';
 
 const dir = useTempDataDir('sse-load');
@@ -16,9 +17,15 @@ const controllers = [];
 
 function rssMb(pid) {
   try {
-    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
-    const match = status.match(/VmRSS:\s+(\d+)\s+kB/);
-    return match ? Math.round((Number(match[1]) / 1024) * 10) / 10 : null;
+    if (process.platform === 'linux') {
+      const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+      const match = status.match(/VmRSS:\s+(\d+)\s+kB/);
+      return match ? Math.round((Number(match[1]) / 1024) * 10) / 10 : null;
+    }
+    // macOS و سایر سیستم‌های دارای ps: خروجی RSS بر حسب کیلوبایت است.
+    const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    const kb = Number(out);
+    return Number.isFinite(kb) && kb > 0 ? Math.round((kb / 1024) * 10) / 10 : null;
   } catch {
     return null;
   }
@@ -48,7 +55,7 @@ test('100 simultaneous SSE clients all receive hello, then disconnect cleanly', 
   });
   const cookie = sessionFor(srv.base).cookie;
   const before = rssMb(srv.child.pid);
-  assert.ok(before, 'server RSS must be readable on Linux');
+  assert.ok(before, 'server RSS must be readable (/proc or ps)');
 
   const responses = await Promise.all(
     Array.from({ length: CONNECTIONS }, async () => {

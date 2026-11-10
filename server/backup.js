@@ -35,6 +35,12 @@ import { logEvent } from './logger.mjs';
 import { config } from './config.js';
 import { DbError, DB_ERROR_CODES, logDbError } from './db-errors.js';
 import { freeDiskBytes, fileSizeBytes } from './db-safety.js';
+import { ATTACHMENTS_DIR } from './attachments.js';
+import {
+  CREDENTIAL_KEY_FILE,
+  credentialKeySource,
+  resetCredentialKeyCache,
+} from './credential-crypto.js';
 
 /** نسخهٔ برنامه در Manifest؛ برای تطبیق پشتیبان با نسخهٔ سازنده */
 export const APP_VERSION = (() => {
@@ -51,6 +57,11 @@ export const BACKUP_DIR = config.backupDir;
 const MANIFEST = 'manifest.json';
 const STATE_FILE = '.scheduler-state.json';
 const RESTORE_STATE_FILE = '.restore-state.json';
+// کلید رمزنگاری هرگز داخل فایل پایگاه‌داده نمی‌رود؛ در مجموعهٔ پشتیبان هم
+// یک فایل مستقل با checksum و مجوز ۰۶۰۰ است تا برای Disaster Recovery کافی
+// باشد، اما با دادهٔ عادی اشتباه گرفته نشود.
+const SECRETS_DIR = 'secrets';
+const CREDENTIAL_KEY_BACKUP = 'device-credentials.key';
 const REQUIRED_TABLES = ['settings', 'devices', 'samples', 'outages', 'daily_stats', 'alerts'];
 
 let backupInProgress = false;
@@ -191,6 +202,8 @@ function tableCounts(file) {
         return null;
       }
     };
+    const deviceAttachments = count('device_attachments');
+    const diagramAttachments = count('diagram_attachments');
     return {
       devices: count('devices'),
       samples: count('samples'),
@@ -204,6 +217,11 @@ function tableCounts(file) {
       })(),
       alerts: count('alerts'),
       users: count('users'),
+      credentials: count('credentials'),
+      attachments:
+        deviceAttachments == null && diagramAttachments == null
+          ? null
+          : Number(deviceAttachments || 0) + Number(diagramAttachments || 0),
     };
   } finally {
     conn.close();
@@ -257,13 +275,31 @@ function mbtilesFiles() {
   }
 }
 
+/** فایل‌های پیوست (بدون فایل‌های موقت `.trash-*`) */
+function attachmentFiles() {
+  try {
+    return fs
+      .readdirSync(ATTACHMENTS_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && !entry.name.startsWith('.trash-'))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** اندازهٔ پیوست‌ها برای برآورد فضای پشتیبان */
+function attachmentsBytes() {
+  return attachmentFiles().reduce((sum, name) => sum + fileSizeBytes(path.join(ATTACHMENTS_DIR, name)), 0);
+}
+
 /**
  * ساخت یک مجموعهٔ پشتیبان کامل (پایگاه‌داده + MBTiles).
  *
  * @param {{includeMbtiles?: boolean, keep?: number, reason?: string}} [options]
  * @returns {{name: string, dir: string, manifest: object}}
  */
-export function createBackup({ includeMbtiles = true, keep = null, reason = 'manual' } = {}) {
+export function createBackup({ includeMbtiles = true, includeAttachments = true, keep = null, reason = 'manual' } = {}) {
   if (restoreInProgress) throw new DbError(DB_ERROR_CODES.BUSY, 'بازیابی در جریان است؛ پشتیبان‌گیری ممکن نیست.', { status: 409 });
   if (backupInProgress) throw new DbError(DB_ERROR_CODES.BUSY, 'یک پشتیبان‌گیری دیگر در جریان است.', { status: 409 });
   if (String(DB_PATH).startsWith(':')) throw new DbError(DB_ERROR_CODES.BACKUP_INVALID, 'برای پایگاه‌دادهٔ درون‌حافظه‌ای پشتیبان‌گیری فایلی ممکن نیست.', { status: 400 });
@@ -277,7 +313,9 @@ export function createBackup({ includeMbtiles = true, keep = null, reason = 'man
     // برآورد محافظه‌کارانه: پایگاه‌داده + MBTiles + فضای موقت برای VACUUM
     const dbBytes = Math.max(fileSizeBytes(DB_PATH), 1024 * 1024);
     const tilesBytes = includeMbtiles ? mbtilesFiles().reduce((sum, f) => sum + fileSizeBytes(path.join(MBTILES_DIR, f)), 0) : 0;
-    requireDiskSpace(dbBytes * 2 + tilesBytes + 8 * 1024 * 1024, 'ساخت پشتیبان');
+    const attachmentBytes = includeAttachments ? attachmentsBytes() : 0;
+    const keyBytes = credentialKeySource() === 'file' ? fileSizeBytes(CREDENTIAL_KEY_FILE) : 0;
+    requireDiskSpace(dbBytes * 2 + tilesBytes + attachmentBytes + keyBytes + 8 * 1024 * 1024, 'ساخت پشتیبان');
 
     // ۱) انتقال WAL به فایل اصلی تا عکس لحظه‌ای شامل همهٔ تراکنش‌های تأییدشده باشد
     const checkpoint = db.checkpoint('TRUNCATE');
@@ -334,8 +372,71 @@ export function createBackup({ includeMbtiles = true, keep = null, reason = 'man
       }
     }
 
+    // ۳-ب) پیوست‌ها (تجهیز و دیاگرام) بخشی از وضعیت بازیابی‌شدنی‌اند؛ بدون
+    // آن‌ها پایگاه‌داده به ردیف‌هایی اشاره می‌کند که فایلشان وجود ندارد.
+    const attachments = [];
+    if (includeAttachments) {
+      ensureDir(path.join(workDir, 'attachments'));
+      for (const fileName of attachmentFiles()) {
+        const src = path.join(ATTACHMENTS_DIR, fileName);
+        let before;
+        try {
+          before = fs.statSync(src);
+        } catch {
+          continue; // پیوست هم‌زمان حذف شده است
+        }
+        const dest = path.join(workDir, 'attachments', fileName);
+        copyFileDurable(src, dest);
+        let after;
+        try {
+          after = fs.statSync(src);
+        } catch {
+          fs.rmSync(dest, { force: true });
+          continue;
+        }
+        if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
+          copyFileDurable(src, dest);
+        }
+        attachments.push({
+          name: fileName,
+          size: fileSizeBytes(dest),
+          sha256: sha256File(dest),
+        });
+      }
+    }
+
+    // ۳-ج) کلید رمزنگاری: فایل مستقل و ۰۶۰۰ در secrets/. اگر کلید از env
+    // می‌آید، در پشتیبان کپی نمی‌شود و اپراتور باید همان راز را جداگانه در
+    // Secret Manager نگه دارد؛ مانیفست این را صریح ثبت می‌کند.
+    const keySource = credentialKeySource();
+    const credentialsKey = {
+      source: keySource,
+      file: null,
+      size: null,
+      sha256: null,
+    };
+    if (keySource === 'file') {
+      ensureDir(path.join(workDir, SECRETS_DIR));
+      const dest = path.join(workDir, SECRETS_DIR, CREDENTIAL_KEY_BACKUP);
+      copyFileDurable(CREDENTIAL_KEY_FILE, dest);
+      credentialsKey.file = `${SECRETS_DIR}/${CREDENTIAL_KEY_BACKUP}`;
+      credentialsKey.size = fileSizeBytes(dest);
+      credentialsKey.sha256 = sha256File(dest);
+    } else if (keySource === 'env') {
+      credentialsKey.note = 'کلید از NETWATCH_CREDENTIAL_KEY می‌آید و باید جدا از این پشتیبان نگهداری شود.';
+    } else {
+      credentialsKey.note = 'کلید رمزنگاری روی این نصب وجود ندارد؛ اگر اعتبارنامه‌ای ثبت شده باشد بازیابی آن ناقص است.';
+    }
+
     // ۴) مانیفست: تنها راه شناسایی یک پشتیبان معتبر
     const counts = tableCounts(dbFile);
+    if (credentialsKey.source === 'none' && Number(counts.credentials || 0) > 0) {
+      throw new DbError(
+        DB_ERROR_CODES.BACKUP_INVALID,
+        'اعتبارنامهٔ رمزنگاری‌شده در پایگاه‌داده وجود دارد اما کلید رمزنگاری در دسترس نیست؛ پشتیبان بدون کلید برای Disaster Recovery ناقص است.',
+        { status: 500 }
+      );
+    }
     const manifest = {
       format: BACKUP_FORMAT,
       app: 'netwatch',
@@ -356,6 +457,9 @@ export function createBackup({ includeMbtiles = true, keep = null, reason = 'man
         counts,
       },
       mbtiles,
+      attachments,
+      attachmentBytes: attachments.reduce((sum, item) => sum + item.size, 0),
+      credentialsKey,
       checkpoint,
       settings: {
         journalMode: db.walInfo().journalMode,
@@ -385,6 +489,8 @@ export function createBackup({ includeMbtiles = true, keep = null, reason = 'man
       reason,
       dbBytes: manifest.db.size,
       mbtiles: mbtiles.length,
+      attachments: attachments.length,
+      credentialsKey: credentialsKey.source,
       durationMs: manifest.durationMs,
       pruned,
     });
@@ -428,6 +534,8 @@ export function listBackups(dir = BACKUP_DIR) {
       reason: manifest.reason || '',
       dbBytes: manifest.db?.size ?? 0,
       mbtiles: manifest.mbtiles?.length ?? 0,
+      attachments: manifest.attachments?.length ?? 0,
+      credentialsKey: manifest.credentialsKey?.source ?? 'none',
       integrity: manifest.db?.integrity || 'unknown',
       counts: manifest.db?.counts || null,
     });
@@ -532,7 +640,17 @@ function resolveBackupDb(source) {
  * @param {string} source مسیر پوشهٔ پشتیبان یا فایل .db
  */
 export function verifyBackup(source) {
-  const report = { ok: false, errors: [], warnings: [], dbFile: null, manifest: null, mbtiles: [], integrity: null };
+  const report = {
+    ok: false,
+    errors: [],
+    warnings: [],
+    dbFile: null,
+    manifest: null,
+    mbtiles: [],
+    attachments: [],
+    credentialsKey: null,
+    integrity: null,
+  };
   try {
     const resolved = resolveBackupDb(source);
     report.dbFile = resolved.dbFile;
@@ -561,7 +679,7 @@ export function verifyBackup(source) {
       }
       report.counts = tableCounts(resolved.dbFile);
       const expectedCounts = resolved.manifest.db?.counts || {};
-      for (const key of ['devices', 'outages', 'alerts']) {
+      for (const key of ['devices', 'outages', 'alerts', 'credentials']) {
         if (expectedCounts[key] != null && report.counts[key] != null && expectedCounts[key] !== report.counts[key]) {
           report.errors.push(`تعداد ${key} با مانیفست مطابقت ندارد.`);
         }
@@ -575,6 +693,45 @@ export function verifyBackup(source) {
         const sha = sha256File(file);
         if (tile.sha256 && sha !== tile.sha256) report.errors.push(`checksum نقشهٔ ${tile.name} نامعتبر است.`);
         report.mbtiles.push({ name: tile.name, path: file, size: fileSizeBytes(file), sha256: sha });
+      }
+
+      // پیوست‌ها: هر ورودی مانیفست باید موجود و با checksum یکسان باشد.
+      for (const attachment of resolved.manifest.attachments || []) {
+        const file = path.join(resolved.dir, 'attachments', path.basename(attachment.name));
+        if (!fs.existsSync(file)) {
+          report.errors.push(`فایل پیوست پشتیبان غایب است: ${attachment.name}`);
+          continue;
+        }
+        const sha = sha256File(file);
+        if (attachment.sha256 && sha !== attachment.sha256) {
+          report.errors.push(`checksum پیوست ${attachment.name} نامعتبر است.`);
+        }
+        if (attachment.size != null && Number(attachment.size) !== fileSizeBytes(file)) {
+          report.errors.push(`اندازهٔ پیوست ${attachment.name} با مانیفست مطابقت ندارد.`);
+        }
+        report.attachments.push({ name: attachment.name, path: file, size: fileSizeBytes(file), sha256: sha });
+      }
+
+      // کلید رمزنگاری: فقط نسخهٔ فایلی در مجموعه کپی می‌شود؛ منبع env باید
+      // جداگانه در Secret Manager نگهداری شود.
+      const key = resolved.manifest.credentialsKey;
+      if (key) {
+        report.credentialsKey = { source: key.source || 'none', file: null, sha256: null };
+        if (key.source === 'file') {
+          const keyFile = path.join(resolved.dir, SECRETS_DIR, path.basename(key.file || CREDENTIAL_KEY_BACKUP));
+          if (!fs.existsSync(keyFile)) {
+            report.errors.push('فایل کلید رمزنگاری در مجموعهٔ پشتیبان غایب است.');
+          } else {
+            const sha = sha256File(keyFile);
+            if (key.sha256 && sha !== key.sha256) report.errors.push('checksum کلید رمزنگاری نامعتبر است.');
+            report.credentialsKey.file = keyFile;
+            report.credentialsKey.sha256 = sha;
+          }
+        } else if (key.source === 'env') {
+          report.warnings.push('کلید رمزنگاری از متغیر محیطی می‌آید و داخل پشتیبان نیست؛ همان کلید را جداگانه برای Disaster Recovery نگه دارید.');
+        } else if (Number(report.counts?.credentials || 0) > 0) {
+          report.errors.push('اعتبارنامهٔ رمزنگاری‌شده در پشتیبان هست اما کلید رمزنگاری همراه آن نیست.');
+        }
       }
     }
     // ۲) integrity_check و ساختار
@@ -672,6 +829,8 @@ export function restoreBackup(source, options = {}) {
   const safetyFile = `${DB_PATH}.pre-restore-${startedAt}`;
   const stageFile = `${DB_PATH}.restore-stage-${process.pid}`;
   const tilesStageDir = path.join(MBTILES_DIR, `.restore-stage-${process.pid}`);
+  const attachmentsStageDir = path.join(DATA_DIR, `.restore-attachments-${process.pid}`);
+  const keyStageFile = path.join(DATA_DIR, `.restore-key-${process.pid}`);
   let closed = false;
   let installed = false;
   try {
@@ -733,6 +892,35 @@ export function restoreBackup(source, options = {}) {
       }
     }
 
+    // ۳-ب) پیوست‌ها و کلید رمزنگاری هم پیش از جای‌گذاری پایگاه‌داده در مسیر
+    // موقت کپی و checksum آن‌ها دوباره بررسی می‌شود.
+    const stagedAttachments = [];
+    if (verification.attachments.length) {
+      ensureDir(attachmentsStageDir);
+      for (const attachment of verification.attachments) {
+        const tmp = path.join(attachmentsStageDir, path.basename(attachment.name));
+        copyFileDurable(attachment.path, tmp);
+        const sha = sha256File(tmp);
+        if (attachment.sha256 && sha !== attachment.sha256) {
+          throw new DbError(DB_ERROR_CODES.BACKUP_INVALID, `checksum پیوست در کپی موقت نامعتبر است: ${attachment.name}`, {
+            status: 400,
+          });
+        }
+        stagedAttachments.push({ name: path.basename(attachment.name), tmp });
+      }
+    }
+    let stagedKey = null;
+    if (verification.credentialsKey?.source === 'file' && verification.credentialsKey.file) {
+      copyFileDurable(verification.credentialsKey.file, keyStageFile);
+      const sha = sha256File(keyStageFile);
+      if (verification.credentialsKey.sha256 && sha !== verification.credentialsKey.sha256) {
+        throw new DbError(DB_ERROR_CODES.BACKUP_INVALID, 'checksum کلید رمزنگاری در کپی موقت نامعتبر است.', {
+          status: 400,
+        });
+      }
+      stagedKey = keyStageFile;
+    }
+
     // ۴) جای‌گذاری اتمیک: ابتدا اتصال بسته و WAL/SHM پاک می‌شود تا WAL قدیمی
     //    هرگز روی فایل جدید بازپخش نشود؛ سپس rename موقت → اصلی.
     db.close();
@@ -780,12 +968,53 @@ export function restoreBackup(source, options = {}) {
       fsyncPath(MBTILES_DIR);
     }
 
+    // ۶) نصب پیوست‌ها؛ نام فایل‌ها تولیدی و یکتاست، بنابراین rename اتمیک است.
+    const restoredAttachments = [];
+    if (stagedAttachments.length) {
+      ensureDir(ATTACHMENTS_DIR);
+      for (const attachment of stagedAttachments) {
+        const dest = path.join(ATTACHMENTS_DIR, attachment.name);
+        const tmp = `${dest}.restore-tmp-${process.pid}`;
+        fs.copyFileSync(attachment.tmp, tmp);
+        fsyncPath(tmp);
+        fs.renameSync(tmp, dest);
+        try {
+          fs.chmodSync(dest, 0o600);
+        } catch {
+          /* بی‌اثر */
+        }
+        restoredAttachments.push(attachment.name);
+      }
+      fsyncPath(ATTACHMENTS_DIR);
+    }
+
+    // ۷) کلید رمزنگاری آخر از همه نصب می‌شود: اگر مراحل قبلی شکست بخورند،
+    // پایگاه‌داده به نسخهٔ ایمنی برمی‌گردد و کلید قدیمی دست‌نخورده می‌ماند.
+    let restoredKey = false;
+    if (stagedKey) {
+      ensureDir(path.dirname(CREDENTIAL_KEY_FILE));
+      const tmp = `${CREDENTIAL_KEY_FILE}.restore-tmp-${process.pid}`;
+      fs.copyFileSync(stagedKey, tmp);
+      fsyncPath(tmp);
+      try {
+        fs.chmodSync(tmp, 0o600);
+      } catch {
+        /* بی‌اثر */
+      }
+      fs.renameSync(tmp, CREDENTIAL_KEY_FILE);
+      fsyncPath(path.dirname(CREDENTIAL_KEY_FILE));
+      resetCredentialKeyCache();
+      restoredKey = true;
+    }
+
     const summary = {
       restored: true,
       source: verification.dbFile,
       safetyCopy: fs.existsSync(safetyFile) ? safetyFile : null,
       counts: postCounts,
       mbtiles: restoredTiles,
+      attachments: restoredAttachments,
+      credentialsKey: restoredKey ? 'file' : verification.credentialsKey?.source || 'none',
       durationMs: Date.now() - startedAt,
       health: { ok: health.ok, mode: health.mode, foreignKeyViolations: health.foreignKeyViolations },
       schemaVersion: Number(db.prepare('PRAGMA user_version').get()?.user_version) || null,
@@ -797,6 +1026,8 @@ export function restoreBackup(source, options = {}) {
       updatedAt: Date.now(),
       counts: postCounts,
       mbtiles: restoredTiles,
+      attachments: restoredAttachments,
+      credentialsKey: restoredKey ? 'file' : verification.credentialsKey?.source || 'none',
       durationMs: summary.durationMs,
       error: '',
     });
@@ -843,6 +1074,17 @@ export function restoreBackup(source, options = {}) {
     }
     try {
       fs.rmSync(tilesStageDir, { recursive: true, force: true });
+    } catch {
+      /* بی‌اثر */
+    }
+    try {
+      fs.rmSync(attachmentsStageDir, { recursive: true, force: true });
+
+    } catch {
+      /* بی‌اثر */
+    }
+    try {
+      fs.rmSync(keyStageFile, { force: true });
     } catch {
       /* بی‌اثر */
     }

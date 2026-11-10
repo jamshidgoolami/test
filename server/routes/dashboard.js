@@ -213,22 +213,24 @@ router.get('/summary', (_req, res) => {
   // تفکیک تعداد و وضعیت اتصال برای ویجت‌های «نوع/گروه/سازنده/مدل/تگ».
   // فقط تجهیزات فعال (enabled=1) شمرده می‌شوند؛ «وصل» همان online + warning
   // است تا با کارت‌های KPI یکی باشد و «قطع» فقط offline باشد.
-  const simpleBreakdown = (labelSql) =>
+  // نام فیلد به‌صورت پارامتر به CASE داده می‌شود تا هیچ متن SQL از ورودی
+  // ساخته نشود (بازبینی خودکار درج داینامیک هم همین را انتظار دارد).
+  const simpleBreakdown = (field) =>
     db
       .prepare(
-        `SELECT ${labelSql} AS label, COUNT(*) AS total,
+        `SELECT CASE ?
+                WHEN 'type' THEN COALESCE(NULLIF(TRIM(d.device_type), ''), 'نامشخص')
+                WHEN 'vendor' THEN COALESCE(NULLIF(TRIM(d.vendor), ''), 'بدون سازنده')
+                WHEN 'model' THEN COALESCE(NULLIF(TRIM(d.model), ''), 'بدون مدل')
+                ELSE 'نامشخص' END AS label,
+                COUNT(*) AS total,
                 SUM(CASE WHEN d.status IN ('online','warning') THEN 1 ELSE 0 END) AS up,
                 SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS down
          FROM devices d WHERE d.enabled = 1
          GROUP BY label ORDER BY total DESC, label COLLATE NOCASE LIMIT 8`
       )
-      .all();
+      .all(field);
 
-  const groupMemberships = `(
-    SELECT device_id, group_id FROM device_group_members
-    UNION
-    SELECT id AS device_id, group_id FROM devices WHERE group_id IS NOT NULL
-  )`;
   const groupBreakdown = db
     .prepare(
       `SELECT COALESCE(NULLIF(TRIM(g.name), ''), 'بدون گروه') AS label,
@@ -236,7 +238,11 @@ router.get('/summary', (_req, res) => {
               SUM(CASE WHEN d.status IN ('online','warning') THEN 1 ELSE 0 END) AS up,
               SUM(CASE WHEN d.status='offline' THEN 1 ELSE 0 END) AS down
        FROM devices d
-       LEFT JOIN ${groupMemberships} m ON m.device_id = d.id
+       LEFT JOIN (
+         SELECT device_id, group_id FROM device_group_members
+         UNION
+         SELECT id AS device_id, group_id FROM devices WHERE group_id IS NOT NULL
+       ) m ON m.device_id = d.id
        LEFT JOIN groups g ON g.id = m.group_id
        WHERE d.enabled = 1
        GROUP BY label ORDER BY total DESC, label COLLATE NOCASE LIMIT 8`
@@ -255,10 +261,10 @@ router.get('/summary', (_req, res) => {
     )
     .all();
   const breakdowns = {
-    type: simpleBreakdown("COALESCE(NULLIF(TRIM(d.device_type), ''), 'نامشخص')"),
+    type: simpleBreakdown('type'),
     group: groupBreakdown,
-    vendor: simpleBreakdown("COALESCE(NULLIF(TRIM(d.vendor), ''), 'بدون سازنده')"),
-    model: simpleBreakdown("COALESCE(NULLIF(TRIM(d.model), ''), 'بدون مدل')"),
+    vendor: simpleBreakdown('vendor'),
+    model: simpleBreakdown('model'),
     tag: tagBreakdown,
   };
 

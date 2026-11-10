@@ -30,6 +30,7 @@ const MOUNTS = {
   'inventory.js': '/api',
   'markers.js': '/api',
   'diagrams.js': '/api/diagrams',
+  'credentials.js': '/api/credentials',
   'audit.js': '/api/audit',
   'system.js': '/api/system',
 };
@@ -178,6 +179,9 @@ test('operator runs daily operations but stays out of administrative areas', asy
     ['PUT', '/api/auth/users/1', { role: 'admin' }],
     ['DELETE', '/api/auth/users/1'],
     ['GET', '/api/audit'],
+    ['GET', '/api/credentials/1/reveal'],
+    ['GET', '/api/credentials/export'],
+    ['GET', '/api/devices/1/credentials'],
     ['POST', '/api/system/backups', {}],
     ['POST', '/api/system/backups/restore', { name: 'x', dryRun: true }],
     ['POST', '/api/system/db/checkpoint', {}],

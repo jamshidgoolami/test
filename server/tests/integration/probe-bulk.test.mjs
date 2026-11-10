@@ -61,8 +61,15 @@ test('bulk probe runs through the central queue and reports a trackable job', as
   // گزارش نتایج برای هر تجهیز (بدون تکرار/گم‌شدن) موجود است.
   const device = await api(srv.base, 'GET', `/api/devices/${ids[0]}`);
   assert.equal(device.status, 200);
-  assert.equal(device.data.status, 'online');
+  // در حالت simulate، تأخیر/قطی تصادفی است؛ وضعیت دقیق موضوع این آزمون
+  // (صف Probe) نیست. آنچه اهمیت دارد ثبت نتیجه و هم‌خوانی نمونه با تجهیز است.
+  assert.ok(['online', 'warning', 'offline'].includes(device.data.status), `unexpected status: ${device.data.status}`);
   assert.ok(device.data.lastCheckAt > 0);
+  const samples = await api(srv.base, 'GET', `/api/devices/${ids[0]}/samples?limit=5`);
+  assert.equal(samples.status, 200);
+  assert.ok(samples.data.items.length >= 1, 'the bulk probe must persist a sample');
+  assert.equal(samples.data.items[0].mode, 'simulate');
+  assert.equal(samples.data.items[0].status, device.data.status);
 
   // درخواست تکراری هم‌زمان: کار صف برای همان کلید تکرار نمی‌شود و هر دو
   // درخواست پاسخ ۲۰۲ معتبر می‌گیرند.

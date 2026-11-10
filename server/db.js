@@ -42,7 +42,7 @@ const DB_EXISTED = (() => {
 })();
 
 /** نسخهٔ ساختار داده؛ با هر Migration افزایش می‌یابد (PRAGMA user_version) */
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 /* ------------------------------------------------------------------ */
 /* سیاست دوام و WAL                                                  */
@@ -565,7 +565,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- Phase 3: قفل حساب پس از تلاش‌های ناموفق و زمان آخرین تغییر رمز
   failed_login_count INTEGER NOT NULL DEFAULT 0,
   locked_until       INTEGER,
-  password_changed_at INTEGER
+  password_changed_at INTEGER,
+  -- مجوزهای اختصاصیِ قابل‌اعطا (JSON array)؛ نقش پایه را جایگزین نمی‌کند.
+  extra_permissions  TEXT NOT NULL DEFAULT '[]'
 );
 
 -- نشست‌ها: توکن خام هرگز ذخیره نمی‌شود، فقط هش SHA-256 آن
@@ -1297,7 +1299,20 @@ const MIGRATIONS = [
   { version: 19, name: 'device-credentials', up: applyDeviceCredentialsMigration },
   { version: 20, name: 'device-sites', up: applySitesMigration },
   { version: 21, name: 'credentials-vault', up: applyCredentialsVaultMigration },
+  { version: 22, name: 'user-extra-permissions', up: applyUserExtraPermissionsMigration },
 ];
+
+/**
+ * گام ۲۲: مجوز اختصاصی کاربر.
+ *
+ * فقط مجوزهای قابل‌اعطا (فعلاً credentials:reveal) در این ستون می‌نشینند و
+ * نقش پایه را تغییر نمی‌دهند. مقدار پیش‌فرض [] یعنی هیچ مجوز اضافه‌ای ندارد.
+ */
+function applyUserExtraPermissionsMigration() {
+  if (!hasColumn('users', 'extra_permissions')) {
+    db.exec("ALTER TABLE users ADD COLUMN extra_permissions TEXT NOT NULL DEFAULT '[]'");
+  }
+}
 
 /**
  * گام ۲۰: ایستگاه.
