@@ -1220,6 +1220,39 @@ export interface GeneratedSecret {
 }
 
 /** بدنهٔ ساخت/ویرایش اعتبارنامه؛ `secret` فقط هنگام تعیین رمز فرستاده می‌شود. */
+/* ---------------------------- مستندات ---------------------------- */
+export interface DocHeading {
+  id: string;
+  text: string;
+  level: 2 | 3;
+}
+
+export interface DocDocument {
+  id: string;
+  slug: string;
+  group: 'course' | 'guides' | 'reports';
+  title: string;
+  summary: string;
+  content: string;
+  headings: DocHeading[];
+  words: number;
+  readingMinutes: number;
+}
+
+export interface DocGroup {
+  id: 'course' | 'guides' | 'reports';
+  label: string;
+  description: string;
+  docIds: string[];
+}
+
+export interface DocsLibrary {
+  version: number;
+  generatedAt: number;
+  groups: DocGroup[];
+  docs: DocDocument[];
+}
+
 export interface CredentialInput {
   label?: string;
   kind?: CredentialKind;

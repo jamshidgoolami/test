@@ -15,6 +15,7 @@ import type {
   DashboardData,
   Device,
   DeviceAttachment,
+  DocsLibrary,
   DeviceTemplate,
   DeviceType,
   DiagramAttachment,
@@ -563,6 +564,9 @@ export const api = {
     request<OutageTimelineData>(`/events/timeline${qs(params)}`, { signal }),
   topOutageDevices: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>
     request<{ days: number; items: TopOutageDevice[] }>(`/events/top-outage-devices${qs(params)}`, { signal }),
+
+  /* ---------------- مستندات ---------------- */
+  docs: (signal?: AbortSignal) => request<DocsLibrary>('/docs', { signal }),
 
   /* ---------------- موتور و تنظیمات ---------------- */
   engineStatus: (signal?: AbortSignal) =>

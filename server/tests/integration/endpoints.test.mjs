@@ -70,6 +70,20 @@ test('authentication and user administration endpoints', async () => {
   // مسیر logout در پایان آزمون‌ها استفاده می‌شود تا نشست مدیر از دست نرود.
 });
 
+test('documentation library exposes the course and its sections', async () => {
+  const anonymous = await api(srv.base, 'GET', '/api/docs', undefined, { auth: false });
+  assert.equal(anonymous.status, 401, 'documentation must require a session');
+  const res = await call('GET', '/api/docs');
+  assert.ok(Array.isArray(res.data.groups) && res.data.groups.length >= 2);
+  const course = res.data.docs.find((doc) => doc.slug === 'dev-course');
+  assert.ok(course, 'course overview must be present');
+  assert.ok(course.content.includes('دورهٔ توسعهٔ NetWatch'));
+  assert.ok(course.headings.length > 0, 'course overview must expose subheadings');
+  const chapter = res.data.docs.find((doc) => doc.slug === 'dev-course/01-setup-and-tooling');
+  assert.ok(chapter, 'first course chapter must be present');
+  assert.ok(chapter.headings.some((heading) => heading.level === 2));
+});
+
 test('device endpoints including imports, exports, map and history', async () => {
   const a = await call('POST', '/api/devices', { name: 'QA Device A', ip: '10.77.0.1', latitude: 35.7, longitude: 51.4 }, 201);
   deviceA = a.data.id;
@@ -396,6 +410,7 @@ test('every registered route was exercised at least once', () => {
     'GET /api/reports/summary',
     'GET /api/reports/export',
     'GET /api/audit',
+    'GET /api/docs',
     'GET /api/system/health',
     'GET /api/system/db/health',
     'POST /api/system/db/checkpoint',

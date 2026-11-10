@@ -8,7 +8,7 @@
 | نسخهٔ برنامه | `1.4.1` |
 | نسخهٔ ساختار داده | `SCHEMA_VERSION = 22` |
 | آخرین به‌روزرسانی مستندات | ۲۰۲۶-۱۱-۱۰ |
-| مخزن کد | `wmp144-ctrl/Freebuff_2` |
+| مخزن کد | `jamshidgoolami/test` |
 | پیش‌نیاز اجرا | Node.js `>= 22.12.0` |
 
 > **مبنای صحت:** هر عدد، پیش‌فرض، مسیر و قرارداد API در این مجموعه از **کد
@@ -23,7 +23,7 @@
 | --- | --- |
 | کاربر مبتدی هستید و فقط می‌خواهید برنامه را بشناسید و اجرا کنید | [معرفی](01-introduction.md) → [نصب](03-installation.md) → [عملیات روزمره](10-operations.md) |
 | مدیر سیستم هستید | [نصب](03-installation.md) → [پیکربندی](04-configuration.md) → [پایگاه‌داده](05-database.md) → [امنیت](08-security.md) → [پشتیبان‌گیری](11-backup-restore.md) → [Retention](12-retention.md) → [عیب‌یابی](13-troubleshooting.md) |
-| توسعه‌دهنده هستید | [معرفی](01-introduction.md) → [معماری](02-architecture.md) → [پایگاه‌داده](05-database.md) → [API](06-api.md) → [رابط کاربری](07-frontend.md) → [موتور](09-engine.md) → [آزمون‌ها](14-testing.md) → [راهنمای توسعه](16-development.md) |
+| توسعه‌دهنده هستید | [دورهٔ توسعه](dev-course/README.md) → [معرفی](01-introduction.md) → [معماری](02-architecture.md) → [پایگاه‌داده](05-database.md) → [API](06-api.md) → [رابط کاربری](07-frontend.md) → [موتور](09-engine.md) → [آزمون‌ها](14-testing.md) → [راهنمای سریع](16-development.md) |
 | می‌خواهید فقط API را صدا بزنید | [API](06-api.md) → [امنیت](08-security.md) |
 
 **ترتیب مطالعهٔ پیشنهادی برای مبتدی:** ۱) معرفی، ۲) نصب، ۳) اولین ورود و
@@ -54,6 +54,7 @@
 | ۱۵ | [ارتقا و انتشار](15-upgrade-release.md) | Migration، Rollback، Artifact و رویهٔ انتشار |
 | ۱۶ | [راهنمای توسعه](16-development.md) | ساختار کد، قواعد کدنویسی و افزودن قابلیت |
 | ۱۷ | [Changelog](17-changelog.md) | تغییرات مستندات، نسخهٔ برنامه و اختلاف‌های شناسایی‌شده |
+| ۱۸ | [دورهٔ توسعهٔ NetWatch](dev-course/README.md) | دورهٔ ۲۴ فصلی از نصب و موتور تا محصول، امنیت، تست و عملیات با مثال‌های واقعی |
 
 ---
 
@@ -80,7 +81,8 @@ flowchart TD
   API --> TEST[آزمون]
   ENGINE --> TEST
   TEST --> DEV[توسعه]
-  DEV --> REL[ارتقا و انتشار]
+  DEV --> COURSE[دورهٔ توسعه]
+  COURSE --> REL[ارتقا و انتشار]
 ```
 
 ---
@@ -116,6 +118,7 @@ flowchart TD
 این مجموعه بخش فارسی و آموزشی مستندات است؛ سندهای عملیاتی و مرجع نیز در همین
 پوشه هستند:
 
+- [دورهٔ توسعه](dev-course/README.md) — مسیر آموزشی از پایه تا پیشرفته
 - [README اصلی مخزن](../../README.md) — مرور سریع، قابلیت‌ها و نمونه‌های curl
 - [install](../install.md) — نصب تولیدی
 - [upgrade](../upgrade.md) — ارتقا و Rollback

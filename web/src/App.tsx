@@ -20,6 +20,7 @@ const Credentials = lazy(() => import('./pages/Credentials'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Templates = lazy(() => import('./pages/Templates'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Docs = lazy(() => import('./pages/Docs'));
 const AppHealth = lazy(() => import('./pages/AppHealth'));
 
 export default function App() {
@@ -65,6 +66,8 @@ export default function App() {
             <Route path="/app-health" element={<AppHealth />} />
             <Route path="/health" element={<Navigate to="/app-health" replace />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/docs" element={<Docs />} />
+            <Route path="/docs/*" element={<Docs />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

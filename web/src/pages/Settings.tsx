@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
+  BookOpen,
   Check,
   Database,
   Gamepad2,
@@ -178,7 +180,13 @@ export default function Settings() {
     <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)] xl:items-start">
       <Card padded={false} className="xl:sticky xl:top-4">
         <div className="border-b border-ink-100 p-3">
-          <p className="text-[13px] font-semibold text-ink-800">تنظیمات</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold text-ink-800">تنظیمات</p>
+            <Link to="/docs" className="btn-ghost btn-xs text-accent" title="مستندات و راهنما">
+              <BookOpen size={14} />
+              مستندات
+            </Link>
+          </div>
           <input
             className="field mt-2 !py-1.5 !text-[12px]"
             placeholder="جست‌وجوی بخش تنظیمات…"

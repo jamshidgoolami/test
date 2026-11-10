@@ -68,6 +68,7 @@ import diagramsRouter, { pruneBrokenDiagramLinks } from './routes/diagrams.js';
 import credentialsRouter from './routes/credentials.js';
 import auditRouter from './routes/audit.js';
 import systemRouter from './routes/system.js';
+import docsRouter from './routes/docs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -671,6 +672,7 @@ app.use('/api/diagrams', diagramsRouter);
 app.use('/api/credentials', credentialsRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/system', systemRouter);
+app.use('/api/docs', docsRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'مسیر یافت نشد' }));
 

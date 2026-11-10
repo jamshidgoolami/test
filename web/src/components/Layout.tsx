@@ -113,7 +113,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const alertsApi = useAlertSummary(live.version + (notifOpen ? 1 : 0));
 
-  const title = useMemo(() => navItemForPath(location.pathname)?.label ?? settings?.site_name ?? 'مرکز پایش شبکه', [location.pathname, settings?.site_name]);
+  const title = useMemo(
+    () =>
+      location.pathname.startsWith('/docs')
+        ? 'مستندات و راهنما'
+        : navItemForPath(location.pathname)?.label ?? settings?.site_name ?? 'مرکز پایش شبکه',
+    [location.pathname, settings?.site_name]
+  );
 
   return (
     <div className="min-h-screen">
