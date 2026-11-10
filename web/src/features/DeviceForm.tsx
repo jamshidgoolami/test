@@ -377,6 +377,7 @@ export default function DeviceForm({
         <div className="space-y-4">
           <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
             نام کاربری و رمز عبور با AES-256-GCM رمزنگاری می‌شوند و در فهرست تجهیزات، خروجی فایل یا لاگ نمایش داده نمی‌شوند.
+            همین اطلاعات هنگام ذخیره، در «خزانهٔ رمز عبور» هم ثبت می‌شود تا در یک جا قابل مدیریت باشد.
             رمز فعلی برای ویرایش خوانده نمی‌شود؛ برای تغییر، رمز تازه را وارد کنید و برای حذف، گزینهٔ حذف رمز را بزنید.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">

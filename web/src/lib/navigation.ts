@@ -70,9 +70,9 @@ const RAW_NAV_GROUPS: { id: NavGroupId; label: string; items: Omit<NavItem, 'gro
       },
       {
         to: '/credentials',
-        label: 'اعتبارنامه‌ها',
-        description: 'مخزن رمزنگاری‌شدهٔ رمز و نام کاربری تجهیزات، تولید رمز و هشدار رمز ضعیف',
-        keywords: ['credential', 'password', 'رمز', 'پسورد', 'اعتبارنامه', 'vault', 'ssh'],
+        label: 'خزانهٔ رمز عبور',
+        description: 'ذخیرهٔ امن نام کاربری و رمز تجهیزات، تولید رمز قوی، بررسی امنیت و ورود/خروجی',
+        keywords: ['credential', 'password', 'رمز', 'پسورد', 'اعتبارنامه', 'vault', 'ssh', 'خزانه', 'رمزنگاری'],
       },
     ],
   },

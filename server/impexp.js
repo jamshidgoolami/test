@@ -479,6 +479,104 @@ export function markerTemplateRows() {
   ];
 }
 
+/* --------------------- ورود/خروجی خزانهٔ رمز عبور --------------------- */
+
+/** سرستون‌های پذیرفته‌شده در فایل ورودی رمزها (فارسی/انگلیسی) */
+const CREDENTIAL_COLUMN_MAP = {
+  label: 'label',
+  title: 'label',
+  name: 'label',
+  'عنوان': 'label',
+  'نام': 'label',
+  'نام ورود': 'label',
+  'title/نام': 'label',
+  site: 'host',
+  url: 'host',
+  'سایت': 'host',
+  'آدرس سایت': 'host',
+  'نشانی': 'host',
+  host: 'host',
+  'میزبان': 'host',
+  port: 'port',
+  'پورت': 'port',
+  username: 'username',
+  user: 'username',
+  login: 'username',
+  'نام کاربری': 'username',
+  'یوزر': 'username',
+  'کاربر': 'username',
+  password: 'secret',
+  pass: 'secret',
+  secret: 'secret',
+  'رمز': 'secret',
+  'رمز عبور': 'secret',
+  'پسورد': 'secret',
+  'گذرواژه': 'secret',
+  notes: 'notes',
+  note: 'notes',
+  'یادداشت': 'notes',
+  'توضیحات': 'notes',
+  tags: 'tags',
+  'برچسب': 'tags',
+  'برچسب‌ها': 'tags',
+  'برچسب ها': 'tags',
+  'تگ': 'tags',
+  'تگ‌ها': 'tags',
+  device: 'device',
+  'تجهیز': 'device',
+  'نام تجهیز': 'device',
+  'دستگاه': 'device',
+  kind: 'kind',
+  type: 'kind',
+  'نوع': 'kind',
+  'نوع دسترسی': 'kind',
+};
+
+const CREDENTIAL_LOOKUP = new Map(Object.entries(CREDENTIAL_COLUMN_MAP).map(([k, v]) => [lookupKey(k), v]));
+
+/** نگاشت سرستون فایل رمزها؛ سرستون ناشناخته به snake_case تبدیل می‌شود. */
+export function normalizeCredentialKey(key) {
+  const k = lookupKey(key);
+  return CREDENTIAL_LOOKUP.get(k) || foldKey(key).replace(/\s+/g, '_');
+}
+
+/** ستون‌های فایل خروجی/نمونهٔ رمزها */
+export const CREDENTIAL_EXPORT_HEADERS = [
+  ['label', 'عنوان'],
+  ['username', 'نام کاربری'],
+  ['secret', 'رمز عبور'],
+  ['host', 'میزبان'],
+  ['port', 'پورت'],
+  ['device', 'تجهیز'],
+  ['kind', 'نوع'],
+  ['tags', 'برچسب‌ها'],
+  ['notes', 'توضیحات'],
+];
+
+/**
+ * ساخت فایل Excel رمزها.
+ * فقط فیلدهای متنی از Formula Injection پاک می‌شوند؛ ستون رمز دست‌نخورده
+ * می‌ماند تا خروجی/ورود مجدد، رمز را دقیقاً همان‌طور که هست برگرداند.
+ */
+export function buildCredentialWorkbook(rows) {
+  const keys = CREDENTIAL_EXPORT_HEADERS.map((h) => h[0]);
+  const labels = CREDENTIAL_EXPORT_HEADERS.map((h) => h[1]);
+  const data = rows.map((row) =>
+    Object.fromEntries(
+      labels.map((label, index) => {
+        const key = keys[index];
+        const raw = row[key] == null ? '' : row[key];
+        return [label, key === 'secret' ? raw : sanitizeSpreadsheetValue(raw)];
+      })
+    )
+  );
+  const ws = XLSX.utils.json_to_sheet(data, { header: labels });
+  ws['!cols'] = labels.map((label) => ({ wch: Math.max(16, Math.min(40, String(label).length + 12)) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Credentials');
+  return wb;
+}
+
 export function templateRows() {
   return [
     {

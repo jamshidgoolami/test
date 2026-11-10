@@ -373,6 +373,12 @@
   .label {
     @apply block text-xs font-medium text-ink-500 mb-1.5;
   }
+  /* فیلدهای خزانهٔ رمز عبور: حاشیه و سایهٔ روشن‌تر تا کادر ورودی روی
+     پس‌زمینهٔ مودال/کارت گم نشود. بقیهٔ نرم‌افزار از .field استفاده می‌کند. */
+  .field-strong {
+    @apply w-full rounded-soft border border-ink-300 bg-surface px-3 py-2 text-sm text-ink-800
+      placeholder:text-ink-400 shadow-soft transition focus:border-brand-400 focus:ring-4 focus:ring-brand-500/10 focus:outline-hidden;
+  }
 
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[12px] font-medium border;
@@ -606,6 +612,13 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .diagram-handle.is-active {
+  opacity: 0;
+}
+/* نقاط اتصال فقط هنگام هاور/انتخاب کارت دیده می‌شوند تا بوم شلوغ نشود؛
+   هنگام کشیدن یا فوکوس صفحه‌کلید هم قابل دسترسی می‌مانند. */
+.group:hover .diagram-handle.is-active,
+.react-flow__node.selected .diagram-handle.is-active,
+.diagram-handle.is-active:focus-visible {
   opacity: 1;
 }
 .diagram-handle.is-active:hover {

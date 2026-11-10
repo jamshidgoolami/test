@@ -162,13 +162,19 @@ export default function PasswordGenerator({ onUse }: { onUse?: (value: string) =
       </div>
 
       {generated?.assessment ? (
-        <div className="mt-2">
+        <div className="mt-2 space-y-1.5">
           <StrengthMeter
             score={generated.assessment.score}
             reasons={generated.assessment.reasons}
             entropyBits={generated.entropyBits}
             compact
           />
+          {generated.unique ? (
+            <p className="inline-flex items-center gap-1 text-[10.5px] text-success">
+              <Check size={11} />
+              یکتا در خزانه — این رمز برای هیچ ورود دیگری استفاده نشده است
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -188,7 +194,7 @@ export default function PasswordGenerator({ onUse }: { onUse?: (value: string) =
           </label>
           <label className="block">
             <span className="label">جداکننده</span>
-            <select className="input" value={options.separator} onChange={(e) => update({ separator: e.target.value })}>
+            <select className="field" value={options.separator} onChange={(e) => update({ separator: e.target.value })}>
               {SEPARATORS.map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}

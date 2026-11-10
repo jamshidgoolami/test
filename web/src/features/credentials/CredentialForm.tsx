@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Lock, Save, Server, Wand2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Eye, EyeOff, KeyRound, Lock, Save, Search, Server, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSubmitGuard, useToast } from '../../lib/store';
-import { CREDENTIAL_KINDS, assessSecretPreview, splitTags } from '../../lib/credential-rules';
+import { assessSecretPreview, splitTags } from '../../lib/credential-rules';
 import { faDigits } from '../../lib/format';
 import { Field, Modal } from '../../components/ui';
 import type { Credential, Device, CredentialInput, CredentialKind } from '../../lib/types';
@@ -19,12 +19,11 @@ interface FormState {
   port: string;
   tags: string;
   notes: string;
-  rotateEveryDays: string;
 }
 
 const EMPTY: FormState = {
   label: '',
-  kind: 'ssh',
+  kind: 'other',
   deviceId: '',
   username: '',
   secret: '',
@@ -32,7 +31,6 @@ const EMPTY: FormState = {
   port: '',
   tags: '',
   notes: '',
-  rotateEveryDays: '',
 };
 
 function stateOf(credential: Credential | null): FormState {
@@ -47,25 +45,157 @@ function stateOf(credential: Credential | null): FormState {
     port: credential.port ? String(credential.port) : '',
     tags: credential.tags.join('، '),
     notes: credential.notes ?? '',
-    rotateEveryDays: credential.rotateEveryDays ? String(credential.rotateEveryDays) : '',
   };
 }
 
 /**
- * فرم افزودن/ویرایش اعتبارنامه.
- * در حالت ویرایش، خالی‌بودن فیلد رمز یعنی «بدون تغییر»؛ رمز فعلی هرگز از
- * سرور برای پرکردن فرم خوانده نمی‌شود.
+ * انتخاب تجهیز مرتبط با جست‌وجو.
+ * فهرست تجهیزات می‌تواند صدها ردیف باشد، بنابراین به‌جای select بومی یک
+ * ترکیب جست‌وجو + فهرست کشویی استفاده می‌شود؛ انتخاب با صفحه‌کلید هم ممکن است.
+ */
+function DevicePicker({
+  devices,
+  value,
+  onChange,
+}: {
+  devices: Device[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = devices.find((device) => String(device.id) === value) ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase('fa');
+    if (!needle) return devices;
+    return devices.filter((device) =>
+      `${device.name} ${device.ip}`.toLocaleLowerCase('fa').includes(needle)
+    );
+  }, [devices, query]);
+
+  const choose = (next: string) => {
+    onChange(next);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        className="field-strong flex items-center gap-1.5 text-right"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="انتخاب تجهیز مرتبط"
+      >
+        <Server size={14} className="shrink-0 text-ink-400" />
+        <span className={`min-w-0 flex-1 truncate ${selected ? 'text-ink-800' : 'text-ink-400'}`}>
+          {selected ? `${selected.name} — ${selected.ip}` : 'بدون تجهیز'}
+        </span>
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-ink-400 transition ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-soft border border-ink-200 bg-surface shadow-pop">
+          <div className="flex items-center gap-1.5 border-b border-ink-100 px-2.5">
+            <Search size={13} className="shrink-0 text-ink-400" />
+            <input
+              autoFocus
+              className="w-full bg-transparent py-2 text-[12px] text-ink-800 outline-none placeholder:text-ink-400"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="جست‌وجوی نام یا IP تجهیز…"
+              aria-label="جست‌وجوی تجهیز"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setOpen(false);
+                }
+              }}
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1" role="listbox" aria-label="تجهیزات">
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[12px] transition ${
+                !value ? 'bg-brand-50 text-accent' : 'text-ink-600 hover:bg-ink-50'
+              }`}
+              onClick={() => choose('')}
+            >
+              <span className="min-w-0 flex-1 truncate">بدون تجهیز</span>
+              {!value ? <Check size={13} /> : null}
+            </button>
+            {matches.map((device) => {
+              const active = String(device.id) === value;
+              return (
+                <button
+                  key={device.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[12px] transition ${
+                    active ? 'bg-brand-50 text-accent' : 'text-ink-600 hover:bg-ink-50'
+                  }`}
+                  onClick={() => choose(String(device.id))}
+                >
+                  <span className="min-w-0 flex-1 truncate">{device.name}</span>
+                  <span className="num shrink-0 text-[10.5px] text-ink-400" dir="ltr">
+                    {device.ip}
+                  </span>
+                  {active ? <Check size={13} className="shrink-0" /> : null}
+                </button>
+              );
+            })}
+            {!matches.length ? (
+              <p className="px-2 py-3 text-center text-[11px] text-ink-400">تجهیزی با این عبارت پیدا نشد.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * فرم ذخیره/ویرایش یک ورود خزانه.
+ * در حالت ویرایش، خالی‌بودن رمز یعنی «بدون تغییر»؛ رمز فعلی هرگز برای پرکردن
+ * فرم از سرور خوانده نمی‌شود.
+ *
+ * فیلدهای «نوع دسترسی»، «میزبان» و «پورت» عمداً از فرم حذف شده‌اند تا ثبت
+ * رمز ساده بماند؛ دادهٔ قبلی این ستون‌ها هنگام ویرایش دست‌نخورده می‌ماند.
  */
 export default function CredentialForm({
   open,
   credential,
   devices,
+  suggestedSecret = '',
   onClose,
   onSaved,
 }: {
   open: boolean;
   credential: Credential | null;
   devices: Device[];
+  suggestedSecret?: string;
   onClose: () => void;
   onSaved: (credential: Credential, mode: 'create' | 'update') => void;
 }) {
@@ -79,11 +209,12 @@ export default function CredentialForm({
 
   useEffect(() => {
     if (!open) return;
-    setForm(stateOf(credential));
-    setShowSecret(false);
+    const base = stateOf(credential);
+    setForm(suggestedSecret ? { ...base, secret: suggestedSecret } : base);
+    setShowSecret(Boolean(suggestedSecret));
     setGeneratorOpen(false);
     setError(null);
-  }, [open, credential]);
+  }, [open, credential, suggestedSecret]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -101,21 +232,16 @@ export default function CredentialForm({
   const submit = async () => {
     const label = form.label.trim();
     if (!label) {
-      setError('عنوان اعتبارنامه الزامی است.');
+      setError('عنوان ورود الزامی است.');
       return;
     }
     if (!editing && !form.secret) {
-      setError('برای ثبت اعتبارنامه، رمز یا توکن را وارد کنید (یا با تولیدکننده بسازید).');
+      setError('رمز عبور را وارد کنید یا با تولیدکننده بسازید.');
       return;
     }
     const port = form.port.trim() ? Number(form.port) : null;
     if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
       setError('پورت باید عددی بین ۱ و ۶۵۵۳۵ باشد.');
-      return;
-    }
-    const rotate = form.rotateEveryDays.trim() ? Number(form.rotateEveryDays) : null;
-    if (rotate !== null && (!Number.isInteger(rotate) || rotate < 1 || rotate > 3650)) {
-      setError('دورهٔ چرخش باید بین ۱ و ۳۶۵۰ روز باشد.');
       return;
     }
 
@@ -128,7 +254,6 @@ export default function CredentialForm({
       port,
       tags: splitTags(form.tags),
       notes: form.notes,
-      rotateEveryDays: rotate,
     };
     if (form.secret) payload.secret = form.secret;
 
@@ -138,10 +263,10 @@ export default function CredentialForm({
           ? await api.updateCredential(credential!.id, payload)
           : await api.createCredential(payload);
         onSaved(result, editing ? 'update' : 'create');
-        push(editing ? 'اعتبارنامه به‌روزرسانی شد.' : 'اعتبارنامه ثبت شد.', 'success');
+        push(editing ? 'رمز عبور به‌روزرسانی شد.' : 'رمز عبور در خزانه ذخیره شد.', 'success');
         return result;
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'ثبت اعتبارنامه ممکن نشد.';
+        const message = e instanceof Error ? e.message : 'ذخیرهٔ رمز ممکن نشد.';
         setError(message);
         push(message, 'error');
         return null;
@@ -157,8 +282,8 @@ export default function CredentialForm({
       open={open}
       onClose={onClose}
       size="lg"
-      title={editing ? `ویرایش «${credential?.label}»` : 'اعتبارنامهٔ جدید'}
-      subtitle="نام کاربری، رمز و یادداشت با AES‑256‑GCM رمزنگاری می‌شوند و رمز فقط با دکمهٔ نمایش خوانده می‌شود."
+      title={editing ? `ویرایش رمز عبور — ${credential?.label}` : 'ذخیرهٔ رمز عبور جدید'}
+      subtitle="نام کاربری و رمز در خزانهٔ رمز عبور با AES‑256‑GCM رمزنگاری می‌شوند و رمز فقط با درخواست صریح نمایش داده می‌شود."
       footer={
         <>
           <button type="button" className="btn-ghost" onClick={onClose}>
@@ -166,7 +291,7 @@ export default function CredentialForm({
           </button>
           <button type="button" className="btn-primary" onClick={() => void submit()} disabled={busy}>
             <Save size={15} />
-            {busy ? 'در حال ذخیره…' : editing ? 'ذخیرهٔ تغییرات' : 'ثبت اعتبارنامه'}
+            {busy ? 'در حال ذخیره…' : editing ? 'ذخیرهٔ تغییرات' : 'ذخیرهٔ رمز'}
           </button>
         </>
       }
@@ -181,7 +306,7 @@ export default function CredentialForm({
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="عنوان" required className="sm:col-span-2" hint="مثال: «SSH سوئیچ طبقهٔ دو» یا «پنل وب فایروال»">
             <input
-              className="input"
+              className="field-strong"
               value={form.label}
               maxLength={120}
               onChange={(e) => set('label', e.target.value)}
@@ -190,66 +315,27 @@ export default function CredentialForm({
             />
           </Field>
 
-          <Field label="نوع اعتبارنامه" required>
-            <select className="input" value={form.kind} onChange={(e) => set('kind', e.target.value as CredentialKind)}>
-              {CREDENTIAL_KINDS.map((kind) => (
-                <option key={kind.id} value={kind.id}>
-                  {kind.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="تجهیز مرتبط" hint="اختیاری؛ بدون تجهیز هم قابل ثبت است">
-            <select className="input" value={form.deviceId} onChange={(e) => set('deviceId', e.target.value)}>
-              <option value="">بدون تجهیز</option>
-              {devices.map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.name} — {device.ip}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="نام کاربری" hint="در فهرست نمایش داده می‌شود ولی رمزنگاری‌شده ذخیره می‌شود">
+          <Field label="نام کاربری">
             <input
-              className="input"
+              className="field-strong"
               dir="ltr"
               value={form.username}
               maxLength={255}
               onChange={(e) => set('username', e.target.value)}
               placeholder="admin"
+              autoComplete="off"
             />
           </Field>
 
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="میزبان" className="col-span-2">
-              <input
-                className="input"
-                dir="ltr"
-                value={form.host}
-                maxLength={255}
-                onChange={(e) => set('host', e.target.value)}
-                placeholder="10.0.0.2"
-              />
-            </Field>
-            <Field label="پورت">
-              <input
-                className="input"
-                dir="ltr"
-                inputMode="numeric"
-                value={form.port}
-                onChange={(e) => set('port', e.target.value.replace(/[^\d]/g, '').slice(0, 5))}
-                placeholder="22"
-              />
-            </Field>
-          </div>
+          <Field label="تجهیز مرتبط" hint="اختیاری؛ با جست‌وجو بین تجهیزات انتخاب کنید">
+            <DevicePicker devices={devices} value={form.deviceId} onChange={(value) => set('deviceId', value)} />
+          </Field>
         </div>
 
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="label mb-0">
-              {editing ? 'رمز جدید (برای تغییر)' : 'رمز / توکن'} {!editing ? <span className="text-danger">*</span> : null}
+              {editing ? 'رمز جدید (برای تغییر)' : 'رمز عبور'} {!editing ? <span className="text-danger">*</span> : null}
             </span>
             <button
               type="button"
@@ -258,12 +344,12 @@ export default function CredentialForm({
               aria-expanded={generatorOpen}
             >
               <Wand2 size={13} />
-              {generatorOpen ? 'بستن تولیدکننده' : 'تولید رمز'}
+              {generatorOpen ? 'بستن تولیدکننده' : 'تولید رمز قوی'}
             </button>
           </div>
           <div className="flex items-stretch gap-2">
             <input
-              className="input flex-1 font-mono"
+              className="field-strong flex-1 font-mono"
               dir="ltr"
               type={showSecret ? 'text' : 'password'}
               value={form.secret}
@@ -309,25 +395,15 @@ export default function CredentialForm({
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="برچسب‌ها" hint="با ویرگول جدا کنید؛ برای جست‌وجو استفاده می‌شوند">
             <input
-              className="input"
+              className="field-strong"
               value={form.tags}
               onChange={(e) => set('tags', e.target.value)}
               placeholder="core ، طبقه۲ ، cisco"
             />
           </Field>
-          <Field label="دورهٔ چرخش (روز)" hint="اختیاری؛ موعد چرخش در فهرست هشدار داده می‌شود">
-            <input
-              className="input"
-              dir="ltr"
-              inputMode="numeric"
-              value={form.rotateEveryDays}
-              onChange={(e) => set('rotateEveryDays', e.target.value.replace(/[^\d]/g, '').slice(0, 4))}
-              placeholder="90"
-            />
-          </Field>
-          <Field label="یادداشت" className="sm:col-span-2" hint="رمزنگاری‌شده ذخیره می‌شود و فقط در همین فرم دیده می‌شود">
+          <Field label="یادداشت" hint="رمزنگاری‌شده ذخیره می‌شود و در جزئیات همان ورود دیده می‌شود">
             <textarea
-              className="input min-h-[70px] resize-y"
+              className="field-strong min-h-[44px] resize-y"
               value={form.notes}
               maxLength={2000}
               onChange={(e) => set('notes', e.target.value)}
@@ -338,7 +414,7 @@ export default function CredentialForm({
 
         <div className="flex flex-wrap items-center gap-3 rounded-soft border border-ink-100 bg-ink-50/60 px-3 py-2 text-[11.5px] text-ink-500">
           <span className="inline-flex items-center gap-1.5">
-            <KeyRound size={13} className="text-accent" /> رمز با کلید سرور رمزنگاری می‌شود
+            <KeyRound size={13} className="text-accent" /> ذخیره در خزانهٔ رمز عبور با AES‑256‑GCM
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Server size={13} /> {faDigits(devices.length)} تجهیز برای اتصال در دسترس است

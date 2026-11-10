@@ -1136,6 +1136,50 @@ export interface CredentialReveal {
   secret: string;
 }
 
+/** ایرادهای بررسی امنیت خزانه */
+export type CredentialIssue = 'weak' | 'reused' | 'breached';
+
+export interface CredentialCheckupItem {
+  id: number;
+  label: string;
+  kind: CredentialKind;
+  kindLabel: string;
+  deviceName: string | null;
+  strength: number;
+  strengthLabel: string;
+  weakReasons: string[];
+  issues: CredentialIssue[];
+  /** چند ورودی همین رمز را دارند (برای ایراد تکراری) */
+  sharedWith: number;
+}
+
+export interface CredentialCheckup {
+  checked: number;
+  weak: number;
+  reused: number;
+  breached: number;
+  secure: number;
+  unreadable: number;
+  issues: number;
+  items: CredentialCheckupItem[];
+  generatedAt: number;
+}
+
+export interface CredentialImportError {
+  row: number | null;
+  label: string;
+  issues: string[];
+}
+
+export interface CredentialImportResult {
+  fileName?: string;
+  total: number;
+  created: number;
+  skipped: number;
+  failed: number;
+  errors: CredentialImportError[];
+}
+
 /** گزینه‌های تولید رمز؛ با نرمال‌سازی سمت سرور هم‌خوان است. */
 export interface PasswordGeneratorOptions {
   mode: 'random' | 'passphrase';
@@ -1150,6 +1194,8 @@ export interface PasswordGeneratorOptions {
   separator: string;
   addNumber: boolean;
   capitalize: boolean;
+  /** پیش‌فرض سرور: true — رمز تازه با رمزهای موجود مقایسه می‌شود */
+  unique?: boolean;
 }
 
 export interface CredentialAssessment {
@@ -1167,6 +1213,8 @@ export interface GeneratedSecret {
   entropyBits: number;
   options: PasswordGeneratorOptions;
   assessment: CredentialAssessment;
+  /** رمز تولیدشده با رمزهای موجود در خزانه یکتا است */
+  unique?: boolean;
 }
 
 /** بدنهٔ ساخت/ویرایش اعتبارنامه؛ `secret` فقط هنگام تعیین رمز فرستاده می‌شود. */

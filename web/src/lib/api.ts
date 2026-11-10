@@ -6,6 +6,8 @@ import type {
   AuthUser,
   BackupStatus,
   Credential,
+  CredentialCheckup,
+  CredentialImportResult,
   CredentialInput,
   CredentialList,
   CredentialReveal,
@@ -647,6 +649,18 @@ export const api = {
       body: JSON.stringify({}),
       timeoutMs: LONG_TIMEOUT_MS,
     }),
+  /** بررسی امنیت خزانه: رمزهای ضعیف، تکراری و افشاشده (بدون رمز خام) */
+  credentialCheckup: (signal?: AbortSignal) => request<CredentialCheckup>('/credentials/checkup', { signal }),
+  /** ورود گروهی از فایل Excel/CSV */
+  importCredentials: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<CredentialImportResult>('/credentials/import', {
+      method: 'POST',
+      body: fd,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    });
+  },
 
   /* ---------------- گزارش‌های مدیریتی ---------------- */
   reportMttr: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>

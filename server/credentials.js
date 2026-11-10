@@ -16,6 +16,7 @@
 import { db, transaction } from './db.js';
 import { decryptSecret, encryptSecret, tryDecryptSecret } from './credential-crypto.js';
 import { assessSecret, STRENGTH_LABELS } from './credential-strength.js';
+import { isBreachedSecret } from './credential-breach.js';
 
 export const CREDENTIAL_KINDS = Object.freeze([
   { id: 'ssh', label: 'SSH' },
@@ -95,12 +96,12 @@ export function sanitizeCredentialInput(input = {}, { partial = false } = {}) {
 
   if (must('label')) {
     const label = text(body.label, 120);
-    if (!label) throw httpError(400, 'عنوان اعتبارنامه الزامی است.');
+    if (!label) throw httpError(400, 'عنوان رمز عبور الزامی است.');
     out.label = label;
   }
   if (must('kind')) {
     const kind = text(body.kind, 24).toLowerCase() || 'other';
-    if (!KIND_IDS.has(kind)) throw httpError(400, 'نوع اعتبارنامه معتبر نیست.');
+    if (!KIND_IDS.has(kind)) throw httpError(400, 'نوع رمز عبور معتبر نیست.');
     out.kind = kind;
   }
   if (has('deviceId')) {
@@ -145,7 +146,7 @@ export function sanitizeCredentialInput(input = {}, { partial = false } = {}) {
     }
     out.secret = secret;
   }
-  if (!partial && !out.secret) throw httpError(400, 'رمز اعتبارنامه الزامی است.');
+  if (!partial && !out.secret) throw httpError(400, 'رمز عبور الزامی است.');
   return out;
 }
 
@@ -482,8 +483,9 @@ export function recheckStrengths() {
 
 /**
  * انتقال یک‌بارهٔ نام کاربری/رمز فعلی تجهیزات به مخزن.
- * idempotent است: برای هر تجهیز فقط اگر اعتبارنامه‌ای با نشانگر «دسترسی تجهیز»
- * وجود نداشته باشد ساخته می‌شود. ستون‌های قدیمی تجهیز دست‌نخورده می‌مانند.
+ * idempotent است: برای هر تجهیزی که از قبل هر ردیفی در خزانه دارد (مثلاً هنگام
+ * ذخیرهٔ اعتبارنامه در جزئیات تجهیز) ردیف تازه ساخته نمی‌شود. ستون‌های قدیمی
+ * تجهیز دست‌نخورده می‌مانند.
  */
 export function importDeviceCredentials(actor = '') {
   const MARK = 'دسترسی تجهیز';
@@ -497,9 +499,7 @@ export function importDeviceCredentials(actor = '') {
   let skipped = 0;
   transaction(() => {
     for (const device of devices) {
-      const exists = db
-        .prepare('SELECT 1 AS ok FROM credentials WHERE device_id = ? AND label = ?')
-        .get(device.id, MARK);
+      const exists = db.prepare('SELECT 1 AS ok FROM credentials WHERE device_id = ?').get(device.id);
       if (exists) {
         skipped += 1;
         continue;
@@ -541,5 +541,335 @@ export function importDeviceCredentials(actor = '') {
     }
   });
   return { created, skipped, devices: devices.length };
+}
+
+/**
+ * همگام‌سازی نام کاربری/رمز تب «دسترسی تجهیز» با خزانهٔ رمز عبور.
+ *
+ * بدون این تابع، رمزی که در جزئیات تجهیز ذخیره می‌شد در خزانه دیده نمی‌شد و
+ * کاربر باید آن را دوباره وارد می‌کرد. اکنون هر ذخیرهٔ موفق تجهیز، ردیف متناظر
+ * خزانه را می‌سازد یا به‌روزرسانی می‌کند.
+ *
+ * • اگر ردیفی با نشانگر «دسترسی تجهیز» یا هر ردیف دیگری متصل به همین تجهیز
+ *   باشد، همان به‌روزرسانی می‌شود تا برای یک تجهیز دو ورودی ساخته نشود.
+ * • بدون رمز، ردیف تازه ساخته نمی‌شود (خزانه ورودِ بدون رمز نمی‌پذیرد)؛ ولی
+ *   نام کاربری ردیف موجود به‌روز می‌شود.
+ * • پاک‌کردن رمز تجهیز، رمز ردیف خزانه را هم خالی می‌کند و خود ردیف می‌ماند.
+ */
+const DEVICE_CREDENTIAL_LABEL = 'دسترسی تجهیز';
+
+export function syncDeviceCredential(deviceId, { username, password, cleared = false } = {}, actor = '') {
+  const numeric = Number(deviceId);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
+
+  const hasUsername = username !== undefined;
+  const hasPassword = typeof password === 'string' && password !== '';
+  if (!hasUsername && !hasPassword && !cleared) return null;
+
+  const device = db.prepare('SELECT id, name FROM devices WHERE id = ?').get(numeric);
+  if (!device) return null;
+
+  const existing =
+    db
+      .prepare('SELECT id FROM credentials WHERE device_id = ? AND label = ? ORDER BY id LIMIT 1')
+      .get(numeric, DEVICE_CREDENTIAL_LABEL) ??
+    db.prepare('SELECT id FROM credentials WHERE device_id = ? ORDER BY id LIMIT 1').get(numeric);
+
+  if (existing) {
+    const patch = {};
+    if (hasUsername) patch.username = String(username ?? '').slice(0, 255);
+    if (hasPassword) patch.secret = password;
+    if (cleared) patch.secret = '';
+    if (!Object.keys(patch).length) return null;
+    return updateCredential(existing.id, patch, actor);
+  }
+
+  // ساخت ردیف تازه فقط وقتی رمز واقعی وجود دارد؛ ورود بدون رمز در خزانه
+  // معنا ندارد و بررسی امنیت را هم مخدوش می‌کند.
+  if (!hasPassword) return null;
+  const label = device.name ? `دسترسی ${String(device.name).slice(0, 100)}` : DEVICE_CREDENTIAL_LABEL;
+  return createCredential(
+    {
+      label,
+      kind: 'other',
+      deviceId: numeric,
+      username: hasUsername ? String(username ?? '').slice(0, 255) : '',
+      secret: password,
+    },
+    actor
+  );
+}
+
+/* ================== بررسی امنیت، یکتایی و ورود/خروجی ================== */
+
+/** نگاشت نام‌های فارسی/انگلیسی نوع دسترسی به شناسهٔ داخلی */
+const KIND_IMPORT = new Map();
+for (const item of CREDENTIAL_KINDS) {
+  KIND_IMPORT.set(item.id.toLowerCase(), item.id);
+  KIND_IMPORT.set(item.label.toLowerCase().replace(/\u200c/g, ' '), item.id);
+}
+for (const [alias, id] of [
+  ['web', 'https'],
+  ['website', 'https'],
+  ['http', 'https'],
+  ['پنل وب', 'https'],
+  ['وب', 'https'],
+  ['db', 'database'],
+  ['token', 'api'],
+  ['email', 'mail'],
+  ['ایمیل', 'mail'],
+  ['wifi', 'wifi'],
+  ['wi-fi', 'wifi'],
+  ['وای فای', 'wifi'],
+  ['serial', 'console'],
+  ['کنسول', 'console'],
+  ['سایر', 'other'],
+]) {
+  KIND_IMPORT.set(alias, id);
+}
+
+function importKind(value) {
+  const key = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\u200c/g, ' ');
+  return KIND_IMPORT.get(key) ?? 'other';
+}
+
+/** رمز یک ردیف؛ ردیف ناخوانا استثنا می‌دهد تا در شمارش «unreadable» بیاید. */
+function decryptRowSecret(row) {
+  return row.secret_enc ? decryptSecret(row.secret_enc, aadFor(row.id)) : '';
+}
+
+/**
+ * مجموعهٔ همهٔ رمزهای موجود (برای تضمین یکتایی رمز تولیدشده).
+ * ردیف‌های ناخوانا نادیده گرفته می‌شوند و کل عملیات را خراب نمی‌کنند.
+ */
+export function existingSecrets() {
+  const out = new Set();
+  const rows = db.prepare("SELECT id, secret_enc FROM credentials WHERE secret_enc <> ''").all();
+  for (const row of rows) {
+    try {
+      out.add(decryptRowSecret(row));
+    } catch {
+      /* کلید/دادهٔ ناخوانا: از مجموعه کنار گذاشته می‌شود */
+    }
+  }
+  return out;
+}
+
+/**
+ * «بررسی امنیت رمزها» بدون بازگرداندن هیچ رمزی.
+ *
+ * سه ایراد سنجیده می‌شود:
+ *   • ضعیف: امتیاز ذخیره‌شده ۰ یا ۱ باشد (کوتاه/پیش‌فرض/قابل حدس)
+ *   • تکراری: همان رمز برای بیش از یک ورودی استفاده شده باشد
+ *   • افشاشده: رمز در فهرست مرجع محلی رمزهای لو‌رفته/پیش‌فرض باشد
+ * خروجی فقط شناسه، عنوان و پرچم ایرادهاست؛ نه نام کاربری و نه رمز.
+ */
+export function checkupCredentials() {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.label, c.kind, c.strength, c.weak_reasons, c.secret_enc, d.name AS device_name
+       FROM credentials c LEFT JOIN devices d ON d.id = c.device_id
+       ORDER BY c.label COLLATE NOCASE ASC`
+    )
+    .all();
+
+  const scanned = [];
+  const bySecret = new Map();
+  for (const row of rows) {
+    let secret = '';
+    let readable = true;
+    try {
+      secret = decryptRowSecret(row);
+    } catch {
+      readable = false;
+    }
+    if (readable && secret) {
+      const list = bySecret.get(secret) ?? [];
+      list.push(row.id);
+      bySecret.set(secret, list);
+    }
+    scanned.push({ row, secret, readable });
+  }
+
+  let weak = 0;
+  let reused = 0;
+  let breached = 0;
+  let secure = 0;
+  let unreadable = 0;
+  const items = [];
+
+  for (const entry of scanned) {
+    if (!entry.readable) {
+      unreadable += 1;
+      continue;
+    }
+    const { row, secret } = entry;
+    const score = Number(row.strength) || 0;
+    const isWeak = score <= 1;
+    const sharedWith = secret ? bySecret.get(secret)?.length ?? 0 : 0;
+    const isReused = sharedWith > 1;
+    const isBreached = secret ? isBreachedSecret(secret) : false;
+
+    if (!isWeak && !isReused && !isBreached) {
+      secure += 1;
+      continue;
+    }
+    if (isWeak) weak += 1;
+    if (isReused) reused += 1;
+    if (isBreached) breached += 1;
+
+    const issues = [];
+    if (isBreached) issues.push('breached');
+    if (isReused) issues.push('reused');
+    if (isWeak) issues.push('weak');
+
+    items.push({
+      id: row.id,
+      label: row.label,
+      kind: row.kind,
+      kindLabel: KIND_MAP.get(row.kind) ?? KIND_MAP.get('other'),
+      deviceName: row.device_name ?? null,
+      strength: score,
+      strengthLabel: STRENGTH_LABELS[score] ?? STRENGTH_LABELS[0],
+      weakReasons: parseReasons(row.weak_reasons),
+      issues,
+      sharedWith,
+    });
+  }
+
+  // پرخطرترین‌ها اول: افشاشده، سپس تکراری، سپس ضعیف
+  const weight = { breached: 3, reused: 2, weak: 1 };
+  items.sort((a, b) => {
+    const wa = Math.max(...a.issues.map((issue) => weight[issue] ?? 0));
+    const wb = Math.max(...b.issues.map((issue) => weight[issue] ?? 0));
+    if (wa !== wb) return wb - wa;
+    return String(a.label).localeCompare(String(b.label), 'fa');
+  });
+
+  return {
+    checked: rows.length,
+    weak,
+    reused,
+    breached,
+    secure,
+    unreadable,
+    issues: items.length,
+    items,
+    generatedAt: Date.now(),
+  };
+}
+
+/** ردیف‌های قابل نوشتن در فایل Excel؛ فقط از مسیر مجاز خروجی صدا زده می‌شود. */
+export function credentialExportRows() {
+  const rows = db.prepare(`${SELECT_ROW} ORDER BY c.label COLLATE NOCASE ASC`).all();
+  return rows.map((row) => ({
+    label: row.label,
+    username: tryDecryptSecret(row.username_enc, aadFor(row.id)),
+    secret: tryDecryptSecret(row.secret_enc, aadFor(row.id)),
+    host: row.host || '',
+    port: row.port ?? '',
+    device: row.device_name ?? '',
+    kind: KIND_MAP.get(row.kind) ?? '',
+    tags: tagsOf(row.tags).join('، '),
+    notes: tryDecryptSecret(row.notes_enc, aadFor(row.id)),
+  }));
+}
+
+/**
+ * ورود گروهی رمزها از فایل Excel/CSV.
+ *
+ * هر ردیف مستقل ثبت می‌شود تا یک ردیف خراب کل فایل را از کار نیندازد؛
+ * ردیف‌هایی که عنوانشان از قبل وجود دارد نادیده گرفته می‌شوند (idempotent).
+ * خطاها بدون رمز و فقط با شمارهٔ ردیف برمی‌گردند.
+ */
+export function importCredentials(rows, actor = '') {
+  const list = Array.isArray(rows) ? rows : [];
+  const existingLabels = new Set(
+    db
+      .prepare('SELECT label FROM credentials')
+      .all()
+      .map((row) => String(row.label ?? '').trim().toLowerCase())
+  );
+  const devices = db.prepare('SELECT id, name, ip FROM devices').all();
+  const deviceByIdentity = new Map();
+  for (const device of devices) {
+    deviceByIdentity.set(String(device.name ?? '').trim().toLowerCase(), device.id);
+    deviceByIdentity.set(String(device.ip ?? '').trim().toLowerCase(), device.id);
+  }
+
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (const row of list) {
+    const label = String(row.label ?? '').trim().slice(0, 120);
+    const secret = String(row.secret ?? '');
+    const username = String(row.username ?? '').trim().slice(0, 255);
+    const issues = [];
+
+    if (!label) issues.push('عنوان وارد نشده است');
+    if (!secret) issues.push('رمز عبور وارد نشده است');
+
+    if (label) {
+      const key = label.toLowerCase();
+      if (existingLabels.has(key)) {
+        skipped += 1;
+        continue;
+      }
+    }
+
+    const portRaw = String(row.port ?? '').trim();
+    let port = null;
+    if (portRaw) {
+      port = Number(portRaw);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        issues.push('پورت باید بین ۱ و ۶۵۵۳۵ باشد');
+      }
+    }
+
+    if (issues.length) {
+      failed += 1;
+      if (errors.length < 50) errors.push({ row: Number(row.__row) || null, label, issues });
+      continue;
+    }
+
+    const deviceRaw = String(row.device ?? '').trim();
+    const deviceId =
+      deviceRaw && /^\d+$/.test(deviceRaw)
+        ? Number(deviceRaw)
+        : deviceRaw
+          ? deviceByIdentity.get(deviceRaw.toLowerCase()) ?? null
+          : null;
+
+    try {
+      createCredential(
+        {
+          label,
+          kind: importKind(row.kind),
+          username,
+          secret,
+          host: String(row.host ?? '').trim().slice(0, 255),
+          port,
+          tags: String(row.tags ?? ''),
+          notes: String(row.notes ?? '').slice(0, 2000),
+          deviceId,
+        },
+        actor
+      );
+      created += 1;
+      existingLabels.add(label.toLowerCase());
+    } catch (e) {
+      failed += 1;
+      if (errors.length < 50) {
+        errors.push({ row: Number(row.__row) || null, label, issues: [String(e?.message ?? 'ثبت ردیف ممکن نشد.')] });
+      }
+    }
+  }
+
+  return { total: list.length, created, skipped, failed, errors };
 }
 

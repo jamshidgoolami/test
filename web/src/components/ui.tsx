@@ -162,6 +162,7 @@ export function Modal({
   children,
   footer,
   size = 'md',
+  elevated = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -170,6 +171,12 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /**
+   * بالاتر از لایه‌های تمام‌صفحه باز شود. نقشهٔ تمام‌صفحه (z-1100) و فهرست آن
+   * (z-1200) روی صفحه ثابت می‌شوند؛ پنجره‌هایی که از داخل همان حالت باز می‌شوند
+   * باید بالاتر از آن‌ها باشند وگرنه پشت نقشه پنهان می‌مانند.
+   */
+  elevated?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -224,7 +231,7 @@ export function Modal({
   // وسط صفحه است.
   return createPortal(
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-scrim/30 p-4 sm:p-6"
+      className={`fixed inset-0 flex items-center justify-center overflow-y-auto bg-scrim/30 p-4 sm:p-6 ${elevated ? 'z-[1300]' : 'z-[1000]'}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}

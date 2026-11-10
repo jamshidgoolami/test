@@ -179,19 +179,42 @@ test('device credentials can be imported once without duplicates', async () => {
   });
   assert.equal(device.status, 201, JSON.stringify(device.data));
 
+  // ذخیرهٔ اعتبارنامه هنگام ساخت تجهیز، ردیف خزانه را هم می‌سازد.
+  const synced = await api(server.base, 'GET', `/api/credentials?deviceId=${device.data.id}`);
+  assert.equal(synced.data.total, 1, 'اعتبارنامهٔ تجهیز باید در خزانه ثبت شود');
+  assert.equal(synced.data.items[0].deviceName, 'Import switch');
+  assert.equal(synced.data.items[0].username, 'admin');
+  assert.equal(synced.data.items[0].hasSecret, true);
+  assert.equal(synced.data.items[0].secret, undefined);
+
+  // انتقال یک‌باره برای تجهیزی که از قبل در خزانه هست، ردیف دوم نمی‌سازد.
   const first = await api(server.base, 'POST', '/api/credentials/import-devices', {});
   assert.equal(first.status, 200, JSON.stringify(first.data));
-  assert.ok(first.data.created >= 1);
+  assert.equal(first.data.created, 0, 'ردیف موجود دوباره ساخته نمی‌شود');
 
   const second = await api(server.base, 'POST', '/api/credentials/import-devices', {});
   assert.equal(second.data.created, 0, 'اجرای دوباره نباید دادهٔ تکراری بسازد');
   assert.ok(second.data.skipped >= 1);
 
   const list = await api(server.base, 'GET', `/api/credentials?deviceId=${device.data.id}`);
-  assert.equal(list.data.total, 1);
+  assert.equal(list.data.total, 1, 'برای هر تجهیز فقط یک ردیف خزانه');
   assert.equal(list.data.items[0].deviceName, 'Import switch');
   assert.equal(list.data.items[0].username, 'admin');
   assert.equal(list.data.items[0].secret, undefined);
+
+  // تغییر رمز در تب «دسترسی تجهیز» همان ردیف خزانه را به‌روزرسانی می‌کند.
+  const vaultId = list.data.items[0].id;
+  const changed = await api(server.base, 'PUT', `/api/devices/${device.data.id}`, { access_password: 'fresh-secret-2' });
+  assert.equal(changed.status, 200);
+  const revealed = await api(server.base, 'GET', `/api/credentials/${vaultId}/reveal`);
+  assert.equal(revealed.status, 200);
+  assert.equal(revealed.data.secret, 'fresh-secret-2');
+
+  // پاک‌کردن رمز تجهیز، رمز همان ردیف خزانه را هم خالی می‌کند.
+  await api(server.base, 'PUT', `/api/devices/${device.data.id}`, { clear_access_password: true });
+  const clearedVault = await api(server.base, 'GET', `/api/credentials?deviceId=${device.data.id}`);
+  assert.equal(clearedVault.data.total, 1);
+  assert.equal(clearedVault.data.items[0].hasSecret, false);
 });
 
 test('recheck recalculates scores and deletes remove the record', async () => {

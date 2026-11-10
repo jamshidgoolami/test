@@ -17,6 +17,7 @@ import {
   Flag,
   Hammer,
   HardHat,
+  HelpCircle,
   Layers,
   MapPin,
   Maximize2,
@@ -419,6 +420,8 @@ export default function MapPage() {
   const devicesRef = useRef<MapDevice[]>([]);
   const [ready, setReady] = useState(false);
   const [editing, setEditing] = useState(false);
+  // راهنمای کوتاه حالت جابه‌جایی: متن بلند توضیحات فقط با دکمهٔ آیکون راهنما باز می‌شود.
+  const [moveHelpOpen, setMoveHelpOpen] = useState(false);
   const [pending, setPending] = useState<{ id: number; latitude: number; longitude: number } | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   // دیالوگ خروجی مختصات: گروه تجهیزات و انواع علامت‌های حاضر در فایل را تعیین می‌کند.
@@ -546,6 +549,17 @@ export default function MapPage() {
     const ids = site?.devices.length ? site.devices.map((d) => d.id) : [id];
     await api.positions(ids.map((deviceId) => ({ id: deviceId, latitude, longitude })));
     return site;
+  }, []);
+  /**
+   * پایان حالت جابه‌جایی از کادر شناور پایین نقشه.
+   * انتخاب‌های در جریان (تجهیز در انتظار کلیک و موقعیتِ ذخیره‌نشده) پاک می‌شوند تا
+   * پس از بستن حالت، کادر «موقعیت جدید» روی نقشه نماند.
+   */
+  const stopEditMode = useCallback(() => {
+    setEditing(false);
+    setPlacingDevice(null);
+    setPending(null);
+    setMoveHelpOpen(false);
   }, []);
   const groupNames = useMemo(() => {
     const names = new Set<string>();
@@ -1579,7 +1593,7 @@ export default function MapPage() {
           </select>
 
           <div className="ms-auto flex flex-wrap items-center gap-2">
-            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); }} title="جابه‌جایی تجهیزات، ایستگاه‌ها و علامت‌ها روی نقشه" aria-pressed={editing}>
+            <button type="button" className={`btn-xs ${editing ? 'btn-warn' : 'btn-ghost'}`} onClick={() => { setEditing((v) => !v); setPlacingDevice(null); setPending(null); setArmedType(null); setMoveHelpOpen(false); }} title="جابه‌جایی تجهیزات، ایستگاه‌ها و علامت‌ها روی نقشه" aria-pressed={editing}>
               <Crosshair size={14} />
               {editing ? 'حالت جابه‌جایی فعال' : 'جابه‌جایی موقعیت'}
             </button>
@@ -1636,22 +1650,6 @@ export default function MapPage() {
       {error ? (
         <div className="animate-fade-up">
           <ErrorState message={error} onRetry={refresh} />
-        </div>
-      ) : null}
-
-      {editing ? (
-        <div className="animate-fade-up rounded-card border border-sun-200 bg-sun-50/80 p-3 text-[12px] text-warning">
-          حالت جابه‌جایی فعال است: نشانگر تجهیز، ایستگاه یا علامت را بگیرید و بکشید. برای تجهیز می‌توانید روی نشانگر کلیک کنید و محل جدید را روی نقشه انتخاب کنید، یا آن را از فهرست بکشید و روی نقشه رها کنید. جابه‌جایی هر تجهیز عضو ایستگاه، کل ایستگاه را به همان نقطه می‌برد.
-          {placingDevice ? <span className="ms-2 font-semibold">در انتظار انتخاب محل جدید برای تجهیز #{faDigits(placingDevice)}</span> : null}
-        </div>
-      ) : null}
-
-      {armedType ? (
-        <div className="animate-fade-up rounded-card border border-brand-200 bg-brand-50/80 p-3 text-[12px] text-accent">
-          برای جانمایی علامت «{armedType.typeName}» روی نقشه کلیک کنید.
-          <button type="button" className="btn-ghost btn-xs ms-2" onClick={() => setArmedType(null)}>
-            انصراف
-          </button>
         </div>
       ) : null}
 
@@ -1892,20 +1890,82 @@ export default function MapPage() {
               </div>
             ) : null}
             </div>
-            {pending ? (
-              <div className="absolute inset-x-0 bottom-4 mx-auto flex w-[92%] max-w-lg items-center justify-between gap-3 rounded-soft border border-brand-200 bg-surface/97 p-3 shadow-pop backdrop-blur">
-                <span className="text-[12px] text-ink-600">
-                  موقعیت جدید: <span className="num font-semibold">{pending.latitude}, {pending.longitude}</span>
-                </span>
-                <div className="flex gap-2">
-                  <button type="button" className="btn-ghost btn-xs" onClick={() => setPending(null)}>
-                    انصراف
-                  </button>
-                  <button type="button" className="btn-primary btn-xs" disabled={saving} onClick={savePosition}>
-                    <Save size={13} />
-                    {saving ? 'در حال ذخیره…' : 'ذخیره موقعیت'}
-                  </button>
-                </div>
+            {/* راهنمای شناور پایین نقشه: جانمایی علامت، حالت جابه‌جایی و موقعیت
+                انتخاب‌شده در یک ستون می‌آیند تا روی هم نیفتند. متن بلند راهنما
+                فقط با دکمهٔ آیکون راهنما باز می‌شود. */}
+            {armedType || editing || pending ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-[900] flex flex-col items-center gap-2 px-3" dir="rtl">
+                {armedType ? (
+                  <div className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-pill border border-brand-200 bg-surface/97 py-1.5 pe-2 ps-3 shadow-pop backdrop-blur">
+                    <Crosshair size={14} className="shrink-0 text-accent" />
+                    <span className="text-[12px] text-ink-700">برای جانمایی علامت روی نقشه کلیک کنید.</span>
+                    <button type="button" className="btn-ghost btn-xs shrink-0" onClick={() => setArmedType(null)}>
+                      انصراف
+                    </button>
+                  </div>
+                ) : null}
+
+                {editing ? (
+                  <div className="animate-fade-up pointer-events-auto relative flex max-w-full items-center gap-2 rounded-pill border border-sun-200 bg-surface/97 py-1.5 pe-2 ps-3 shadow-pop backdrop-blur">
+                    <Crosshair size={14} className="shrink-0 text-warning" />
+                    <span className="text-[12px] text-ink-700">
+                      حالت جابه‌جایی فعال است
+                      {placingDevice ? (
+                        <span className="ms-1 font-semibold text-warning">— در انتظار انتخاب محل جدید برای تجهیز #{faDigits(placingDevice)}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      className={`grid h-6 w-6 shrink-0 place-items-center rounded-full transition ${
+                        moveHelpOpen ? 'bg-brand-50 text-accent' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700'
+                      }`}
+                      onClick={() => setMoveHelpOpen((value) => !value)}
+                      aria-label="راهنمای حالت جابه‌جایی"
+                      title="راهنمای حالت جابه‌جایی"
+                      aria-expanded={moveHelpOpen}
+                      aria-pressed={moveHelpOpen}
+                    >
+                      <HelpCircle size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-warn btn-xs shrink-0"
+                      onClick={stopEditMode}
+                      title="پایان حالت جابه‌جایی"
+                    >
+                      <Check size={12} />
+                      پایان
+                    </button>
+                    {moveHelpOpen ? (
+                      <div
+                        className="absolute bottom-full end-0 mb-2 w-[300px] max-w-[calc(100vw-2rem)] rounded-card border border-ink-200 bg-surface p-3 text-[11.5px] leading-5 text-ink-600 shadow-pop"
+                        role="dialog"
+                        aria-label="راهنمای حالت جابه‌جایی"
+                      >
+                        نشانگر تجهیز، ایستگاه یا علامت را بگیرید و بکشید. برای تجهیز می‌توانید روی نشانگر کلیک کنید و
+                        محل جدید را روی نقشه انتخاب کنید، یا آن را از فهرست بکشید و روی نقشه رها کنید. جابه‌جایی هر
+                        تجهیز عضو ایستگاه، کل ایستگاه را به همان نقطه می‌برد.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {pending ? (
+                  <div className="animate-fade-up pointer-events-auto flex w-full max-w-lg items-center justify-between gap-3 rounded-soft border border-brand-200 bg-surface/97 p-3 shadow-pop backdrop-blur">
+                    <span className="text-[12px] text-ink-600">
+                      موقعیت جدید: <span className="num font-semibold">{pending.latitude}, {pending.longitude}</span>
+                    </span>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn-ghost btn-xs" onClick={() => setPending(null)}>
+                        انصراف
+                      </button>
+                      <button type="button" className="btn-primary btn-xs" disabled={saving} onClick={savePosition}>
+                        <Save size={13} />
+                        {saving ? 'در حال ذخیره…' : 'ذخیره موقعیت'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -2477,6 +2537,7 @@ function SiteFormModal({
   return (
     <Modal
       open={open}
+      elevated
       onClose={onClose}
       title="افزودن ایستگاه"
       subtitle="گروه را انتخاب کنید، تجهیزات هم‌مکان را برگزینید و یک نام بگذارید"
@@ -2829,14 +2890,6 @@ function MarkersList({
               </button>
               <a
                 className="btn-ghost btn-xs !px-2"
-                href={downloadUrl('/markers/export', { format: 'xlsx' })}
-                title="خروجی"
-                aria-label="خروجی"
-              >
-                <Download size={13} />
-              </a>
-              <a
-                className="btn-ghost btn-xs !px-2"
                 href={downloadUrl('/markers/template', { format: 'xlsx' })}
                 title="فایل نمونه"
                 aria-label="فایل نمونه"
@@ -2924,6 +2977,7 @@ function MarkerTypeForm({ draft, onClose, onSaved }: { draft: Partial<MarkerType
   return (
     <Modal
       open
+      elevated
       size="sm"
       onClose={onClose}
       title={editing ? `ویرایش نوع — ${draft.name}` : 'نوع علامت جدید'}
@@ -3030,6 +3084,7 @@ function MarkerForm({
   return (
     <Modal
       open
+      elevated
       size="sm"
       onClose={onClose}
       title={editing ? `ویرایش علامت — ${draft.marker!.name}` : 'جانمایی علامت جدید'}
@@ -3407,6 +3462,7 @@ function CoordsExportModal({
   return (
     <Modal
       open
+      elevated
       size="sm"
       onClose={onClose}
       title="خروجی مختصات"
