@@ -22,7 +22,7 @@ import { ROOT, api, cleanupDir, freePort, startServer, useTempDataDir } from '..
 
 /** نسخهٔ طرح فعلی از منبع اصلی خوانده می‌شود تا این آزمون با هر Migration تازه هم‌گام بماند. */
 const CURRENT_SCHEMA_VERSION = Number(
-  fs.readFileSync(path.join(ROOT, 'server', 'db.js'), 'utf8').match(/export const SCHEMA_VERSION = (\d+)/)?.[1]
+  fs.readFileSync(path.join(ROOT, 'server', 'db-constants.js'), 'utf8').match(/export const SCHEMA_VERSION = (\d+)/)?.[1]
 );
 const ALL_MIGRATIONS = Array.from({ length: CURRENT_SCHEMA_VERSION }, (_, i) => i + 1);
 
