@@ -38,12 +38,17 @@ function readRestoreState() {
   }
 }
 
+function writeRestoreStateStrict(patch) {
+  ensureDir(DATA_DIR);
+  // فایل وضعیت باید پیش از تغییر فایل اصلی روی دیسک باشد؛ وگرنه پس از
+  // Crash نمی‌فهمیم بازیابی در چه مرحله‌ای بوده است. برای Journal، خطای نوشتن
+  // باید عملیات را متوقف کند؛ نتیجهٔ گمراه‌کننده پذیرفته نیست.
+  writeJsonDurable(restoreStatePath(), { ...(readRestoreState() || {}), ...patch });
+}
+
 function writeRestoreState(patch) {
   try {
-    ensureDir(DATA_DIR);
-    // فایل وضعیت باید پیش از تغییر فایل اصلی روی دیسک باشد؛ وگرنه پس از
-    // Crash نمی‌فهمیم بازیابی در چه مرحله‌ای بوده است.
-    writeJsonDurable(restoreStatePath(), { ...(readRestoreState() || {}), ...patch });
+    writeRestoreStateStrict(patch);
   } catch (e) {
     logEvent('warn', 'restore_state_write_failed', { message: e?.message });
   }
@@ -61,4 +66,4 @@ function restoreStatus() {
 }
 
 
-export { readRestoreState, writeRestoreState, restoreStatus };
+export { readRestoreState, writeRestoreState, writeRestoreStateStrict, restoreStatus };

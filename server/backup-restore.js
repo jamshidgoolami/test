@@ -26,7 +26,20 @@ import {
   fsyncPath,
   copyFileDurable,
 } from './backup-files.js';
-import { isRestoreRunning, setRestoreRunning, writeRestoreState } from './backup-state.js';
+import {
+  isRestoreRunning,
+  setRestoreRunning,
+  writeRestoreState,
+  writeRestoreStateStrict,
+} from './backup-state.js';
+import {
+  createRestoreJournalDir,
+  stagePreviousFile,
+  installStagedFile,
+  rollbackFileOperations,
+  cleanupRestoreJournal,
+  cleanupRestoreTempFiles,
+} from './backup-journal.js';
 import { verifyBackup } from './backup-validation.js';
 
 function engineLockOwner() {
@@ -61,6 +74,94 @@ function rollbackToSafety(safetyFile) {
   fs.renameSync(rb, DB_PATH);
   fsyncPath(path.dirname(DB_PATH));
   return true;
+}
+
+/** اگر پیش از Restore پایگاه‌داده‌ای نبوده، Rollback یعنی حذف دیتابیس نصب‌شده. */
+function rollbackDatabaseInstall(safetyFile) {
+  if (safetyFile && fs.existsSync(safetyFile)) return rollbackToSafety(safetyFile);
+  removeWalShm();
+  fs.rmSync(DB_PATH, { force: true });
+  fsyncPath(path.dirname(DB_PATH));
+  return true;
+}
+
+function missingAttachmentFiles() {
+  const missing = [];
+  for (const table of ['device_attachments', 'diagram_attachments']) {
+    try {
+      const rows = db.prepare(`SELECT stored_name FROM ${table}`).all();
+      for (const row of rows) {
+        const name = path.basename(String(row.stored_name || ''));
+        if (name && !fs.existsSync(path.join(ATTACHMENTS_DIR, name))) missing.push(`${table}:${name}`);
+      }
+    } catch {
+      /* جدول در نسخه‌های قدیمی/آزمون‌ها ممکن است غایب باشد */
+    }
+  }
+  return missing;
+}
+
+function missingMapFiles() {
+  try {
+    return db
+      .prepare("SELECT file_name FROM map_layers WHERE file_name IS NOT NULL AND file_name <> ''")
+      .all()
+      .map((row) => path.basename(String(row.file_name)))
+      .filter((name) => name && !fs.existsSync(path.join(MBTILES_DIR, name)));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * پس از نصب: bytes/checksum فایل‌ها و ارجاع‌های دیتابیس به Attachment و MBTiles
+ * باید با مجموعهٔ بازیابی‌شده بخوانند. این بررسی پیش از Write وضعیت completed
+ * انجام می‌شود تا Crash/خطای I/O به «بازیابی موفق اما ناسازگار» تبدیل نشود.
+ */
+function verifyRestoredArtifacts({ verification, restoreMbtiles, restoredKey }) {
+  if (restoreMbtiles) {
+    for (const tile of verification.mbtiles) {
+      const dest = path.join(MBTILES_DIR, path.basename(tile.name));
+      if (!fs.existsSync(dest)) {
+        throw new DbError(DB_ERROR_CODES.CORRUPT, `فایل نقشهٔ بازیابی‌شده غایب است: ${tile.name}`, { status: 500 });
+      }
+      if (tile.sha256 && sha256File(dest) !== tile.sha256) {
+        throw new DbError(DB_ERROR_CODES.CORRUPT, `checksum نقشهٔ بازیابی‌شده نامعتبر است: ${tile.name}`, { status: 500 });
+      }
+    }
+  }
+  for (const attachment of verification.attachments) {
+    const dest = path.join(ATTACHMENTS_DIR, path.basename(attachment.name));
+    if (!fs.existsSync(dest)) {
+      throw new DbError(DB_ERROR_CODES.CORRUPT, `پیوست بازیابی‌شده غایب است: ${attachment.name}`, { status: 500 });
+    }
+    if (attachment.sha256 && sha256File(dest) !== attachment.sha256) {
+      throw new DbError(DB_ERROR_CODES.CORRUPT, `checksum پیوست بازیابی‌شده نامعتبر است: ${attachment.name}`, { status: 500 });
+    }
+  }
+  if (restoredKey && verification.credentialsKey?.sha256) {
+    if (sha256File(CREDENTIAL_KEY_FILE) !== verification.credentialsKey.sha256) {
+      throw new DbError(DB_ERROR_CODES.CORRUPT, 'checksum کلید رمزنگاری بازیابی‌شده نامعتبر است.', { status: 500 });
+    }
+  }
+  const missingAttachments = missingAttachmentFiles();
+  if (missingAttachments.length) {
+    throw new DbError(
+      DB_ERROR_CODES.CORRUPT,
+      `دیتابیس بازیابی‌شده به پیوست‌های غایب ارجاع می‌دهد: ${missingAttachments.join(', ')}`,
+      { status: 500 }
+    );
+  }
+  if (restoreMbtiles) {
+    const missingMaps = missingMapFiles();
+    if (missingMaps.length) {
+      throw new DbError(
+        DB_ERROR_CODES.CORRUPT,
+        `دیتابیس بازیابی‌شده به فایل‌های نقشهٔ غایب ارجاع می‌دهد: ${missingMaps.join(', ')}`,
+        { status: 500 }
+      );
+    }
+  }
 }
 
 /**
@@ -116,6 +217,9 @@ function restoreBackup(source, options = {}) {
   const keyStageFile = path.join(DATA_DIR, `.restore-key-${process.pid}`);
   let closed = false;
   let installed = false;
+  let dbInstallStarted = false;
+  let journalDir = null;
+  const fileOperations = [];
   try {
     const incomingFileBytes = [...verification.mbtiles, ...verification.attachments].reduce(
       (sum, file) => sum + Number(file.size || 0),
@@ -129,6 +233,7 @@ function restoreBackup(source, options = {}) {
       'بازیابی'
     );
     onBeforeRestore?.();
+    journalDir = createRestoreJournalDir(DATA_DIR, startedAt);
 
     // ۱) دوام نوشته‌های تأییدشده در فایل اصلی، سپس نسخهٔ ایمنی
     try {
@@ -140,12 +245,16 @@ function restoreBackup(source, options = {}) {
       copyFileDurable(DB_PATH, safetyFile);
       fsyncPath(DATA_DIR);
     }
-    writeRestoreState({
+    writeRestoreStateStrict({
       status: 'in_progress',
       phase: 'safety_ready',
       startedAt,
       source: verification.dbFile,
       safetyFile: fs.existsSync(safetyFile) ? safetyFile : null,
+      journalDir,
+      dbInstallStarted: false,
+      dbInstalled: false,
+      fileOperations: [],
       updatedAt: Date.now(),
     });
 
@@ -216,13 +325,25 @@ function restoreBackup(source, options = {}) {
 
     // ۴) جای‌گذاری اتمیک: ابتدا اتصال بسته و WAL/SHM پاک می‌شود تا WAL قدیمی
     //    هرگز روی فایل جدید بازپخش نشود؛ سپس rename موقت → اصلی.
+    dbInstallStarted = true;
+    writeRestoreStateStrict({
+      status: 'in_progress',
+      phase: 'installing_db',
+      dbInstallStarted: true,
+      updatedAt: Date.now(),
+    });
     db.close();
     closed = true;
     removeWalShm();
-    writeRestoreState({ status: 'in_progress', phase: 'installing', updatedAt: Date.now() });
     fs.renameSync(stageFile, DB_PATH);
     installed = true;
     fsyncPath(DATA_DIR);
+    writeRestoreStateStrict({
+      status: 'in_progress',
+      phase: 'installing_files',
+      dbInstalled: true,
+      updatedAt: Date.now(),
+    });
 
     db.reopen();
     closed = false;
@@ -246,59 +367,52 @@ function restoreBackup(source, options = {}) {
       });
     }
 
+    // ثبت Journal پیش از هر تغییر؛ نسخهٔ قبلی در پوشهٔ Journal durable می‌شود.
+    const installFile = ({ type, target, stagedPath, mode = 0o600 }) => {
+      const operation = stagePreviousFile({
+        journalDir,
+        index: fileOperations.length,
+        type,
+        target,
+      });
+      fileOperations.push(operation);
+      writeRestoreStateStrict({
+        phase: 'installing_files',
+        fileOperations,
+        updatedAt: Date.now(),
+      });
+      installStagedFile(operation, stagedPath, { mode });
+      writeRestoreStateStrict({ fileOperations, updatedAt: Date.now() });
+    };
+
     // ۵) نصب فایل‌های نقشهٔ تأییدشده
     const restoredTiles = [];
-    if (stagedTiles.length) {
-      ensureDir(MBTILES_DIR);
-      for (const tile of stagedTiles) {
-        const dest = path.join(MBTILES_DIR, tile.name);
-        const tmp = `${dest}.restore-tmp-${process.pid}`;
-        fs.copyFileSync(tile.tmp, tmp);
-        fsyncPath(tmp);
-        fs.renameSync(tmp, dest);
-        restoredTiles.push(tile.name);
-      }
-      fsyncPath(MBTILES_DIR);
+    for (const tile of stagedTiles) {
+      installFile({ type: 'mbtiles', target: path.join(MBTILES_DIR, tile.name), stagedPath: tile.tmp });
+      restoredTiles.push(tile.name);
     }
 
     // ۶) نصب پیوست‌ها؛ نام فایل‌ها تولیدی و یکتاست، بنابراین rename اتمیک است.
     const restoredAttachments = [];
-    if (stagedAttachments.length) {
-      ensureDir(ATTACHMENTS_DIR);
-      for (const attachment of stagedAttachments) {
-        const dest = path.join(ATTACHMENTS_DIR, attachment.name);
-        const tmp = `${dest}.restore-tmp-${process.pid}`;
-        fs.copyFileSync(attachment.tmp, tmp);
-        fsyncPath(tmp);
-        fs.renameSync(tmp, dest);
-        try {
-          fs.chmodSync(dest, 0o600);
-        } catch {
-          /* بی‌اثر */
-        }
-        restoredAttachments.push(attachment.name);
-      }
-      fsyncPath(ATTACHMENTS_DIR);
+    for (const attachment of stagedAttachments) {
+      installFile({
+        type: 'attachment',
+        target: path.join(ATTACHMENTS_DIR, attachment.name),
+        stagedPath: attachment.tmp,
+      });
+      restoredAttachments.push(attachment.name);
     }
 
     // ۷) کلید رمزنگاری آخر از همه نصب می‌شود: اگر مراحل قبلی شکست بخورند،
     // پایگاه‌داده به نسخهٔ ایمنی برمی‌گردد و کلید قدیمی دست‌نخورده می‌ماند.
     let restoredKey = false;
     if (stagedKey) {
-      ensureDir(path.dirname(CREDENTIAL_KEY_FILE));
-      const tmp = `${CREDENTIAL_KEY_FILE}.restore-tmp-${process.pid}`;
-      fs.copyFileSync(stagedKey, tmp);
-      fsyncPath(tmp);
-      try {
-        fs.chmodSync(tmp, 0o600);
-      } catch {
-        /* بی‌اثر */
-      }
-      fs.renameSync(tmp, CREDENTIAL_KEY_FILE);
-      fsyncPath(path.dirname(CREDENTIAL_KEY_FILE));
+      installFile({ type: 'key', target: CREDENTIAL_KEY_FILE, stagedPath: stagedKey });
       resetCredentialKeyCache();
       restoredKey = true;
     }
+
+    verifyRestoredArtifacts({ verification, restoreMbtiles, restoredKey });
 
     const summary = {
       restored: true,
@@ -312,7 +426,7 @@ function restoreBackup(source, options = {}) {
       health: { ok: health.ok, mode: health.mode, foreignKeyViolations: health.foreignKeyViolations },
       schemaVersion: Number(db.prepare('PRAGMA user_version').get()?.user_version) || null,
     };
-    writeRestoreState({
+    writeRestoreStateStrict({
       status: 'completed',
       phase: 'done',
       finishedAt: Date.now(),
@@ -323,41 +437,67 @@ function restoreBackup(source, options = {}) {
       credentialsKey: restoredKey ? 'file' : verification.credentialsKey?.source || 'none',
       durationMs: summary.durationMs,
       error: '',
+      requiresRecovery: false,
+      dbInstallStarted: false,
+      dbInstalled: true,
+      fileOperations: [],
     });
+    cleanupRestoreJournal(journalDir, DATA_DIR);
     log('info', `بازیابی از پشتیبان انجام شد: ${path.basename(verification.dbFile)} (${summary.durationMs}ms).`);
     logEvent('info', 'restore_completed', summary);
     onAfterRestore?.(summary);
     return summary;
   } catch (e) {
     const err = logDbError('backup.restore', e);
-    let rolledBack = false;
+    let fileRollback = { ok: true, restored: 0, removed: 0, errors: [] };
+    let dbRolledBack = false;
+    let rollbackError = null;
     try {
-      if (closed) {
+      if (!closed) {
         db.close();
-        closed = false;
+        closed = true;
       }
-      if (installed) {
-        rolledBack = rollbackToSafety(safetyFile);
+      fileRollback = rollbackFileOperations(fileOperations);
+      resetCredentialKeyCache();
+      if (dbInstallStarted) {
+        dbRolledBack = rollbackDatabaseInstall(safetyFile);
       }
       db.reopen();
       closed = false;
     } catch (recoveryError) {
+      rollbackError = recoveryError;
       logEvent('error', 'restore_rollback_failed', { message: recoveryError?.message });
+    }
+    const recoveryComplete = fileRollback.ok && !rollbackError && (!dbInstallStarted || dbRolledBack);
+    if (recoveryComplete) {
+      cleanupRestoreJournal(journalDir, DATA_DIR);
+      cleanupRestoreTempFiles([MBTILES_DIR, ATTACHMENTS_DIR, path.dirname(CREDENTIAL_KEY_FILE)]);
     }
     writeRestoreState({
       status: 'failed',
-      phase: 'failed',
+      phase: recoveryComplete ? 'failed' : 'rollback_failed',
       finishedAt: Date.now(),
       updatedAt: Date.now(),
       error: String(err?.message || e).slice(0, 500),
-      rolledBack,
+      rolledBack: dbRolledBack || fileRollback.restored > 0 || fileRollback.removed > 0,
+      requiresRecovery: !recoveryComplete,
+      dbInstallStarted,
+      dbInstalled: installed,
+      fileRollback,
+      rollbackError: rollbackError ? String(rollbackError.message || rollbackError).slice(0, 500) : null,
       safetyFile: fs.existsSync(safetyFile) ? safetyFile : null,
+      journalDir,
+      fileOperations,
     });
-    log('error', `بازیابی ناموفق بود${rolledBack ? ' و نسخهٔ ایمنی بازگردانده شد' : ''}: ${err.message}`);
+    log(
+      'error',
+      `بازیابی ناموفق بود${dbRolledBack ? ' و دیتابیس و فایل‌ها به وضعیت قبلی برگشتند' : ''}: ${err.message}`
+    );
     onAfterRestore?.(null);
     throw err;
   } finally {
     setRestoreRunning(false);
+    cleanupRestoreTempFiles([MBTILES_DIR, ATTACHMENTS_DIR, path.dirname(CREDENTIAL_KEY_FILE)]);
     for (const file of [stageFile]) {
       try {
         fs.rmSync(file, { force: true });

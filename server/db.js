@@ -12,6 +12,12 @@ import { normalizeCidrList } from './net-policy.js';
 import { config } from './config.js';
 import { DbError, DB_ERROR_CODES, logDbError } from './db-errors.js';
 import { normalizeBindParams, assertSqlIdentifier, assertDiskSpace, freeDiskBytes } from './db-safety.js';
+import {
+  rollbackFileOperations,
+  cleanupRestoreJournal,
+  cleanupRestoreTempFiles,
+  writeRestoreJournal,
+} from './backup-journal.js';
 import { performance } from 'node:perf_hooks';
 import { recordQuery } from './metrics.js';
 
@@ -329,8 +335,15 @@ function recoverInterruptedRestoreBeforeOpen() {
   } catch {
     return null;
   }
-  if (!state || state.status !== 'in_progress') return null;
-  let recovered = false;
+  if (!state) return null;
+  if (state.status === 'completed') {
+    cleanupRestoreJournal(state.journalDir, DATA_DIR);
+    return null;
+  }
+  const needsRecovery = state.status === 'in_progress' || state.requiresRecovery === true;
+  if (!needsRecovery) return null;
+
+  const fileRollback = rollbackFileOperations(state.fileOperations || []);
   const safety = state.safetyFile && fs.existsSync(state.safetyFile) ? state.safetyFile : null;
   const dbExists = (() => {
     try {
@@ -339,8 +352,45 @@ function recoverInterruptedRestoreBeforeOpen() {
       return false;
     }
   })();
+  const dbInstallStarted = state.dbInstallStarted === true || state.dbInstalled === true;
+  let dbRecovered = false;
+  let dbRemoved = false;
+  let dbError = null;
   try {
-    if (!dbExists && safety) {
+    // اگر نصب دیتابیس آغاز شده باشد، حتی اگر rename انجام شده باشد، نسخهٔ قبلی
+    // باید برگردد؛ در غیر این صورت DB جدید با فایل‌های قدیمی ناسازگار می‌ماند.
+    if (dbInstallStarted) {
+      if (safety) {
+        const tmp = `${DB_PATH}.crash-recover-${process.pid}`;
+        fs.copyFileSync(safety, tmp);
+        const fd = fs.openSync(tmp, 'r+');
+        try {
+          fs.fsyncSync(fd);
+        } finally {
+          fs.closeSync(fd);
+        }
+        for (const suffix of ['-wal', '-shm']) {
+          try {
+            fs.unlinkSync(`${DB_PATH}${suffix}`);
+          } catch {
+            /* بی‌اثر */
+          }
+        }
+        fs.renameSync(tmp, DB_PATH);
+        dbRecovered = true;
+      } else {
+        // پیش از Restore دیتابیسی وجود نداشت؛ بازگشت به همان وضعیت یعنی حذف DB.
+        for (const suffix of ['-wal', '-shm']) {
+          try {
+            fs.unlinkSync(`${DB_PATH}${suffix}`);
+          } catch {
+            /* بی‌اثر */
+          }
+        }
+        fs.rmSync(DB_PATH, { force: true });
+        dbRemoved = true;
+      }
+    } else if (!dbExists && safety) {
       const tmp = `${DB_PATH}.crash-recover-${process.pid}`;
       fs.copyFileSync(safety, tmp);
       const fd = fs.openSync(tmp, 'r+');
@@ -349,16 +399,10 @@ function recoverInterruptedRestoreBeforeOpen() {
       } finally {
         fs.closeSync(fd);
       }
-      for (const suffix of ['-wal', '-shm']) {
-        try {
-          fs.unlinkSync(`${DB_PATH}${suffix}`);
-        } catch {
-          /* بی‌اثر */
-        }
-      }
       fs.renameSync(tmp, DB_PATH);
-      recovered = true;
+      dbRecovered = true;
     }
+    cleanupRestoreTempFiles([MBTILES_DIR, path.join(DATA_DIR, 'attachments'), DATA_DIR]);
     // فایل‌های موقت باقی‌مانده هرگز بخشی از پایگاه‌داده نیستند.
     try {
       const dir = path.dirname(DB_PATH);
@@ -371,25 +415,42 @@ function recoverInterruptedRestoreBeforeOpen() {
     } catch {
       /* بی‌اثر */
     }
-    const next = {
-      ...state,
-      status: recovered ? 'recovered_interrupted' : 'interrupted',
-      recoveredAt: Date.now(),
-      updatedAt: Date.now(),
-      note: recovered
-        ? 'فایل اصلی در میانهٔ Restore غایب بود؛ نسخهٔ ایمنی بازگردانده شد.'
-        : 'فایل اصلی موجود و معتبر بود؛ فایل‌های موقت پاک شدند.',
-    };
-    fs.writeFileSync(stateFile, JSON.stringify(next, null, 2));
-    logEvent('warn', recovered ? 'restore_crash_recovered' : 'restore_crash_cleaned', {
-      phase: state.phase,
-      safety: Boolean(safety),
-    });
-    return next;
   } catch (e) {
+    dbError = e;
     logEvent('error', 'restore_crash_recovery_failed', { message: e?.message, phase: state.phase });
-    return null;
   }
+  const complete = fileRollback.ok && !dbError;
+  if (complete) cleanupRestoreJournal(state.journalDir, DATA_DIR);
+  const changed = dbRecovered || dbRemoved || fileRollback.restored > 0 || fileRollback.removed > 0;
+  const next = {
+    ...state,
+    status: complete ? (changed ? 'recovered_interrupted' : 'interrupted') : 'recovery_failed',
+    requiresRecovery: !complete,
+    recoveredAt: complete ? Date.now() : state.recoveredAt,
+    updatedAt: Date.now(),
+    dbRecovered,
+    dbRemoved,
+    fileRollback,
+    rollbackError: dbError ? String(dbError.message || dbError).slice(0, 500) : null,
+    note: complete
+      ? changed
+        ? 'Restore نیمه‌کاره برگردانده شد؛ دیتابیس و فایل‌ها به وضعیت پیش از عملیات بازگشتند.'
+        : 'هیچ تغییری نصب نشده بود؛ فایل‌های موقت پاک شدند.'
+      : 'بازیابی خودکار کامل نشد؛ Journal برای تلاش دوباره حفظ می‌شود.',
+  };
+  try {
+    writeRestoreJournal(stateFile, next);
+  } catch (e) {
+    logEvent('error', 'restore_crash_recovery_state_write_failed', { message: e?.message });
+  }
+  logEvent(complete ? 'warn' : 'error', complete ? 'restore_crash_recovered' : 'restore_crash_recovery_failed', {
+    phase: state.phase,
+    safety: Boolean(safety),
+    files: { restored: fileRollback.restored, removed: fileRollback.removed, ok: fileRollback.ok },
+    dbRecovered,
+    dbRemoved,
+  });
+  return next;
 }
 
 recoverInterruptedRestoreBeforeOpen();
