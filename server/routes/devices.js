@@ -27,48 +27,10 @@ import { probeTargetGuard, allowedProbeDeviceIds } from '../probe-guard.js';
 import { probeQueue, createProbeBatch, recordProbeBatchResult, getProbeBatch } from '../probe-queue.js';
 import { cleanupDeviceAttachmentFiles } from '../attachments.js';
 import { jalaliLabelFromMs } from '../jalali.js';
-import { syncDeviceCredential } from '../credentials.js';
+import { importErrorStatus, syncVaultCredential } from '../services/device-access.js';
 import { RANGE_BUCKETS, RANGE_MS, seriesFor, seriesWindowFor } from '../services/device-series.js';
 
 const router = express.Router();
-
-/**
- * نام کاربری/رمزی که در تب «دسترسی تجهیز» ذخیره می‌شود در «خزانهٔ رمز عبور»
- * هم نگه داشته می‌شود. این همگام‌سازی پس از ذخیرهٔ موفق تجهیز انجام می‌شود و
- * خطای آن نباید ذخیرهٔ تجهیز را شکست بدهد.
- */
-function syncVaultCredential(deviceId, body, actor) {
-  if (!body || typeof body !== 'object') return;
-  const hasUsername = Object.prototype.hasOwnProperty.call(body, 'access_username');
-  const hasPassword = typeof body.access_password === 'string' && body.access_password !== '';
-  const cleared =
-    body.clear_access_password === true || body.clear_access_password === 1 || body.clear_access_password === '1';
-  if (!hasUsername && !hasPassword && !cleared) return;
-  try {
-    syncDeviceCredential(
-      deviceId,
-      {
-        username: hasUsername ? body.access_username : undefined,
-        password: hasPassword ? body.access_password : undefined,
-        cleared,
-      },
-      String(actor ?? '')
-    );
-  } catch (error) {
-    console.error('همگام‌سازی رمز تجهیز با خزانهٔ رمز عبور ناموفق بود:', error);
-  }
-}
-
-/**
- * خطای پردازش فایل ورودی خطای کاربر است، نه خطای داخلی سرور.
- * JobError برای شکست Worker پیش‌فرض 500 دارد؛ اگر همان را مستقیم برگردانیم،
- * یک فایل Excel خراب پاسخ ۵۰۰ می‌گیرد و در پایش به‌عنوان خرابی سرویس ثبت
- * می‌شود. فقط کدهای زیرساختی (صف پر/مهلت/حجم) حفظ می‌شوند و بقیه ۴۰۰ هستند.
- */
-function importErrorStatus(error) {
-  const status = Number(error?.status);
-  return [413, 415, 429, 503, 504, 507].includes(status) ? status : 400;
-}
 
 // خواندن با devices:read و هر تغییر با devices:write (Viewer فقط می‌خواند).
 router.use(routePermission({ read: 'devices:read', write: 'devices:write' }));

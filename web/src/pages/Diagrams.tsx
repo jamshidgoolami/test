@@ -14,22 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { applyEdgeChanges, applyNodeChanges, ReactFlowProvider } from '@xyflow/react';
 import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
-import {
-  AlertCircle,
-  ArrowRight,
-  CheckCircle2,
-  ChevronLeft,
-  Eye,
-  FileText,
-  Image as ImageIcon,
-  Info,
-  Pencil,
-  PanelLeftOpen,
-  RefreshCw,
-  Save,
-  Workflow,
-  X,
-} from 'lucide-react';
+import { AlertCircle, ArrowRight, ChevronLeft, X } from 'lucide-react';
 import { api, ApiError, isAbortError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApp, useAsync, useToast } from '../lib/store';
@@ -66,7 +51,7 @@ import type {
   DiagramShape,
   DiagramSummary,
 } from '../lib/types';
-import { EmptyState, Field, Modal, PageLoader } from '../components/ui';
+import { EmptyState, PageLoader } from '../components/ui';
 import { useLivePing } from '../components/LivePing';
 import DiagramCanvas from '../features/diagrams/DiagramCanvas';
 import type { DiagramCanvasHandle, DiagramExportFormat } from '../features/diagrams/DiagramCanvas';
@@ -78,47 +63,10 @@ import DiagramTree from '../features/diagrams/DiagramTree';
 import DiagramOverview from '../features/diagrams/DiagramOverview';
 import { useCanvasHistory } from '../features/diagrams/useCanvasHistory';
 
-type Mode = 'view' | 'edit';
-type PanelTab = 'tree' | 'devices' | 'inspector';
-
-function readPanelOpen(): boolean {
-  try {
-    return localStorage.getItem('nw.diagrams.panel') !== 'closed';
-  } catch {
-    return true;
-  }
-}
-
-function readFlag(key: string, fallback: boolean): boolean {
-  try {
-    const value = localStorage.getItem(key);
-    return value == null ? fallback : value === 'on';
-  } catch {
-    return fallback;
-  }
-}
-
-function writeFlag(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? 'on' : 'off');
-  } catch {
-    /* بی‌اثر */
-  }
-}
-
-/** فوکوس داخل فیلدهای متنی نباید میان‌برهای بوم را بگیرد */
-function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
-}
-
-interface EditorDialog {
-  mode: 'create' | 'edit';
-  parentId?: number | null;
-  diagram?: DiagramSummary;
-}
+import { useDiagramPreferences, isTypingTarget } from '../features/diagrams/editor/preferences';
+import type { EditorDialog, Mode, PanelTab } from '../features/diagrams/editor/types';
+import { DiagramPageHeader } from '../features/diagrams/editor/DiagramPageHeader';
+import { DiagramEditorDialog } from '../features/diagrams/editor/DiagramEditorDialog';
 
 export default function Diagrams() {
   const params = useParams();
@@ -144,8 +92,9 @@ export default function Diagrams() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<Mode>('view');
-  const [panelOpen, setPanelOpen] = useState(readPanelOpen);
   const [panelTab, setPanelTab] = useState<PanelTab>('tree');
+  const { panelOpen, setPanelOpen, snapToGrid, setSnapToGrid, titleBlock, setTitleBlock, autoSave, setAutoSave } =
+    useDiagramPreferences();
   const [tool, setTool] = useState<CanvasTool>('select');
   const [pending, setPending] = useState<PendingTool>(null);
   // مبدأ اتصال دوکلیکی: تجهیز اول انتخاب می‌شود و تجهیز دوم خط را می‌سازد.
@@ -156,9 +105,6 @@ export default function Diagrams() {
   const [formDescription, setFormDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState<DiagramExportFormat | null>(null);
-  const [snapToGrid, setSnapToGrid] = useState(() => readFlag('nw.diagrams.snap', false));
-  const [titleBlock, setTitleBlock] = useState(() => readFlag('nw.diagrams.titleblock', true));
-  const [autoSave, setAutoSave] = useState(() => readFlag('nw.diagrams.autosave', true));
   const [syncing, setSyncing] = useState(false);
   // هنگام کشیدن، ذخیرهٔ خودکار موقتاً متوقف می‌شود تا وسط حرکت اجرا نشود.
   const [dragging, setDragging] = useState(false);
@@ -198,10 +144,12 @@ export default function Diagrams() {
 
   /** تغییر قابل‌واگرد؛ در صورت تغییر واقعی، کثیف هم می‌شود */
   const applyCanvas = useCallback(
-    (updater: (prev: { nodes: DiagramFlowNode[]; edges: DiagramFlowEdge[] }) => {
-      nodes: DiagramFlowNode[];
-      edges: DiagramFlowEdge[];
-    }) => {
+    (
+      updater: (prev: { nodes: DiagramFlowNode[]; edges: DiagramFlowEdge[] }) => {
+        nodes: DiagramFlowNode[];
+        edges: DiagramFlowEdge[];
+      }
+    ) => {
       const changed = canvas.apply(updater);
       if (changed) markDirty();
       return changed;
@@ -227,11 +175,9 @@ export default function Diagrams() {
   }, [loadList]);
 
   // تجهیزات مانیتورینگ برای وضعیت زندهٔ گره‌ها، تب «تجهیزات» و همگام‌سازی
-  const devicesAsync = useAsync(
-    (signal) => api.devices({ pageSize: 500, sort: 'name', order: 'asc' }, signal),
-    [],
-    { interval: 15000 }
-  );
+  const devicesAsync = useAsync((signal) => api.devices({ pageSize: 500, sort: 'name', order: 'asc' }, signal), [], {
+    interval: 15000,
+  });
   const devicesById = useMemo(() => {
     const map = new Map<number, Device>();
     for (const device of devicesAsync.data?.items ?? []) map.set(device.id, device);
@@ -298,30 +244,10 @@ export default function Diagrams() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, reloadNonce]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('nw.diagrams.panel', panelOpen ? 'open' : 'closed');
-    } catch {
-      /* بی‌اثر */
-    }
-  }, [panelOpen]);
-
-  useEffect(() => {
-    writeFlag('nw.diagrams.snap', snapToGrid);
-  }, [snapToGrid]);
-
   // با خروج از ابزار اتصال، مبدأ انتخاب‌شده پاک می‌شود.
   useEffect(() => {
     if (tool !== 'connect' || !editing) setLinkSource(null);
   }, [tool, editing]);
-
-  useEffect(() => {
-    writeFlag('nw.diagrams.titleblock', titleBlock);
-  }, [titleBlock]);
-
-  useEffect(() => {
-    writeFlag('nw.diagrams.autosave', autoSave);
-  }, [autoSave]);
 
   useEffect(
     () => () => {
@@ -540,8 +466,7 @@ export default function Diagrams() {
         .snapshot()
         .edges.some(
           (edge) =>
-            (edge.source === source && edge.target === nodeId) ||
-            (edge.source === nodeId && edge.target === source)
+            (edge.source === source && edge.target === nodeId) || (edge.source === nodeId && edge.target === source)
         );
       if (exists) {
         push('این دو جزء از قبل به هم متصل هستند.', 'info');
@@ -645,7 +570,7 @@ export default function Diagrams() {
     (payload: DiagramDeviceDragPayload, position: { x: number; y: number }) => {
       if (!editing) return;
       const created = createDeviceNode(payload.deviceKey, position);
-      const device = payload.deviceId ? devicesById.get(payload.deviceId) ?? null : null;
+      const device = payload.deviceId ? (devicesById.get(payload.deviceId) ?? null) : null;
       const node: DiagramFlowNode = {
         ...created,
         data: {
@@ -723,8 +648,18 @@ export default function Diagrams() {
   const hasSelection = selectedNodes.length > 0 || selectedEdges.length > 0;
 
   const deleteSelection = useCallback(() => {
-    const nodeIds = new Set(canvas.snapshot().nodes.filter((node) => node.selected).map((node) => node.id));
-    const edgeIds = new Set(canvas.snapshot().edges.filter((edge) => edge.selected).map((edge) => edge.id));
+    const nodeIds = new Set(
+      canvas
+        .snapshot()
+        .nodes.filter((node) => node.selected)
+        .map((node) => node.id)
+    );
+    const edgeIds = new Set(
+      canvas
+        .snapshot()
+        .edges.filter((edge) => edge.selected)
+        .map((edge) => edge.id)
+    );
     if (!nodeIds.size && !edgeIds.size) return;
     applyCanvas((prev) => ({
       nodes: prev.nodes.filter((node) => !nodeIds.has(node.id)),
@@ -1164,7 +1099,11 @@ export default function Diagrams() {
     setBusy(true);
     try {
       if (dialog.mode === 'create') {
-        const created = await api.createDiagram({ name, description: formDescription, parentId: dialog.parentId ?? null });
+        const created = await api.createDiagram({
+          name,
+          description: formDescription,
+          parentId: dialog.parentId ?? null,
+        });
         setDialog(null);
         await loadList();
         navigate(`/diagrams/${created.id}`);
@@ -1173,14 +1112,18 @@ export default function Diagrams() {
         const updated = await api.updateDiagram(dialog.diagram.id, { name, description: formDescription });
         setDialog(null);
         await loadList();
-        if (detail?.id === updated.id) setDetail((prev) => (prev ? { ...prev, name: updated.name, description: updated.description } : prev));
+        if (detail?.id === updated.id)
+          setDetail((prev) => (prev ? { ...prev, name: updated.name, description: updated.description } : prev));
         // با تغییر نام، سرور برچسب پیوندهای این دیاگرام را در بوم‌های دیگر
         // هم عوض می‌کند و نسخهٔ آن‌ها را بالا می‌برد. اگر بوم باز یکی از
         // همان‌هاست، نسخهٔ تازه بارگذاری می‌شود تا برچسب تازه دیده شود.
         const affected = (updated as typeof updated & { relabeledDiagrams?: number[] }).relabeledDiagrams ?? [];
         if (detail?.id && affected.includes(detail.id)) {
           if (dirty) {
-            push('نام یک دیاگرام مقصد عوض شد و برچسب پیوندهایش در این بوم به‌روز شده است؛ برای دیدن آن، بوم را بازخوانی کنید.', 'info');
+            push(
+              'نام یک دیاگرام مقصد عوض شد و برچسب پیوندهایش در این بوم به‌روز شده است؛ برای دیدن آن، بوم را بازخوانی کنید.',
+              'info'
+            );
           } else {
             setReloadNonce((value) => value + 1);
           }
@@ -1255,7 +1198,7 @@ export default function Diagrams() {
 
   const selectedDevice = useMemo(() => {
     const deviceId = selectedNode?.data.deviceId ? Number(selectedNode.data.deviceId) : null;
-    return deviceId ? devicesById.get(deviceId) ?? null : null;
+    return deviceId ? (devicesById.get(deviceId) ?? null) : null;
   }, [devicesById, selectedNode]);
 
   // مسیر سلسله‌مراتبی دیاگرام جاری؛ برخلاف trail که مسیر پیوندهاست، این مسیر
@@ -1269,7 +1212,7 @@ export default function Diagrams() {
     while (cursor && !seen.has(cursor.id)) {
       seen.add(cursor.id);
       chain.unshift(cursor);
-      cursor = cursor.parentId ? byId.get(cursor.parentId) ?? null : null;
+      cursor = cursor.parentId ? (byId.get(cursor.parentId) ?? null) : null;
     }
     return chain;
   }, [detail, list]);
@@ -1288,129 +1231,31 @@ export default function Diagrams() {
         }}
       />
 
-      {/* نوار بالای صفحه: نام، حالت، ذخیره و پنل */}
-      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-        {/* بستن پنل روی خود پنل است؛ این دکمه فقط پس از بستن پنل ظاهر می‌شود. */}
-        {!panelOpen ? (
-          <button
-            type="button"
-            className="btn-ghost btn-xs"
-            onClick={() => setPanelOpen(true)}
-            title="باز کردن پنل کناری"
-            aria-label="باز کردن پنل کناری"
-            aria-expanded={false}
-          >
-            <PanelLeftOpen size={15} />
-          </button>
-        ) : null}
-
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-50 text-accent">
-          <Workflow size={15} />
-        </span>
-        <div className="min-w-0">
-          <h2 className="truncate text-[13.5px] font-semibold text-ink-800">{detail?.name ?? 'دیاگرام شبکه'}</h2>
-          <p className="text-[10px] text-ink-400">
-            {detail ? `${faDigits(nodes.length)} جزء · ${faDigits(edges.length)} ارتباط` : 'دیاگرام مستقل با بوم اختصاصی'}
-            {dirty ? ' · تغییرات ذخیره‌نشده' : ''}
-            {!dirty && detail && editing ? ' · ذخیره‌شده' : ''}
-          </p>
-        </div>
-
-        <div className="ms-auto flex items-center gap-1">
-          {canWrite ? (
-            <div className="flex items-center rounded-pill border border-ink-200 bg-surface/80 p-0.5" role="group" aria-label="حالت نمایش">
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[11px] font-medium transition ${
-                  mode === 'view' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
-                }`}
-                onClick={() => setMode('view')}
-                aria-pressed={mode === 'view'}
-              >
-                <Eye size={12} />
-                نمایش
-              </button>
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[11px] font-medium transition ${
-                  mode === 'edit' ? 'bg-surface text-accent shadow-soft' : 'text-ink-500'
-                }`}
-                onClick={() => setMode('edit')}
-                aria-pressed={mode === 'edit'}
-              >
-                <Pencil size={12} />
-                ویرایش
-              </button>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className="btn-ghost btn-xs"
-            onClick={() => {
-              setOverviewOpen(true);
-              loadGraph();
-            }}
-            title="نمایش نقشهٔ ارتباط بین همهٔ دیاگرام‌ها"
-          >
-            <Workflow size={14} />
-            <span className="hidden lg:inline">نقشهٔ ارتباط</span>
-          </button>
-          <button
-            type="button"
-            className={`btn-ghost btn-xs ${titleBlock ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
-            onClick={() => setTitleBlock((value) => !value)}
-            aria-pressed={titleBlock}
-            title="درج کادر عنوان و متادیتا در تصویر و PDF"
-          >
-            <Info size={14} />
-            <span className="hidden lg:inline">کادر عنوان</span>
-          </button>
-          <button
-            type="button"
-            className="btn-ghost btn-xs"
-            onClick={() => void exportDiagram('png')}
-            disabled={!detail || !nodes.length || exporting !== null}
-            title="دانلود تصویر PNG از دیاگرام"
-            aria-label="خروجی تصویر"
-          >
-            <ImageIcon size={14} />
-            <span className="hidden md:inline">{exporting === 'png' ? 'در حال ساخت…' : 'تصویر'}</span>
-          </button>
-          <button
-            type="button"
-            className="btn-ghost btn-xs"
-            onClick={() => void exportDiagram('pdf')}
-            disabled={!detail || !nodes.length || exporting !== null}
-            title="دانلود خروجی PDF از دیاگرام"
-            aria-label="خروجی PDF"
-          >
-            <FileText size={14} />
-            <span className="hidden md:inline">{exporting === 'pdf' ? 'در حال ساخت…' : 'PDF'}</span>
-          </button>
-          <button type="button" className="btn-ghost btn-xs" onClick={reload} disabled={!currentId} title="بازخوانی دیاگرام">
-            <RefreshCw size={14} />
-          </button>
-          {editing ? (
-            <>
-              <button
-                type="button"
-                className={`btn-ghost btn-xs ${autoSave ? '!text-success' : ''}`}
-                onClick={() => setAutoSave((value) => !value)}
-                aria-pressed={autoSave}
-                title={autoSave ? 'ذخیرهٔ خودکار روشن است' : 'ذخیرهٔ خودکار خاموش است'}
-              >
-                <CheckCircle2 size={14} />
-                <span className="hidden lg:inline">{autoSave ? 'ذخیرهٔ خودکار' : 'ذخیرهٔ دستی'}</span>
-              </button>
-              <button type="button" className="btn-primary btn-xs" onClick={() => void save()} disabled={saving || !dirty}>
-                <Save size={14} />
-                {saving ? 'در حال ذخیره…' : 'ذخیره'}
-              </button>
-            </>
-          ) : null}
-        </div>
-      </div>
+      <DiagramPageHeader
+        detail={detail}
+        nodeCount={nodes.length}
+        edgeCount={edges.length}
+        dirty={dirty}
+        editing={editing}
+        mode={mode}
+        canWrite={canWrite}
+        panelOpen={panelOpen}
+        titleBlock={titleBlock}
+        exporting={exporting}
+        autoSave={autoSave}
+        saving={saving}
+        onOpenPanel={() => setPanelOpen(true)}
+        onMode={setMode}
+        onOverview={() => {
+          setOverviewOpen(true);
+          loadGraph();
+        }}
+        onToggleTitleBlock={() => setTitleBlock((value) => !value)}
+        onExport={(format) => void exportDiagram(format)}
+        onReload={reload}
+        onToggleAutoSave={() => setAutoSave((value) => !value)}
+        onSave={() => void save()}
+      />
 
       <div className="diagram-workspace relative flex gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -1522,7 +1367,12 @@ export default function Diagrams() {
               onPickImage={() => pickImage()}
               diagrams={list.filter((item) => item.id !== currentId)}
               onPickDiagram={(target) => {
-                setPending({ kind: 'diagram', diagramId: target.id, label: target.name, description: target.description });
+                setPending({
+                  kind: 'diagram',
+                  diagramId: target.id,
+                  label: target.name,
+                  description: target.description,
+                });
                 setTool('select');
               }}
               onConnectionKind={changeConnectionKind}
@@ -1751,50 +1601,16 @@ export default function Diagrams() {
         </div>
       ) : null}
 
-      <Modal
-        open={!!dialog}
+      <DiagramEditorDialog
+        dialog={dialog}
+        name={formName}
+        description={formDescription}
+        busy={busy}
         onClose={() => setDialog(null)}
-        title={dialog?.mode === 'create' ? 'دیاگرام جدید' : 'ویرایش اطلاعات دیاگرام'}
-        subtitle={
-          dialog?.mode === 'create'
-            ? dialog.parentId
-              ? 'این دیاگرام به‌عنوان زیرمجموعهٔ دیاگرام فعلی ساخته می‌شود و بوم مستقل دارد.'
-              : 'یک دیاگرام ریشه با بوم خالی ساخته می‌شود.'
-            : 'نام و توضیح دیاگرام را تغییر دهید.'
-        }
-        size="sm"
-        footer={
-          <>
-            <button type="button" className="btn-ghost btn-xs" onClick={() => setDialog(null)} disabled={busy}>
-              انصراف
-            </button>
-            <button type="button" className="btn-primary btn-xs" onClick={() => void submitDialog()} disabled={busy}>
-              {busy ? 'در حال ذخیره…' : dialog?.mode === 'create' ? 'ساخت دیاگرام' : 'ذخیره'}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <Field label="نام دیاگرام" required>
-            <input
-              className="field"
-              value={formName}
-              onChange={(e) => setFormName(e.target.value)}
-              placeholder="مثلاً شبکهٔ شهر تهران"
-              autoFocus
-              maxLength={120}
-            />
-          </Field>
-          <Field label="توضیحات" hint="اختیاری — برای یادآوری محدوده و هدف این دیاگرام">
-            <textarea
-              className="field min-h-20 resize-y"
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
-              maxLength={2000}
-            />
-          </Field>
-        </div>
-      </Modal>
+        onNameChange={setFormName}
+        onDescriptionChange={setFormDescription}
+        onSubmit={() => void submitDialog()}
+      />
     </div>
   );
 }

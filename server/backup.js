@@ -17,7 +17,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import {
   db,
   DB_PATH,
@@ -32,6 +31,7 @@ import {
   SCHEMA_VERSION,
 } from './db.js';
 import { logEvent } from './logger.mjs';
+import { inspectSqliteFile, tableCounts } from './backup-integrity.js';
 import { config } from './config.js';
 import { DbError, DB_ERROR_CODES, logDbError } from './db-errors.js';
 import { freeDiskBytes, fileSizeBytes } from './db-safety.js';
@@ -62,7 +62,6 @@ const RESTORE_STATE_FILE = '.restore-state.json';
 // باشد، اما با دادهٔ عادی اشتباه گرفته نشود.
 const SECRETS_DIR = 'secrets';
 const CREDENTIAL_KEY_BACKUP = 'device-credentials.key';
-const REQUIRED_TABLES = ['settings', 'devices', 'samples', 'outages', 'daily_stats', 'alerts'];
 
 let backupInProgress = false;
 let restoreInProgress = false;
@@ -191,78 +190,6 @@ function readManifest(dir) {
     return null;
   }
 }
-
-function tableCounts(file) {
-  const conn = new DatabaseSync(file, { readOnly: true });
-  try {
-    const count = (table) => {
-      try {
-        return Number(conn.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get().c);
-      } catch {
-        return null;
-      }
-    };
-    const deviceAttachments = count('device_attachments');
-    const diagramAttachments = count('diagram_attachments');
-    return {
-      devices: count('devices'),
-      samples: count('samples'),
-      outages: count('outages'),
-      openOutages: (() => {
-        try {
-          return Number(conn.prepare('SELECT COUNT(*) AS c FROM outages WHERE open = 1').get().c);
-        } catch {
-          return null;
-        }
-      })(),
-      alerts: count('alerts'),
-      users: count('users'),
-      credentials: count('credentials'),
-      attachments:
-        deviceAttachments == null && diagramAttachments == null
-          ? null
-          : Number(deviceAttachments || 0) + Number(diagramAttachments || 0),
-    };
-  } finally {
-    conn.close();
-  }
-}
-
-/** بررسی یک فایل SQLite با integrity_check و foreign_key_check */
-function inspectSqliteFile(file) {
-  const info = { ok: false, errors: [], pageCount: null, userVersion: null, journalMode: null };
-  let conn = null;
-  try {
-    conn = new DatabaseSync(file, { readOnly: true });
-    const integrity = conn.prepare('PRAGMA integrity_check').all();
-    const messages = integrity.map((r) => String(Object.values(r)[0] ?? ''));
-    const bad = messages.filter((m) => m.toLowerCase() !== 'ok');
-    if (bad.length) info.errors.push(...bad.slice(0, 20));
-    const fk = conn.prepare('PRAGMA foreign_key_check').all();
-    if (fk.length) info.errors.push(`نقض کلید خارجی: ${fk.length} ردیف`);
-    const present = new Set(conn.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((r) => r.name));
-    const missing = REQUIRED_TABLES.filter((t) => !present.has(t));
-    if (missing.length) info.errors.push(`جدول‌های غایب: ${missing.join(', ')}`);
-    info.pageCount = conn.prepare('PRAGMA page_count').get()?.page_count ?? null;
-    info.userVersion = conn.prepare('PRAGMA user_version').get()?.user_version ?? null;
-    info.journalMode = conn.prepare('PRAGMA journal_mode').get()?.journal_mode ?? null;
-    info.ok = info.errors.length === 0;
-  } catch (e) {
-    info.errors.push(e.message);
-    info.ok = false;
-  } finally {
-    try {
-      conn?.close();
-    } catch {
-      /* بی‌اثر */
-    }
-  }
-  return info;
-}
-
-/* ------------------------------------------------------------------ */
-/* ایجاد پشتیبان                                                       */
-/* ------------------------------------------------------------------ */
 
 function mbtilesFiles() {
   try {

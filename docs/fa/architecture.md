@@ -13,6 +13,7 @@ web/src/
     devices/      کارت/جدول/گروه‌ها و مدل ستون‌های جدول
     settings/     تب‌های مستقل تنظیمات
     diagrams/     بوم، بازرس، درخت و نمای کلی (layout/card/edge)
+      editor/     typeها، ترجیح‌های محلی، هدر صفحه و دیالوگ ساخت/ویرایش
   components/     UI مشترک و بدون آگاهی از دامنه
   lib/            API، store، قالب‌بندی، انواع سراسری و ابزارهای خالص
 ```
@@ -34,9 +35,14 @@ server/
   routes/           قرارداد HTTP و اعتبارسنجی ورودی
   routes/index.js   ثبت متمرکز و ترتیب Routerها
   services/         منطق دامنه‌ای مستقل از Express
+    device-series.js    پنجره/باکت‌بندی سری زمانی
+    device-access.js    همگام‌سازی خزانهٔ رمز و نگاشت خطای ورودی
   store.js          دسترسی تجهیزات و پرس‌وجوهای مشترک
   db.js             اتصال، Migration و ابزارهای پایگاه‌داده
   engine.js         حلقهٔ پایش و وضعیت موتور
+  engine-simulation.js  شبیه‌ساز مستقل بررسی شبکه
+  backup.js         ساخت/بازیابی پشتیبان
+  backup-integrity.js   بازرسی فقط‌خواندنی فایل SQLite
 ```
 
 قواعد:
