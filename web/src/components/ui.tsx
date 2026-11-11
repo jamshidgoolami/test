@@ -489,7 +489,6 @@ export function Pagination({
   page,
   pages,
   total,
-  pageSize,
   onPage,
 }: {
   page: number;

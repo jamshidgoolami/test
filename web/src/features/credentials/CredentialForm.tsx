@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Eye, EyeOff, KeyRound, Lock, Save, Search, Server, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useSubmitGuard, useToast } from '../../lib/store';

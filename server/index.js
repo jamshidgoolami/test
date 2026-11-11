@@ -56,19 +56,8 @@ import { validateRequestUrl, validateJsonBody } from './validation.js';
 import { cleanupStaleUploads } from './upload.js';
 import { sweepAttachmentOrphans } from './attachments.js';
 import { sweepOrphanFiles as sweepMbtilesOrphans } from './mbtiles.js';
-import devicesRouter from './routes/devices.js';
-import attachmentsRouter from './routes/attachments.js';
-import templatesRouter from './routes/templates.js';
-import dashboardRouter from './routes/dashboard.js';
-import reportsRouter from './routes/reports.js';
-import opsRouter from './routes/ops.js';
-import inventoryRouter from './routes/inventory.js';
-import markersRouter from './routes/markers.js';
-import diagramsRouter, { pruneBrokenDiagramLinks } from './routes/diagrams.js';
-import credentialsRouter from './routes/credentials.js';
-import auditRouter from './routes/audit.js';
-import systemRouter from './routes/system.js';
-import docsRouter from './routes/docs.js';
+import { mountApiRoutes } from './routes/index.js';
+import { pruneBrokenDiagramLinks } from './routes/diagrams.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -658,21 +647,7 @@ app.get('/api/status', (_req, res) => {
   return res.setHeader('Cache-Control', 'no-store').json(body);
 });
 
-// پیوست‌ها پیش از Router تجهیزات سوار می‌شوند تا مسیرهای `/:id/attachments`
-// بدون تکیه بر ترتیب تطبیق مسیرها همیشه در دسترس باشند.
-app.use('/api/devices', attachmentsRouter);
-app.use('/api/devices', devicesRouter);
-app.use('/api/templates', templatesRouter);
-app.use('/api/dashboard', dashboardRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api', opsRouter);
-app.use('/api', inventoryRouter);
-app.use('/api', markersRouter);
-app.use('/api/diagrams', diagramsRouter);
-app.use('/api/credentials', credentialsRouter);
-app.use('/api/audit', auditRouter);
-app.use('/api/system', systemRouter);
-app.use('/api/docs', docsRouter);
+mountApiRoutes(app);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'مسیر یافت نشد' }));
 

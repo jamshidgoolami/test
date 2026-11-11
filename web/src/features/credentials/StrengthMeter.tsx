@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { STRENGTH_META, strengthMeta } from '../../lib/credential-rules';
 import { faDigits } from '../../lib/format';

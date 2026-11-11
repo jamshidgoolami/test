@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CloudOff, RefreshCw, Radio, TriangleAlert } from 'lucide-react';
 import { useLiveState } from '../lib/store';
 import { faDigits, fmtRelative } from '../lib/format';

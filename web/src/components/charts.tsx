@@ -704,7 +704,6 @@ export function TrendLineChart({
   series,
   yDomain,
   suffix,
-  tzOffset = 210,
 }: {
   points: Record<string, number | string | null>[];
   height?: number;
@@ -1026,7 +1025,6 @@ export function DailyCalendarHeatmap({
   metric,
   threshold,
   tzOffset,
-  calendar,
   height = 240,
 }: {
   days: DailyPoint[];

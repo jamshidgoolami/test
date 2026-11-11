@@ -10,7 +10,7 @@
  * باشند؛ کشیدن و تغییر اندازه یک گام می‌سازند. ذخیرهٔ خودکار با تأخیر کوتاه
  * انجام می‌شود و ذخیرهٔ دستی (Ctrl+S) همیشه در دسترس است.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { applyEdgeChanges, applyNodeChanges, ReactFlowProvider } from '@xyflow/react';
 import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
@@ -237,8 +237,6 @@ export default function Diagrams() {
     for (const device of devicesAsync.data?.items ?? []) map.set(device.id, device);
     return map;
   }, [devicesAsync.data]);
-  /** فهرست مرتب تجهیزات برای نوار باریک افزودن تجهیز */
-  const deviceList = useMemo(() => Array.from(devicesById.values()), [devicesById]);
 
   // انتخاب خودکار نخستین دیاگرام وقتی آدرس شناسه ندارد
   useEffect(() => {

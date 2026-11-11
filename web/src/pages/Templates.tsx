@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Edit3, LayoutTemplate, Plus, RefreshCw, Search, Server, Trash2, Wand2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAsync, useApp, useToast } from '../lib/store';

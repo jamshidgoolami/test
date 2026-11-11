@@ -1,0 +1,8 @@
+node_modules
+web/dist
+data
+coverage
+test-results
+playwright-report
+*.min.js
+*.min.css

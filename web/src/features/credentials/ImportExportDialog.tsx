@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Download, FileSpreadsheet, ShieldAlert, Upload, X } from 'lucide-react';
 import { Badge, Modal, Spinner, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';

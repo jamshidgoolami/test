@@ -3,7 +3,7 @@
  * شده‌اند. با انتخاب هر ردیف، افزودن آن تجهیز به بوم مسلح می‌شود و کلیک
  * بعدی روی بوم آن را با نام، مدل و شناسهٔ همان تجهیز می‌سازد.
  */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, RefreshCw, Search, Server } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAsync } from '../../lib/store';

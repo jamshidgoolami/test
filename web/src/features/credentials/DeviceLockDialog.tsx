@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Lock, ShieldCheck, TriangleAlert, Unlock } from 'lucide-react';
 import { Modal, Spinner } from '../../components/ui';
 

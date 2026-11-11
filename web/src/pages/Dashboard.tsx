@@ -35,7 +35,7 @@ import {
   SEVERITY_META,
   statusMeta,
 } from '../lib/format';
-import { Card, CardHeader, ErrorState, HealthRing, PageLoader, Progress, StatCard, StatusLegend, Tabs } from '../components/ui';
+import { Card, CardHeader, ErrorState, HealthRing, PageLoader, Progress, StatCard, StatusLegend } from '../components/ui';
 import {
   ChartFill,
   DailyBars,

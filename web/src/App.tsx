@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import { PageLoader } from './components/ui';

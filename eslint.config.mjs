@@ -6,6 +6,7 @@
  */
 import js from '@eslint/js';
 import globals from 'globals';
+import prettier from 'eslint-config-prettier';
 
 export default [
   {
@@ -29,4 +30,6 @@ export default [
       'no-var': 'error',
     },
   },
+  // قالب‌بندی توسط Prettier انجام می‌شود؛ قواعد ظاهری ESLint خاموش می‌شوند.
+  prettier,
 ];

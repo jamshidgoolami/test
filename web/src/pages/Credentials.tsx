@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, Dices, KeyRound, Lock, Plus, ShieldAlert, ShieldCheck, Unlock } from 'lucide-react';
 import { api, downloadUrl } from '../lib/api';
 import { useAsync, useSubmitGuard, useToast } from '../lib/store';

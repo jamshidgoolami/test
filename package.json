@@ -19,6 +19,8 @@
     "dev:web": "vite --config web/vite.config.ts",
     "typecheck": "tsc -p web/tsconfig.json --noEmit",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "verify": "npm run lint && npm run typecheck && npm run build && npm run test:unit && npm run test:web && npm run test:integration && npm run test:e2e",
     "test": "npm run test:unit && npm run test:web && npm run test:integration && npm run test:e2e",
     "test:unit": "node --test server/tests/unit/*.test.mjs",
@@ -78,7 +80,9 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
     "globals": "^16.5.0",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
