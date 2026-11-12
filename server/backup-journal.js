@@ -8,16 +8,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const FSYNC_UNSUPPORTED = new Set(['EINVAL', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
 function fsyncPath(target) {
+  let fd;
   try {
-    const fd = fs.openSync(target, 'r');
-    try {
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-  } catch {
-    /* برخی فایل‌سیستم‌ها fsync را پشتیبانی نمی‌کنند */
+    fd = fs.openSync(target, 'r');
+  } catch (e) {
+    if (FSYNC_UNSUPPORTED.has(e?.code)) return;
+    throw e;
+  }
+  try {
+    fs.fsyncSync(fd);
+  } catch (e) {
+    // فقط نبود پشتیبانی فایل‌سیستم قابل اغماض است؛ EIO/ENOSPC/EBADF و مانند
+    // آن‌ها باید عملیات را متوقف کنند تا Journal به‌اشتباه durable تلقی نشود.
+    if (!FSYNC_UNSUPPORTED.has(e?.code)) throw e;
+  } finally {
+    fs.closeSync(fd);
   }
 }
 

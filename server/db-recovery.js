@@ -14,15 +14,34 @@ import {
   writeRestoreJournal,
 } from './backup-journal.js';
 
+function corruptStateError(stateFile, cause) {
+  const err = new Error(`فایل وضعیت بازیابی خراب یا غیرقابل‌خواندن است و بازیابی خودکار ممکن نیست: ${stateFile}`);
+  err.code = 'RESTORE_STATE_CORRUPT';
+  err.cause = cause;
+  return err;
+}
+
 export function recoverInterruptedRestoreBeforeOpen({ dataDir, dbPath, mbtilesDir }) {
   const stateFile = path.join(dataDir, '.restore-state.json');
+  let raw;
+  try {
+    raw = fs.readFileSync(stateFile, 'utf8');
+  } catch (e) {
+    if (e?.code === 'ENOENT') return null;
+    logEvent('error', 'restore_crash_recovery_state_corrupt', { message: e?.message, stateFile });
+    throw corruptStateError(stateFile, e);
+  }
   let state;
   try {
-    state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  } catch {
-    return null;
+    state = JSON.parse(raw);
+  } catch (e) {
+    logEvent('error', 'restore_crash_recovery_state_corrupt', { message: e?.message, stateFile });
+    throw corruptStateError(stateFile, e);
   }
-  if (!state) return null;
+  if (!state || typeof state !== 'object' || Array.isArray(state) || typeof state.status !== 'string') {
+    logEvent('error', 'restore_crash_recovery_state_corrupt', { stateFile, reason: 'invalid-shape' });
+    throw corruptStateError(stateFile, new Error('invalid state shape'));
+  }
   if (state.status === 'completed') {
     cleanupRestoreJournal(state.journalDir, dataDir);
     return null;
@@ -107,7 +126,6 @@ export function recoverInterruptedRestoreBeforeOpen({ dataDir, dbPath, mbtilesDi
     logEvent('error', 'restore_crash_recovery_failed', { message: e?.message, phase: state.phase });
   }
   const complete = fileRollback.ok && !dbError;
-  if (complete) cleanupRestoreJournal(state.journalDir, dataDir);
   const changed = dbRecovered || dbRemoved || fileRollback.restored > 0 || fileRollback.removed > 0;
   const next = {
     ...state,
@@ -125,10 +143,18 @@ export function recoverInterruptedRestoreBeforeOpen({ dataDir, dbPath, mbtilesDi
         : 'هیچ تغییری نصب نشده بود؛ فایل‌های موقت پاک شدند.'
       : 'بازیابی خودکار کامل نشد؛ Journal برای تلاش دوباره حفظ می‌شود.',
   };
+  let stateWritten = false;
   try {
     writeRestoreJournal(stateFile, next);
+    stateWritten = true;
   } catch (e) {
     logEvent('error', 'restore_crash_recovery_state_write_failed', { message: e?.message });
+  }
+  // Journal فقط پس از ثبت durable وضعیت پاک می‌شود؛ اگر نوشتن وضعیت شکست
+  // بخورد، شواهد و امکان تلاش دوباره باید باقی بمانند.
+  if (complete && stateWritten) {
+    const cleaned = cleanupRestoreJournal(state.journalDir, dataDir);
+    if (!cleaned) logEvent('warn', 'restore_journal_cleanup_failed', { journalDir: state.journalDir });
   }
   logEvent(complete ? 'warn' : 'error', complete ? 'restore_crash_recovered' : 'restore_crash_recovery_failed', {
     phase: state.phase,

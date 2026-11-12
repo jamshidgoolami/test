@@ -152,15 +152,16 @@ function verifyRestoredArtifacts({ verification, restoreMbtiles, restoredKey }) 
       { status: 500 }
     );
   }
-  if (restoreMbtiles) {
-    const missingMaps = missingMapFiles();
-    if (missingMaps.length) {
-      throw new DbError(
-        DB_ERROR_CODES.CORRUPT,
-        `دیتابیس بازیابی‌شده به فایل‌های نقشهٔ غایب ارجاع می‌دهد: ${missingMaps.join(', ')}`,
-        { status: 500 }
-      );
-    }
+  // حتی در حالت restoreMbtiles=false، پایگاه‌دادهٔ تازه باید فقط به فایل‌های
+  // نقشه‌ای ارجاع دهد که در پوشهٔ فعلی موجودند؛ وگرنه Restore «موفق» اما
+  // ناسازگار تحویل می‌دهد.
+  const missingMaps = missingMapFiles();
+  if (missingMaps.length) {
+    throw new DbError(
+      DB_ERROR_CODES.CORRUPT,
+      `دیتابیس بازیابی‌شده به فایل‌های نقشهٔ غایب ارجاع می‌دهد: ${missingMaps.join(', ')}`,
+      { status: 500 }
+    );
   }
 }
 

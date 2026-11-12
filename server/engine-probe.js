@@ -66,7 +66,8 @@ export async function probeWithDeadline(probe, device, options, deadlineOverride
       err.code = 'PROBE_DEADLINE';
       reject(err);
     }, deadlineMs);
-    if (timer.unref) timer.unref();
+    // عمداً unref نمی‌شود: اگر تنها handle فعال همین تایمر باشد، فرآیند نباید
+    // پیش از اجرای Timeout خارج شود.
   });
   try {
     return await Promise.race([probe(device, options), deadline]);

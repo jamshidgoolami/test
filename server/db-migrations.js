@@ -18,24 +18,28 @@ export function createMigrationRunner({ db, dbPath, dbExisted, log }) {
 function backupBeforeMigration(fromVersion) {
   if (!dbExisted) return null;
   if (String(dbPath).startsWith(':')) return null;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = `${dbPath}.pre-migration-v${fromVersion}-${stamp}`;
+  const tmp = `${dest}.tmp-${process.pid}`;
   try {
-    // WAL را به فایل اصلی منتقل می‌کنیم تا کپی، همهٔ تراکنش‌های تأییدشده را داشته باشد.
+    // VACUUM INTO یک عکس منطقی کامل از اتصال می‌سازد و تراکنش‌های تأییدشده‌ای
+    // را که هنوز در WAL هستند نیز شامل می‌شود. کپی خام فایل اصلی بدون WAL
+    // می‌تواند پشتیبان را ناقص بگذارد.
+    db.prepare('VACUUM INTO ?').run(tmp);
     try {
-      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    } catch {
-      /* checkpoint اختیاری است؛ کپی فایل اصلی + WAL هنوز قابل استفاده است */
-    }
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dest = `${dbPath}.pre-migration-v${fromVersion}-${stamp}`;
-    fs.copyFileSync(dbPath, dest, fs.constants.COPYFILE_EXCL);
-    try {
-      fs.chmodSync(dest, 0o600);
+      fs.chmodSync(tmp, 0o600);
     } catch {
       /* مجوز فایل روی بعضی فایل‌سیستم‌ها قابل تغییر نیست */
     }
+    fs.renameSync(tmp, dest);
     logEvent('info', 'db_pre_migration_backup', { fromVersion, toVersion: SCHEMA_VERSION, file: path.basename(dest) });
     return dest;
   } catch (e) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* بی‌اثر */
+    }
     // اگر پشتیبان ساخته نشود، Migration انجام نمی‌شود؛ ادامه روی دادهٔ بدون
     // نسخهٔ پشتیبان، ریسک غیرقابل‌بازگشت می‌سازد.
     throw new DbError(DB_ERROR_CODES.BACKUP_INVALID, `پشتیبان پیش از Migration ساخته نشد: ${e.message}`, { status: 500 });

@@ -52,6 +52,8 @@ let schedulerTimer = null;
 let schedulerKickoff = null;
 let lastCheckpointAt = 0;
 let lastBackupAt = 0;
+let nextBackupRetryAt = 0;
+let backupRetryDelayMs = 0;
 let tickRunning = false;
 let leaderCheck = null;
 
@@ -82,14 +84,30 @@ function startBackupScheduler({ isLeader = null } = {}) {
       // سرور و engine-cli، دو پشتیبان تکراری ساخته نشود.
       if (leaderCheck && !leaderCheck()) return;
       const backupEvery = Math.max(1, Number(s.backup_interval_hours) || 24) * 3600000;
-      if (Date.now() - lastBackupAt >= backupEvery) {
-        lastBackupAt = Date.now();
-        const created = createBackup({
-          keep: s.backup_prune_enabled === false ? s.backup_keep : null,
-          reason: 'scheduled',
-        });
-        writeState({ lastBackupAt: Date.now(), lastName: created.name });
-        lastBackupAt = Date.now();
+      const now = Date.now();
+      if (now - lastBackupAt >= backupEvery && now >= nextBackupRetryAt) {
+        try {
+          const created = createBackup({
+            keep: s.backup_prune_enabled === false ? s.backup_keep : null,
+            reason: 'scheduled',
+          });
+          const completedAt = Date.now();
+          writeState({ lastBackupAt: completedAt, lastName: created.name });
+          lastBackupAt = completedAt;
+          nextBackupRetryAt = 0;
+          backupRetryDelayMs = 0;
+        } catch (e) {
+          // شکست نباید موعد را جلو ببرد؛ وگرنه تلاش بعدی یک بازهٔ کامل عقب می‌افتد.
+          backupRetryDelayMs = Math.min(backupEvery, backupRetryDelayMs ? backupRetryDelayMs * 2 : 5 * 60000);
+          nextBackupRetryAt = Date.now() + backupRetryDelayMs;
+          logEvent('warn', 'backup_scheduler_retry', {
+            retryAt: nextBackupRetryAt,
+            delayMs: backupRetryDelayMs,
+            message: e?.message,
+            code: e?.code,
+          });
+          throw e;
+        }
       }
     } catch (e) {
       logEvent('error', 'backup_scheduler_error', { message: e?.message, code: e?.code });
@@ -111,6 +129,8 @@ function stopBackupScheduler() {
   schedulerTimer = null;
   schedulerKickoff = null;
   leaderCheck = null;
+  nextBackupRetryAt = 0;
+  backupRetryDelayMs = 0;
 }
 
 /** وضعیت خلاصه برای /api/system/db/health */

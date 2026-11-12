@@ -142,20 +142,20 @@ class DatabaseHandle {
   transaction(fn, { immediate = true, label = 'tx' } = {}) {
     this._assertOpen();
     if (typeof fn !== 'function') throw new TypeError('transaction(fn) نیازمند تابع است.');
-    const outer = this.txDepth === 0;
+    const depthBefore = this.txDepth;
+    const outer = depthBefore === 0;
     const savepoint = `nw_sp_${++txSeq}`;
     this.raw.exec(outer ? (immediate ? 'BEGIN IMMEDIATE' : 'BEGIN') : `SAVEPOINT ${savepoint}`);
-    this.txDepth++;
+    this.txDepth = depthBefore + 1;
     try {
       const result = fn();
       if (result && typeof result.then === 'function') {
         throw new DbError(DB_ERROR_CODES.BINDING, 'تراکنش باید همگام باشد؛ تابع async داده نشود.', { status: 500 });
       }
-      this.txDepth--;
       this.raw.exec(outer ? 'COMMIT' : `RELEASE ${savepoint}`);
+      this.txDepth = depthBefore;
       return result;
     } catch (err) {
-      this.txDepth = Math.max(0, this.txDepth - 1);
       try {
         if (outer) this.raw.exec('ROLLBACK');
         else {
@@ -168,6 +168,10 @@ class DatabaseHandle {
           message: rollbackErr?.message,
           cause: err?.message,
         });
+      } finally {
+        // حتی اگر COMMIT/RELEASE یا Rollback شکست بخورد، عمق منطقی باید به
+        // مقدار پیش از این تراکنش برگردد؛ decrement دوباره ممنوع است.
+        this.txDepth = depthBefore;
       }
       if (err instanceof DbError) throw err;
       // خطاهای غیرپایگاه‌داده (اعتبارسنجی/کسب‌وکار) بدون تغییر و بدون لاگ

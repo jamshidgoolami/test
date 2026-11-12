@@ -87,22 +87,26 @@ test('overdue devices surface as a backlog metric with a warning log', async () 
   for (let i = 0; i < 6; i++) newDevice({ ping_interval: 5, next_check_at: 0 });
 
   const eng = new MonitoringEngine({ emitToBus: false });
-  eng.probe = () => new Promise(() => {}); // بررسی‌ها هرگز تمام نمی‌شوند → صف معوق می‌ماند
+  const releases = [];
+  eng.probe = () => new Promise((resolve) => releases.push(resolve));
   eng.running = true;
   eng.settingsCache = { at: 0, value: undefined };
   eng.lastBacklogCheck = 0;
   const warningsBefore = db.prepare("SELECT COUNT(*) c FROM engine_log WHERE level = 'warn'").get().c;
 
-  // tick عمداً await نمی‌شود: بررسی‌ها هرگز تمام نمی‌شوند و باید فقط ببینیم
-  // شاخص عقب‌ماندگی پیش از شروع بررسی‌ها (همگام) محاسبه و ثبت شده است.
+  // tick عمداً await نمی‌شود: بررسی‌ها معلق می‌مانند تا صف معوق دیده شود.
   void eng.tick();
   assert.ok(eng.stats.backlog >= 6, `backlog=${eng.stats.backlog}`);
   assert.ok(
     db.prepare("SELECT COUNT(*) c FROM engine_log WHERE level = 'warn'").get().c > warningsBefore,
     'a backlog warning must be written to the engine log'
   );
+  await waitFor(() => eng.inflight.size >= 6, { timeout: 1000 });
+  const pending = [...eng.inflight.values()];
   eng.stop();
-  for (const task of eng.inflight.values()) void task;
+  // آزادکردن Probeها پیش از پایان تست، تایمر Hard Deadline را هم پاک می‌کند.
+  for (const release of releases) release(probeResult(false));
+  await Promise.allSettled(pending);
 });
 
 test('drain waits for in-flight checks so their samples are persisted', async () => {
@@ -127,13 +131,15 @@ test('drain waits for in-flight checks so their samples are persisted', async ()
 test('drain gives up after its timeout instead of hanging shutdown', async () => {
   const id = newDevice({ status: STATUS.ONLINE });
   const eng = new MonitoringEngine({ emitToBus: false });
-  eng.probe = () => new Promise(() => {});
+  let finishProbe;
+  eng.probe = () => new Promise((resolve) => (finishProbe = resolve));
   const check = eng.checkDevice(deviceRow(db, id), { manual: true });
   await waitFor(() => eng.inflight.size === 1, { timeout: 1000 });
   eng.stop();
   const started = Date.now();
   assert.equal(await eng.drain(80), false);
   assert.ok(Date.now() - started < 1000);
-  // promise عمداً رهاشده می‌ماند؛ تایمری باقی نمی‌ماند که فرآیند را زنده نگه دارد
-  void check;
+  // Probe را پیش از پایان تست آزاد می‌کنیم تا Deadline و فعالیت async باقی نماند.
+  finishProbe(probeResult(true));
+  await check;
 });
