@@ -127,7 +127,7 @@ app.use('/api', widgetsRouter);
 
 ## ۵. افزودن Migration
 
-1. `SCHEMA_VERSION` را در `server/db.js` یک واحد افزایش دهید.
+1. `SCHEMA_VERSION` را در `server/db-constants.js` یک واحد افزایش دهید.
 2. تابع گام را **idempotent** بنویسید:
 
 ```js

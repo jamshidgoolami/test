@@ -54,9 +54,8 @@ curl -s -b cookies.txt -X POST http://localhost:8787/api/system/backups \
 
 ```json
 {
-  "ok": true,
   "name": "2026-10-20T03-00-00-1a2b3c",
-  "dir": "/var/lib/netwatch/backups/2026-10-20T03-00-00-1a2b3c",
+  "dir": "backups/2026-10-20T03-00-00-1a2b3c",
   "manifest": { "db": { "size": 8421376, "integrity": "ok" }, "mbtiles": [] }
 }
 ```
@@ -171,6 +170,8 @@ curl -fsS http://127.0.0.1:8787/api/health
 
 `POST /api/system/backups/restore` ابتدا موتور را متوقف می‌کند، سپس فایل را
 جای‌گذاری می‌کند. وضعیت از `GET /api/system/restore/status` قابل پیگیری است.
+پاسخ API فقط نام پایهٔ فایل/پوشه را برمی‌گرداند و مسیر مطلق
+`DATA_DIR`/`BACKUP_DIR` را افشا نمی‌کند.
 
 ### چه اتفاقی در طول بازیابی می‌افتد؟
 

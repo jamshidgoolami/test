@@ -225,7 +225,7 @@ sudo -u netwatch env NETWATCH_DATA_DIR=/var/lib/netwatch npm run db:doctor
 
 انتظار می‌رود:
 
-- `db.doctor` با `"ok": true` و `schemaVersion` برابر `5` تمام شود؛
+- `db.doctor` با `"ok": true` و `schemaVersion` برابر `SCHEMA_VERSION` برنامه (در این نسخه `23`) تمام شود؛
 - `foreignKeyViolations` صفر باشد؛
 - `journalMode` برابر `wal` باشد.
 

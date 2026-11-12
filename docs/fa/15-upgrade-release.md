@@ -106,8 +106,9 @@ sudo -u netwatch env \
 | ۲۰ | `device-sites` | جدول `sites` و `devices.site_id` |
 | ۲۱ | `credentials-vault` | جدول `credentials` |
 | ۲۲ | `user-extra-permissions` | `users.extra_permissions` |
+| ۲۳ | `device-tags-reverse-index` | ایندکس معکوس `idx_device_tags_tag(tag_id, device_id)` |
 
-`SCHEMA_VERSION = 22` است. اگر `PRAGMA user_version` بزرگ‌تر از نسخهٔ برنامه
+`SCHEMA_VERSION = 23` است. اگر `PRAGMA user_version` بزرگ‌تر از نسخهٔ برنامه
 باشد، برنامه راه‌اندازی نمی‌شود (پایگاه‌داده از کد جدیدتر است).
 
 ---

@@ -146,7 +146,7 @@ npm run db:restore -- <dir>
 | --- | --- |
 | `package.json` | نسخهٔ نرم‌افزار |
 | `package-lock.json` | نسخهٔ top-level |
-| `server/db.js` | `SCHEMA_VERSION` |
+| `server/db-constants.js` | `SCHEMA_VERSION` |
 | `docs/changelog.md` | تغییرات |
 | `docs/fa/17-changelog.md` | تغییرات فارسی |
 | `docs/verification-report.md` | نتایج واقعی تست |

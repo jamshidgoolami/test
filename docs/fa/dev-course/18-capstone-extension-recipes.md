@@ -22,10 +22,10 @@
 
 ### گام ۱ — Migration
 
-در `server/db.js`:
+در `server/db-constants.js`:
 
 ```js
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 function applyDeviceWarrantyMigration() {
   if (!hasColumn('devices', 'warranty_until')) {
@@ -35,7 +35,7 @@ function applyDeviceWarrantyMigration() {
 
 const MIGRATIONS = [
   // ...
-  { version: 23, name: 'device-warranty', up: applyDeviceWarrantyMigration },
+  { version: 24, name: 'device-warranty', up: applyDeviceWarrantyMigration },
 ];
 ```
 
@@ -43,7 +43,7 @@ const MIGRATIONS = [
 
 - مقدار epoch میلی‌ثانیه یا `NULL`.
 - گام idempotent.
-- آزمون ارتقا از 22 و نصب تازه.
+- آزمون ارتقا از 23 و نصب تازه.
 - Changelog/Database docs.
 
 ### گام ۲ — Store/API

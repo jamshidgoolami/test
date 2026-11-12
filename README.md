@@ -625,10 +625,11 @@ Heavy برای ورود ۵۰٬۰۰۰ ردیف است. همهٔ Endpointهای ث
 [docs/verification-report.md](docs/verification-report.md)):
 
 - `npm run lint` و `npm run typecheck` و `npm run build` → موفق
-- `npm run test:unit` → **۲۴۳ / ۲۴۳** موفق
-- `npm run test:web` → **۴۶ / ۴۶** موفق
+- `npm run test:unit` → **۳۲۱ / ۳۲۱** موفق
+- `npm run test:web` → **۶۵ / ۶۵** موفق
 - `npm run test:integration` → **۱۵۹ / ۱۵۹** موفق
-- `npm run test:e2e` → **۹۸ / ۹۸** موفق (۸۷ سمک + ۱۱ سناریوی E2E)
+- `npm run test:e2e` → **۱۰۰ / ۱۰۰** موفق (۸۹ سمک + ۱۱ سناریوی E2E)
+- `npm run test:ui` → **۱۰ / ۱۰** موفق
 - Backup/Restore، Crash Recovery، Migration و نصب تمیز → پوشش‌داده‌شده در همان آزمون‌ها
 - بار و Soak: اعداد مرجع در [docs/performance-report.md](docs/performance-report.md)
 

@@ -6,12 +6,12 @@
 
 | مورد | مقدار |
 | --- | --- |
-| تاریخ اجرا | ۲۰۲۶-۱۱-۱۰ |
-| شاخه | `ui-fix` |
+| تاریخ اجرا | ۲۰۲۶-۱۱-۱۲ |
+| شاخه | `main` (`7816599`) |
 | Node.js | `v26.10.0` (پیش‌نیاز پروژه `>= 22.12.0`) |
 | سیستم‌عامل | macOS (Darwin) |
 | نسخهٔ نرم‌افزار | `1.4.1` |
-| نسخهٔ ساختار داده | `SCHEMA_VERSION = 22` |
+| نسخهٔ ساختار داده | `SCHEMA_VERSION = 23` |
 
 ---
 
@@ -22,15 +22,15 @@
 | `npm run lint` | ✅ PASS (exit 0) | کل مخزن، بدون خطا |
 | `npm run typecheck` | ✅ PASS (exit 0) | `tsc -p web/tsconfig.json --noEmit` |
 | `npm run build` | ✅ PASS | Vite، خروجی در `web/dist` |
-| `npm run test:unit` | ✅ ۲۶۶ / ۲۶۶ | `fail 0` |
-| `npm run test:web` | ✅ ۵۸ / ۵۸ | `fail 0` |
-| `npm run test:integration` | ✅ ۱۵۱ / ۱۵۱ | `fail 0` |
+| `npm run test:unit` | ✅ ۳۲۱ / ۳۲۱ | `fail 0` |
+| `npm run test:web` | ✅ ۶۵ / ۶۵ | `fail 0` |
+| `npm run test:integration` | ✅ ۱۵۹ / ۱۵۹ | `fail 0` |
 | `npm run test:e2e` | ✅ PASS | smoke ۸۹ / ۸۹، e2e ۱۱ / ۱۱ |
 | `npm run test:ui` | ✅ ۱۰ / ۱۰ | Playwright با Google Chrome نصب‌شدهٔ سیستم؛ مرورگر bundled نصب نبود |
 | `npm run test:heavy` | ⏸ اجرا نشده | آزمون ۵۰٬۰۰۰ ردیفی/طولانی |
 | `npm run qa:load` / `qa:soak72` | ⏸ اجرا نشده | نیازمند اجرای طولانی روی سرور اختصاصی |
 
-جمع بررسی‌های موفق: **۵۸۵** (۲۶۶ Unit + ۵۸ Web + ۱۵۱ Integration + ۸۹
+جمع بررسی‌های موفق: **۶۵۵** (۳۲۱ Unit + ۶۵ Web + ۱۵۹ Integration + ۸۹
 Smoke + ۱۱ E2E + ۱۰ UI).
 
 > در محیط شل این دستگاه متغیر `PORT=0` تنظیم بود؛ اجرای آزمون‌ها با
@@ -63,7 +63,7 @@ Smoke + ۱۱ E2E + ۱۰ UI).
 | فایل | تغییر |
 | --- | --- |
 | `server/permissions.js` | حذف پیش‌فرض `credentials:reveal` از Operator؛ افزودن `DELEGABLE_PERMISSIONS`، `normalizeExtraPermissions` و `permissionsForUser`؛ `hasPermission` مجوز اختصاصی را می‌بیند |
-| `server/db.js` | `SCHEMA_VERSION = 22`؛ ستون `users.extra_permissions` و Migration 22 (`user-extra-permissions`) |
+| `server/db-constants.js` | `SCHEMA_VERSION = 23`؛ بازصادرشده از `server/db.js`؛ Migration 22 (`user-extra-permissions`) و Migration 23 (`device-tags-reverse-index`) |
 | `server/auth.js` | خواندن/نوشتن مجوز اختصاصی، اعتبارسنجی آن، اعطا/لغو با `PUT /auth/users/:id` و بازگرداندن مجوزهای مؤثر در `/auth/me` |
 | `server/routes/credentials.js` | reveal/export فقط با `credentials:reveal` |
 | `server/routes/devices.js` | `GET /api/devices/:id/credentials` علاوه بر `devices:write` مجوز `credentials:reveal` می‌خواهد |
@@ -130,8 +130,10 @@ assertionها اصلاح شدند.
 ### ۳.۷ مستندات و نسخه
 
 - `package.json` و `package-lock.json` → `1.4.1`.
-- هماهنگ‌سازی `SCHEMA_VERSION = 22` در `docs/database.md`، `docs/fa/05-database.md`،
+- هماهنگ‌سازی `SCHEMA_VERSION = 23` و Migration ۲۳ در `docs/database.md`، `docs/fa/05-database.md`،
   `docs/fa/01-introduction.md`، `docs/fa/15-upgrade-release.md` و READMEها.
+- مستندسازی سقف‌های ۵۰۰۰/۵۰۰/۴۰۰۰، پاسخ `413`، ایندکس معکوس تگ و پاک‌سازی
+  مسیرهای مطلق در پاسخ‌های سلامت/پشتیبان/Verify/Restore.
 - به‌روزرسانی `docs/security.md`، `docs/fa/08-security.md`،
   `docs/session-rbac-policy.md`، `docs/backup-restore.md`،
   `docs/fa/11-backup-restore.md`، `docs/fa/06-api.md`، `docs/changelog.md` و

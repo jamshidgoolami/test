@@ -144,7 +144,7 @@ DB      → اتصال و Migration
 router.get('/layers', (_req, res) => {
   const items = db.prepare('SELECT * FROM map_layers ORDER BY id').all();
   const files = mbtiles.listFiles();
-  res.json({ items, files, tilesDir: MBTILES_DIR, settings: getSettings() });
+  res.json({ items, files, tilesDir: path.basename(MBTILES_DIR), settings: getSettings() });
 });
 ```
 

@@ -6,9 +6,9 @@
 | مورد | مقدار |
 | --- | --- |
 | نسخهٔ برنامه | `1.4.1` |
-| نسخهٔ ساختار داده | `SCHEMA_VERSION = 22` |
+| نسخهٔ ساختار داده | `SCHEMA_VERSION = 23` |
 | پیش‌نیاز اجرا | Node.js `>= 22.12.0` |
-| تاریخ آخرین بازبینی | ۲۰۲۶-۱۱-۱۰ |
+| تاریخ آخرین بازبینی | ۲۰۲۶-۱۱-۱۲ |
 
 > در صورت اختلاف بین سند و کد، **کد** مبنا است. اگر اختلافی دیدید، همان سند را
 > اصلاح کنید؛ عدد و رفتار را از کد بگیرید.
@@ -50,6 +50,7 @@
 | ۱۵ | [ارتقا و انتشار](fa/15-upgrade-release.md) | Migration و Rollback |
 | ۱۶ | [توسعه](fa/16-development.md) | ساختار کد و قواعد |
 | ۱۷ | [Changelog](fa/17-changelog.md) | تاریخچه |
+| ۱۸ | [دورهٔ توسعه](fa/dev-course/README.md) | دورهٔ ۲۴ فصلی از نصب تا استقرار |
 
 ### مرجع و عملیات
 
@@ -66,6 +67,7 @@
 | [security.md](security.md) | مدل تهدید و کنترل‌ها |
 | [network-tls-security.md](network-tls-security.md) | شبکه، TLS و سخت‌سازی انتقال |
 | [session-rbac-policy.md](session-rbac-policy.md) | سیاست نشست و RBAC |
+| [fa/architecture.md](fa/architecture.md) | مرز ماژول‌ها و قواعد وابستگی |
 | [performance-report.md](performance-report.md) | اعداد بار، حافظه، WAL و Soak |
 
 ### کیفیت و تاریخچه

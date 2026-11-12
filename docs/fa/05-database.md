@@ -7,7 +7,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | مورد | مقدار واقعی |
 | --- | --- |
 | فایل پیش‌فرض | `<NETWATCH_DATA_DIR>/netwatch.db` → `data/netwatch.db` |
-| نسخهٔ ساختار | `SCHEMA_VERSION = 22` در `server/db.js` |
+| نسخهٔ ساختار | `SCHEMA_VERSION = 23` در `server/db-constants.js` (بازصادرشده از `server/db.js`) |
 | Journal | `WAL` |
 | `synchronous` | `FULL` (قابل تغییر با `NETWATCH_SQLITE_SYNC`) |
 | `foreign_keys` | `ON` |
@@ -118,6 +118,7 @@ erDiagram
 | ۲۰ | `device-sites` | جدول `sites` و `devices.site_id` |
 | ۲۱ | `credentials-vault` | جدول `credentials` |
 | ۲۲ | `user-extra-permissions` | `users.extra_permissions` برای مجوز اختصاصی |
+| ۲۳ | `device-tags-reverse-index` | ایندکس `idx_device_tags_tag(tag_id, device_id)` برای پرس‌وجوی تجهیزات یک تگ |
 
 قواعد:
 
@@ -179,6 +180,9 @@ NETWATCH_DB_CHECK=quick|full|warn|off npm start
 - برای تعداد زیاد تجهیز، `max_workers × ping_interval` را متناسب کنید؛ شاخص
   `backlog` در `/api/engine/status` هشدار می‌دهد.
 - ایندکس‌های نسخهٔ ۵ برای فیلترهای پرتکرار هشدار/قطعی/آمار اضافه شده‌اند.
+- Migration ۲۳ ایندکس معکوس `idx_device_tags_tag(tag_id, device_id)` را اضافه می‌کند؛
+  پرس‌وجوی «تجهیزات یک تگ» و `EXISTS` فیلتر تگ از `SCAN` به
+  `SEARCH ... USING COVERING INDEX idx_device_tags_tag (tag_id=?)` تبدیل می‌شود.
 
 ---
 

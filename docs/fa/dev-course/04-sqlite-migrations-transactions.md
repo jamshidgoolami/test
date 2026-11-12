@@ -43,30 +43,28 @@ WAL یعنی خواندن و نوشتن هم‌زمان بهتر کار می‌�
 ## ۳. نسخهٔ Schema
 
 ```js
-// server/db.js
-export const SCHEMA_VERSION = 22;
+// server/db-constants.js (بازصادرشده از server/db.js)
+export const SCHEMA_VERSION = 23;
 ```
 
 قاعده: هر تغییر ساختاری، `SCHEMA_VERSION` را یک واحد بالا می‌برد و یک گام
 idempotent به `MIGRATIONS` اضافه می‌کند.
 
-Migration ۲۲:
+Migration ۲۳:
 
 ```js
-function applyUserExtraPermissionsMigration() {
-  if (!hasColumn('users', 'extra_permissions')) {
-    db.exec(
-      "ALTER TABLE users ADD COLUMN extra_permissions TEXT NOT NULL DEFAULT '[]'"
-    );
-  }
+function applyDeviceTagReverseIndexMigration() {
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id, device_id)'
+  );
 }
 
 const MIGRATIONS = [
   // ...
   {
-    version: 22,
-    name: 'user-extra-permissions',
-    up: applyUserExtraPermissionsMigration,
+    version: 23,
+    name: 'device-tags-reverse-index',
+    up: applyDeviceTagReverseIndexMigration,
   },
 ];
 ```
@@ -211,7 +209,7 @@ env -u PORT npm run test:integration
 
 ## ۹. تمرین
 
-1. `SCHEMA_VERSION` و Migration ۲۲ را پیدا کنید.
+1. `SCHEMA_VERSION` و Migration ۲۳ را پیدا کنید.
 2. یک ستون تازه به‌صورت فرضی طراحی کنید و گام idempotent آن را بنویسید.
 3. یک Query با پارامتر و یک Query ناامن را مقایسه کنید.
 4. `npm run db:doctor` را اجرا و خروجی آن را تفسیر کنید.

@@ -130,6 +130,7 @@ const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize || '24', 10) || 2
 | `idx_audit_ts` | فهرست حسابرسی |
 | `idx_sessions_expires` | پاک‌سازی نشست |
 | `idx_devices_ip` | یکتایی IP |
+| `idx_device_tags_tag` | تجهیزات یک تگ و `EXISTS` فیلتر تگ |
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_devices_due
@@ -163,6 +164,9 @@ const plan = db
 - `USE TEMP B-TREE FOR GROUP BY` همیشه بد نیست، اما برای Query داغ باید
   بررسی شود.
 - `COVERING INDEX` یعنی داده از خود ایندکس خوانده می‌شود.
+- پس از Migration ۲۳، پرس‌وجوی معکوس تگ باید
+  `SEARCH dt USING COVERING INDEX idx_device_tags_tag (tag_id=?)` بدهد؛
+  `SCAN device_tags` نشانهٔ نبود ایندکس مناسب است.
 
 ---
 

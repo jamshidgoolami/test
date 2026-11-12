@@ -11,7 +11,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | `synchronous` | `FULL` (قابل تغییر با `NETWATCH_SQLITE_SYNC`) |
 | `foreign_keys` | `ON` |
 | `busy_timeout` | `NETWATCH_BUSY_TIMEOUT_MS` (پیش‌فرض ۵٬۰۰۰ms) |
-| نسخهٔ ساختار | `SCHEMA_VERSION` در `server/db.js` (`PRAGMA user_version`) |
+| نسخهٔ ساختار | `SCHEMA_VERSION` در `server/db-constants.js` (`PRAGMA user_version`)؛ از `server/db.js` هم بازصادر می‌شود |
 | Migration | جدول `schema_migrations` + گام‌های تراکنشی |
 
 ---
@@ -52,7 +52,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 
 ## ۲. Migrationها
 
-`server/db.js` فهرست ثابت `MIGRATIONS` را نگه می‌دارد:
+`server/db-migrations.js` فهرست ثابت `MIGRATIONS` را نگه می‌دارد:
 
 | نسخه | نام | محتوا |
 | --- | --- | --- |
@@ -73,6 +73,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | ۲۰ | `device-sites` | جدول `sites` و ستون `devices.site_id` |
 | ۲۱ | `credentials-vault` | جدول `credentials` برای چند اعتبارنامهٔ رمزنگاری‌شده در هر تجهیز |
 | ۲۲ | `user-extra-permissions` | ستون `users.extra_permissions` برای مجوز اختصاصی قابل‌اعطا |
+| ۲۳ | `device-tags-reverse-index` | ایندکس `idx_device_tags_tag(tag_id, device_id)` برای تبدیل جست‌وجوی معکوس تگ به `SEARCH` |
 
 قواعد:
 

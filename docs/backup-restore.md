@@ -63,7 +63,8 @@ curl -fsS -b /tmp/nw.jar -X POST -H 'x-csrf-token: <token>' -H 'content-type: ap
 ```
 
 این APIها به مجوز `system:health` (نقش‌های Operator/Admin) نیاز دارند و در
-`NETWATCH_ADMIN_ALLOWED_CIDRS` محدود می‌شوند.
+`NETWATCH_ADMIN_ALLOWED_CIDRS` محدود می‌شوند. پاسخ‌های API فقط نام پایهٔ فایل یا
+پوشه را برمی‌گردانند و مسیر مطلق `DATA_DIR`/`BACKUP_DIR` را افشا نمی‌کنند.
 
 ---
 

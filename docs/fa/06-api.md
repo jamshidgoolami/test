@@ -276,6 +276,11 @@ data: {"id":91,"severity":"critical","title":"قطع ارتباط"}
 | GET | `/api/devices/sparklines` | دادهٔ فشردهٔ نمودار فهرست |
 | GET | `/api/devices/map` | تجهیزات برای نقشه؛ با `includeMissing=1` تجهیزات بدون مختصات هم برمی‌گردند |
 
+> **سقف عملیات گروهی:** `POST /api/devices/bulk` حداکثر **۵۰۰۰** شناسه
+> (طول آرایه پس از تبدیل عددی) می‌پذیرد و برای `action=ping` سقف جداگانهٔ **۵۰۰**
+> دارد؛ تکرار شناسه‌ها در این مسیر حذف نمی‌شود. ورودی غیرآرایه `400`
+> و عبور از سقف `413` می‌گیرد.
+
 ### پارامترهای فهرست
 
 `server/store.js` → `parseListQuery`:
@@ -407,6 +412,9 @@ curl -b cookies.txt 'http://localhost:8787/api/reports/summary?range=30d&group=1
 | POST | `/api/alerts/bulk` | `ops:write` | عملیات گروهی |
 | DELETE | `/api/alerts/:id` | `ops:write` | حذف |
 
+`POST /api/alerts/bulk` حداکثر **۴۰۰۰** شناسهٔ یکتا می‌پذیرد؛ بیش از آن `413`
+و ورودی غیرآرایه `400` برمی‌گرداند.
+
 ### قوانین هشدار
 
 | متد | مسیر | کار |
@@ -511,6 +519,9 @@ curl -b cookies.txt -X PUT http://localhost:8787/api/settings \
 | GET | `/api/mbtiles/files` | فایل‌های MBTiles موجود |
 | DELETE | `/api/mbtiles/files/:name` | حذف فایل MBTiles |
 
+`POST /api/tags/:tagId/devices` حداکثر **۴۰۰۰** تجهیز یکتا می‌پذیرد؛ بیش از آن
+`413` و فهرست غیرآرایه `400` برمی‌گرداند.
+
 ```bash
 curl -b cookies.txt -X DELETE 'http://localhost:8787/api/groups/4?moveTo=1' \
   -H "X-CSRF-Token: $CSRF"
@@ -538,6 +549,9 @@ curl -b cookies.txt -X DELETE 'http://localhost:8787/api/groups/4?moveTo=1' \
 | POST | `/api/markers/import/preview` | پیش‌نمایش ورود Excel/CSV |
 | POST | `/api/markers/import` | اعمال ورود Excel/CSV |
 | POST | `/api/markers/import/kml` | ورود علامت‌ها از `KML`/`KMZ` (بدنهٔ multipart: `file` و اختیاری `typeId`/`type`/`mode`) |
+
+`DELETE /api/markers/bulk` حداکثر **۴۰۰۰** شناسهٔ یکتا می‌پذیرد؛ بیش از آن `413`
+و ورودی غیرآرایه `400` برمی‌گرداند.
 
 ---
 
@@ -587,6 +601,10 @@ curl -b cookies.txt 'http://localhost:8787/api/audit?page=1&pageSize=50&action=a
 | POST | `/api/system/backups/restore` | Administrator | بازیابی |
 | GET | `/api/system/restore/status` | `system:health` | وضعیت بازیابی |
 
+> پاسخ‌های سلامت، فهرست/ساخت/Verify پشتیبان و Restore فقط **نام پایه**
+> (`basename`) فایل یا پوشه را برمی‌گردانند؛ مسیر مطلق `DATA_DIR`/`BACKUP_DIR`
+> در پاسخ API افشا نمی‌شود.
+
 ```bash
 curl -b cookies.txt -X POST http://localhost:8787/api/system/backups \
   -H "X-CSRF-Token: $CSRF"
@@ -627,6 +645,8 @@ curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" -X POST "$BASE/api/engine/check-
 - **Exportها** به‌صورت فایل جریانی برمی‌گردند و در حافظه ساخته نمی‌شوند.
 - **سقف نرخ:** مسیرهای عمومی، ورود، Probe، Import و مسیرهای مدیریتی سقف جداگانه
   دارند؛ `429` را با احترام به `Retry-After` (در صورت وجود) دوباره امتحان کنید.
+- **سقف Bulk:** تجهیزات ۵۰۰۰، Ping گروهی ۵۰۰ و هشدار/نشانه/تگ ۴۰۰۰ شناسه؛
+  ورودی غیرآرایه `400` و عبور از سقف `413` است.
 
 ---
 
