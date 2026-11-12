@@ -1,140 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 
-import { Check, Circle, Crosshair, Download, Flag, HelpCircle, Layers, MapPin, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, RefreshCw, Ruler, Save, Search, Square, Trash2, X } from 'lucide-react';
+import { Crosshair, Download, Flag, Layers, MapPin, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, RefreshCw, Ruler, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useAsync, useSubmitGuard, useToast } from '../lib/store';
 import { faDigits, fmtRelative, statusMeta } from '../lib/format';
 import { useUrlParams } from '../lib/params';
-import { buildVectorStyle, LABEL_ANCHOR_LAYER } from '../lib/mapStyle';
 import { Card, ErrorState } from '../components/ui';
 import type { MapLayer, MapMarker } from '../lib/types';
 
 
 import { DeviceList } from '../features/map/components/DeviceList';
+import { MapEditBanner } from '../features/map/components/MapEditBanner';
+import { MapMeasurePanel } from '../features/map/components/MapMeasurePanel';
 import { SiteFormModal } from '../features/map/components/SiteFormModal';
 import { MarkersList } from '../features/map/components/MarkersList';
 import { MarkerForm } from '../features/map/components/MarkerForms';
 import { MapLayersPanel } from '../features/map/components/MapLayersPanel';
 import { CoordsExportModal } from '../features/map/components/CoordsExportModal';
 import { markerIcon, markerPinIcon, siteMarkerIcon } from '../features/map/lib/markers';
-import { createRasterLayer, isVectorLayer } from '../features/map/lib/layers';
-import { fmtAreaM2, fmtDistanceM, geodesicAreaM2, measureTypingTarget, pathLengthM } from '../features/map/lib/measurement';
-import type { MeasureMode, MeasureReadout } from '../features/map/lib/measurement';
 import { popupHtml, sitePopupElement, markerPopupHtml } from '../features/map/components/mapPopups';
-import type { MapDevice, MapSite, SitePopupView } from '../features/map/model/types';
-// فقط برای اعلام نوع‌های افزوده‌شده به Leaflet؛ در زمان اجرا کتابخانهٔ MapLibre
-// تنها وقتی لایهٔ برداری واقعی روی نقشه وجود داشته باشد بارگذاری می‌شود.
-
-// آدرس فایل Worker مپ‌لیبر به‌صورت دارایی ساخته‌شده (نه مسیر نسبی داخل بستهٔ
-// کتابخانه) — بدون این، MapLibre داخل باندل Vite فایل worker را پیدا نمی‌کند
-// و با خطای «Worker failed to load» هیچ کاشی برداری رسم نمی‌شود.
-import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-
-/* ------------------------ لایه پایه آفلاین ------------------------ */
-const OfflineGridLayer = L.GridLayer.extend({
-  createTile(this: L.GridLayer, coords: L.Coords) {
-    const tile = document.createElement('div');
-    const size = this.getTileSize();
-    tile.style.width = `${size.x}px`;
-    tile.style.height = `${size.y}px`;
-    tile.style.background = '#f2f6fb';
-    tile.style.boxShadow = 'inset 0 0 0 1px rgba(148,163,184,0.18)';
-    tile.style.position = 'relative';
-    const scale = Math.pow(2, coords.z);
-    const lon = (coords.x / scale) * 360 - 180;
-    const n = Math.PI - (2 * Math.PI * coords.y) / scale;
-    const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-    const label = document.createElement('span');
-    label.textContent = `${lat.toFixed(1)}° , ${lon.toFixed(1)}°`;
-    label.style.cssText =
-      'position:absolute;top:6px;left:8px;font-size:10px;color:#94a3b8;font-family:Vazirmatn,Tahoma,sans-serif;direction:ltr';
-    tile.appendChild(label);
-    if (coords.z >= 6 && (coords.x + coords.y) % 2 === 0) {
-      const cross = document.createElement('span');
-      cross.style.cssText =
-        'position:absolute;inset:0;background-image:linear-gradient(to right,rgba(148,163,184,0.12) 1px,transparent 1px),linear-gradient(to bottom,rgba(148,163,184,0.12) 1px,transparent 1px);background-size:28px 28px';
-      tile.appendChild(cross);
-    }
-    return tile;
-  },
-}) as unknown as new (options?: L.GridLayerOptions) => L.GridLayer;
-
-/** شکل سبک تجهیز که API نقشه برمی‌گرداند (بدون تاریخچه و فیلدهای سنگین) */
-
-const MEASURE_META: { mode: Exclude<MeasureMode, 'off'>; label: string; icon: React.ReactNode; color: string }[] = [
-  { mode: 'distance', label: 'مسافت', icon: <Ruler size={12} />, color: '#2563eb' },
-  { mode: 'area', label: 'مساحت', icon: <Square size={12} />, color: '#7c3aed' },
-  { mode: 'radius', label: 'شعاع', icon: <Circle size={12} />, color: '#0f766e' },
-];
-
-type GlFeature = {
-  properties?: Record<string, unknown>;
-  geometry?: { type: string; coordinates: unknown };
-};
-type GlMap = {
-  on: (event: string, fn: () => void) => void;
-  off: (event: string, fn: () => void) => void;
-  getStyle?: () => { layers?: { id: string }[] } | undefined;
-  queryRenderedFeatures: (options: { layers: string[] }) => GlFeature[];
-};
-
-const LABEL_ORDER: Record<string, number> = {
-  continent: 0,
-  country: 1,
-  state: 2,
-  province: 2,
-  city: 3,
-  town: 4,
-  village: 5,
-  hamlet: 6,
-  isolated_dwelling: 7,
-  suburb: 7,
-  quarter: 7,
-  neighbourhood: 8,
-};
-
-/** هر کلاس نام در چه بازهٔ زومی دیده می‌شود (جلوگیری از شلوغی). */
-function labelVisible(cls: string, zoom: number) {
-  switch (cls) {
-    case 'country':
-    case 'continent':
-      return zoom <= 7.5;
-    case 'state':
-    case 'province':
-      return zoom <= 8;
-    case 'city':
-      return zoom >= 4;
-    case 'town':
-      return zoom >= 7;
-    case 'village':
-      return zoom >= 10;
-    case 'hamlet':
-    case 'isolated_dwelling':
-      return zoom >= 12;
-    case 'suburb':
-    case 'quarter':
-    case 'neighbourhood':
-      return zoom >= 12;
-    default:
-      return false;
-  }
-}
-
-function labelSize(cls: string, zoom: number) {
-  if (cls === 'country' || cls === 'continent') return 15;
-  if (cls === 'state' || cls === 'province') return 13;
-  if (cls === 'city') return zoom >= 10 ? 15 : 13;
-  if (cls === 'town') return 12.5;
-  if (cls === 'village') return 11.5;
-  return 11;
-}
-
-function escapeLabel(text: string) {
-  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
-}
-
-// کاشی ناموجود نباید به شکل آیکون تصویر شکسته دیده شود.
+import { useMapLayers } from '../features/map/hooks/useMapLayers';
+import { useMapLabels } from '../features/map/hooks/useMapLabels';
+import { useMapMeasure } from '../features/map/hooks/useMapMeasure';
+import type { ArmedMarkerType, MapDevice, MapSite, PendingMapPosition, SitePopupView } from '../features/map/model/types';
 
 export default function MapPage() {
   const { settings, meta, refreshMeta } = useApp();
@@ -151,16 +40,13 @@ export default function MapPage() {
   const siteLayer = useRef<L.LayerGroup | null>(null);
   const siteMarkers = useRef<Map<number, L.Marker>>(new Map());
   const sitePopupViews = useRef<Map<number, SitePopupView>>(new Map());
-  // نگاشت لایهٔ برداری → نقشهٔ MapLibre همان لایه، برای خواندن نام شهرها
-  const vectorMaps = useRef<Map<number, GlMap>>(new Map());
-  const [vectorMapsTick, setVectorMapsTick] = useState(0);
   const flyTimers = useRef<number[]>([]);
   const devicesRef = useRef<MapDevice[]>([]);
   const [ready, setReady] = useState(false);
   const [editing, setEditing] = useState(false);
   // راهنمای کوتاه حالت جابه‌جایی: متن بلند توضیحات فقط با دکمهٔ آیکون راهنما باز می‌شود.
   const [moveHelpOpen, setMoveHelpOpen] = useState(false);
-  const [pending, setPending] = useState<{ id: number; latitude: number; longitude: number } | null>(null);
+  const [pending, setPending] = useState<PendingMapPosition | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   // دیالوگ خروجی مختصات: گروه تجهیزات و انواع علامت‌های حاضر در فایل را تعیین می‌کند.
   const [exportOpen, setExportOpen] = useState(false);
@@ -184,25 +70,7 @@ export default function MapPage() {
   sideWidthRef.current = sideWidth;
   const resizeState = useRef<{ startX: number; startWidth: number } | null>(null);
   const [sideTab, setSideTab] = useState<'devices' | 'markers'>('devices');
-  const [armedType, setArmedType] = useState<{ typeId: number; typeName: string; typeColor: string; typeIcon: string } | null>(null);
-  // ابزار اندازه‌گیری نقشه؛ نتیجه فقط در همین نشست می‌ماند و ذخیره نمی‌شود.
-  const [measureOpen, setMeasureOpen] = useState(false);
-  const [measureMode, setMeasureMode] = useState<MeasureMode>('off');
-  const [measureReadout, setMeasureReadout] = useState<MeasureReadout | null>(null);
-  const measureLayer = useRef<L.LayerGroup | null>(null);
-  const measureLabels = useRef<L.LayerGroup | null>(null);
-  const measurePoints = useRef<L.LatLng[]>([]);
-  const measureShape = useRef<L.Layer | null>(null);
-  const measureVertices = useRef<L.Layer[]>([]);
-  const measureModeRef = useRef<MeasureMode>('off');
-  // پس از دومین کلیک شعاع، لبهٔ دقیق دایره در همین ref می‌ماند تا رسم نهایی
-  // به آخرین موقعیت ماوس وابسته نباشد.
-  const measureRadiusEdge = useRef<L.LatLng | null>(null);
-  // خط شعاع جدا از دایره نگه داشته می‌شود تا با هر جابه‌جایی ماوس خط قبلی
-  // حذف شود؛ وگرنه هر حرکت یک خط تازه روی نقشه باقی می‌گذاشت.
-  const measureRadiusLine = useRef<L.Layer | null>(null);
-  // رسم نهایی بدون پیش‌نمایش؛ دکمهٔ «پایان ترسیم» و Enter از همین استفاده می‌کنند.
-  const measureRedraw = useRef<(() => void) | null>(null);
+  const [armedType, setArmedType] = useState<ArmedMarkerType | null>(null);
   const [pendingMarker, setPendingMarker] = useState<{ latitude: number; longitude: number; typeId: number | null; typeName: string; typeColor: string; typeIcon: string; marker?: MapMarker } | null>(null);
   const [showMarkerLabels, setShowMarkerLabels] = useState(true);
   // فهرست نقشه همیشه همهٔ تجهیزات/علامت‌ها را دارد؛ این دو مجموعه فقط نمایش
@@ -247,6 +115,8 @@ export default function MapPage() {
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
   const layers = layersData?.items ?? [];
+  const { vectorMaps, vectorMapsTick } = useMapLayers({ mapRef, ready, layers, tileLayers, notify: push });
+  useMapLabels({ mapRef, ready, vectorMaps, vectorMapsTick });
   const mapMarkers = markersData?.items ?? [];
   const markerTypes = markersData?.types ?? [];
   const sites = useMemo(() => sitesData?.items ?? [], [sitesData]);
@@ -434,206 +304,6 @@ export default function MapPage() {
     const timer = window.setTimeout(() => mapRef.current?.invalidateSize(), 320);
     return () => window.clearTimeout(timer);
   }, [fullscreen, ready, sideOpen]);
-
-  /* ------------------------- base layers ------------------------- */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    let alive = true;
-    const wanted = new Set<number>();
-    const ensure = async () => {
-      for (const layer of layers) {
-        if (!layer.visible) continue;
-        wanted.add(layer.id);
-        if (tileLayers.current[layer.id]) continue;
-        let instance: L.Layer | null = null;
-        if (layer.kind === 'mbtiles' && layer.file_name) {
-          if (isVectorLayer(layer)) {
-            // کاشی‌های PBF/MVT با MapLibre GL JS رندر می‌شوند، نه Leaflet تصویری.
-            try {
-              // مسیر Worker باید پیش از ساخت نقشه تنظیم شود؛ وگرنه MapLibre
-              // آدرس پیش‌فرضِ داخل باندل را می‌گیرد که وجود ندارد.
-              const maplibre = await import('maplibre-gl');
-              maplibre.setWorkerUrl(maplibreWorkerUrl);
-              await import('@maplibre/maplibre-gl-leaflet');
-              const factory = (L as unknown as { maplibreGL?: (o: Record<string, unknown>) => L.Layer }).maplibreGL;
-              if (factory) {
-                instance = factory({
-                  style: buildVectorStyle(layer),
-                  attributionControl: false,
-                  interactive: false,
-                  refreshExpiredTiles: false,
-                });
-              }
-            } catch {
-              push(`لایهٔ برداری «${layer.name}» بارگذاری نشد`, 'error');
-            }
-          } else {
-            // کاشی‌های تصویری (PNG/JPEG/WebP) با TileLayer سفارشی MBTiles.
-            instance = createRasterLayer(layer);
-          }
-        } else {
-          instance = new OfflineGridLayer({ tileSize: 256, minZoom: 0, maxZoom: 20 });
-        }
-        if (instance && alive && mapRef.current === map) {
-          instance.addTo(map);
-          tileLayers.current[layer.id] = instance;
-          if (isVectorLayer(layer)) {
-            const gl = (instance as unknown as { getMaplibreMap?: () => GlMap }).getMaplibreMap?.();
-            if (gl) {
-              vectorMaps.current.set(layer.id, gl);
-              setVectorMapsTick((t) => t + 1);
-            }
-          }
-        }
-      }
-      if (!alive) return;
-      for (const [id, instance] of Object.entries(tileLayers.current)) {
-        if (!wanted.has(Number(id))) {
-          map.removeLayer(instance);
-          vectorMaps.current.delete(Number(id));
-          delete tileLayers.current[Number(id)];
-        }
-      }
-      for (const layer of layers.filter((l) => l.visible)) {
-        const inst = tileLayers.current[layer.id] as L.GridLayer | undefined;
-        if (inst && typeof inst.bringToBack === 'function') inst.bringToBack();
-      }
-    };
-    ensure();
-    return () => {
-      alive = false;
-    };
-  }, [layers, ready, push]);
-
-  /* --------------------------- برچسب نام شهرها/استان‌ها --------------------------- */
-  // نام‌ها در MapLibre به فونت SDF نیاز دارند که در حالت آفلاین موجود نیست؛
-  // ازاین‌رو نام هر عارضه را از همان کاشی می‌خوانیم و به‌صورت HTML روی نقشه
-  // می‌نویسیم. برچسب‌های هم‌پوشان با یک آزمون سادهٔ مستطیلی حذف می‌شوند.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready || vectorMapsTick === 0) return;
-    if (!map.getPane('nw-labels')) {
-      const pane = map.createPane('nw-labels');
-      pane.style.zIndex = '430';
-      pane.style.pointerEvents = 'none';
-    }
-    const group = L.layerGroup([], { pane: 'nw-labels' } as L.LayerOptions).addTo(map);
-    let timer = 0;
-    let retries = 0;
-
-    // پرس‌وجو تنها وقتی معنا دارد که استایل کامل بار شده و لایهٔ لنگر در آن باشد؛
-    // وگرنه MapLibre خطای «لایه وجود ندارد» می‌دهد. تا آماده‌شدن، کوتاه‌مدت تکرار می‌شود.
-    const isReady = (gl: GlMap) => {
-      const g = gl as unknown as { isStyleLoaded?: () => boolean; getLayer?: (id: string) => unknown };
-      if (g.isStyleLoaded && !g.isStyleLoaded()) return false;
-      if (g.getLayer && !g.getLayer(LABEL_ANCHOR_LAYER)) return false;
-      return true;
-    };
-
-    const draw = () => {
-      const maps = [...vectorMaps.current.values()];
-      if (!maps.length) return;
-      if (!maps.every(isReady)) {
-        if (retries++ < 40) timer = window.setTimeout(draw, 400);
-        return;
-      }
-      retries = 0;
-      const zoom = map.getZoom();
-      const size = map.getSize();
-      type Candidate = { name: string; cls: string; rank: number; lat: number; lng: number };
-      const found = new Map<string, Candidate>();
-
-      for (const gl of maps) {
-        let features: GlFeature[] = [];
-        try {
-          features = gl.queryRenderedFeatures({ layers: [LABEL_ANCHOR_LAYER] }) ?? [];
-        } catch {
-          continue;
-        }
-        for (const feature of features) {
-          const props = feature.properties ?? {};
-          const cls = String(props.class ?? '');
-          if (!labelVisible(cls, zoom)) continue;
-          const name = String(props['name:fa'] || props.name || props['name:en'] || '').trim();
-          if (!name) continue;
-          const geom = feature.geometry;
-          if (!geom || geom.type !== 'Point' || !Array.isArray(geom.coordinates)) continue;
-          const [lng, lat] = geom.coordinates as [number, number];
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          const rank = Number(props.rank ?? 99);
-          const key = `${cls}:${name}`;
-          const prev = found.get(key);
-          if (!prev || rank < prev.rank) found.set(key, { name, cls, rank, lat, lng });
-        }
-      }
-
-      const candidates = [...found.values()].sort(
-        (a, b) => (LABEL_ORDER[a.cls] ?? 9) - (LABEL_ORDER[b.cls] ?? 9) || a.rank - b.rank
-      );
-
-      group.clearLayers();
-      const placed: { x: number; y: number; w: number; h: number }[] = [];
-      for (const c of candidates) {
-        const fontSize = labelSize(c.cls, zoom);
-        const width = c.name.length * fontSize * 0.62 + 6;
-        const height = fontSize + 6;
-        const point = map.latLngToContainerPoint([c.lat, c.lng]);
-        if (point.x < -20 || point.y < -20 || point.x > size.x + 20 || point.y > size.y + 20) continue;
-        const rect = { x: point.x - width / 2, y: point.y - height / 2, w: width, h: height };
-        const collides = placed.some(
-          (r) => Math.abs(r.x - rect.x) < (r.w + rect.w) / 2 + 2 && Math.abs(r.y - rect.y) < (r.h + rect.h) / 2 + 1
-        );
-        if (collides) continue;
-        placed.push(rect);
-        const strong = c.cls === 'country' || c.cls === 'continent';
-        const muted = c.cls === 'state' || c.cls === 'province' || c.cls === 'suburb' || c.cls === 'neighbourhood' || c.cls === 'quarter';
-        const style = [
-          'position:absolute',
-          'transform:translate(-50%,-50%)',
-          'white-space:nowrap',
-          `font-size:${fontSize}px`,
-          `font-weight:${strong || c.cls === 'city' ? 700 : 500}`,
-          `color:${muted ? '#5a6572' : '#2f3a45'}`,
-          muted ? 'font-style:italic' : '',
-          'text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 4px #fff',
-        ]
-          .filter(Boolean)
-          .join(';');
-        L.marker([c.lat, c.lng], {
-          pane: 'nw-labels',
-          interactive: false,
-          keyboard: false,
-          icon: L.divIcon({
-            // کلاس جدا از .nw-map-label نشانگرها، تا استایل جعبه‌ای آن‌ها روی
-            // برچسب نقشه اعمال نشود.
-            className: 'nw-place-label',
-            html: `<span dir="auto" style="${style}">${escapeLabel(c.name)}</span>`,
-            iconSize: [0, 0],
-          }),
-        }).addTo(group);
-      }
-    };
-
-    const schedule = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(draw, 160);
-    };
-    const maps = [...vectorMaps.current.values()];
-    for (const gl of maps) {
-      gl.on('idle', schedule);
-      gl.on('moveend', schedule);
-    }
-    schedule();
-    return () => {
-      window.clearTimeout(timer);
-      for (const gl of maps) {
-        gl.off('idle', schedule);
-        gl.off('moveend', schedule);
-      }
-      group.remove();
-    };
-  }, [ready, vectorMapsTick]);
 
   /* --------------------------- device markers + clustering --------------------------- */
   // برای هزاران Marker، یک Marker برای هر تجهیز ساخته نمی‌شود؛ نقاط در فضای
@@ -854,285 +524,18 @@ export default function MapPage() {
     };
   }, [ready, editing, placingDevice, armedType]);
 
-  /* ------------------------- اندازه‌گیری روی نقشه ------------------------- */
-  // ابزار مسافت/مساحت/شعاع فقط برای خواندن است: نتیجه در همین نشست می‌ماند،
-  // در پایگاه‌داده ذخیره نمی‌شود و روی تجهیزات یا علامت‌ها اثری ندارد.
-  const clearMeasure = useCallback(() => {
-    measureLayer.current?.clearLayers();
-    measureLabels.current?.clearLayers();
-    measurePoints.current = [];
-    measureShape.current = null;
-    measureVertices.current = [];
-    measureRadiusEdge.current = null;
-    measureRadiusLine.current = null;
-    setMeasureReadout(null);
-  }, []);
-
-  /**
-   * پایان دادن به ترسیم.
-   *
-   * پیش‌تر فقط حالت ابزار خاموش می‌شد و خط پیش‌نمایشِ چسبیده به ماوس
-   * (خط‌چین تا آخرین موقعیت نشانگر) روی نقشه می‌ماند؛ همین باعث می‌شد به نظر
-   * برسد ترسیم تمام نشده است. اینجا اول شکل نهایی بدون پیش‌نمایش رسم می‌شود،
-   * بعد ابزار خاموش می‌شود. نقاط، خطوط و برچسب‌ها می‌مانند.
-   */
-  const finishMeasure = useCallback(() => {
-    if (measureModeRef.current === 'off') return;
-    measureRedraw.current?.();
-    setMeasureMode('off');
-  }, []);
-
-  const startMeasure = useCallback(
-    (mode: Exclude<MeasureMode, 'off'>) => {
-      setMeasureOpen(true);
-      // کلیک دوباره روی ابزار فعال یعنی «پایان»، نه پاک کردن نتیجه.
-      if (measureModeRef.current === mode) {
-        finishMeasure();
-        return;
-      }
-      clearMeasure();
-      setMeasureMode(mode);
-    },
-    [clearMeasure, finishMeasure]
-  );
-
-  const canFinishMeasure =
-    measureReadout == null
-      ? false
-      : measureReadout.kind === 'area'
-        ? measureReadout.points >= 3
-        : measureReadout.kind === 'radius'
-          ? (measureReadout.radiusM ?? 0) > 0
-          : measureReadout.points >= 2;
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    measureModeRef.current = measureMode;
-    const container = map.getContainer();
-    if (measureMode === 'off') {
-      container.style.cursor = '';
-      return;
-    }
-    container.style.cursor = 'crosshair';
-    const layer = measureLayer.current ?? L.layerGroup().addTo(map);
-    measureLayer.current = layer;
-    const accent = measureMode === 'area' ? '#7c3aed' : measureMode === 'radius' ? '#0f766e' : '#2563eb';
-
-    // برچسب‌ها لایهٔ جداگانه دارند تا با هر رسم دوباره ساخته شوند و در
-    // رویداد کلیک/کشیدن نقشه دخالت نکنند.
-    const labelLayer = measureLabels.current ?? L.layerGroup().addTo(map);
-    measureLabels.current = labelLayer;
-
-    const addLabel = (latlng: L.LatLng, text: string, variant: 'segment' | 'total' = 'segment') => {
-      const icon = L.divIcon({
-        className: 'nw-measure-label',
-        html: `<span class="nw-measure-chip ${variant}" style="--mc:${accent}">${text}</span>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
-      });
-      L.marker(latlng, {
-        icon,
-        interactive: false,
-        keyboard: false,
-        zIndexOffset: variant === 'total' ? 720 : 640,
-      }).addTo(labelLayer);
-    };
-    const midpoint = (a: L.LatLng, b: L.LatLng) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
-    const centroid = (points: L.LatLng[]) =>
-      L.latLng(
-        points.reduce((sum, point) => sum + point.lat, 0) / points.length,
-        points.reduce((sum, point) => sum + point.lng, 0) / points.length
-      );
-
-    const addVertex = (latlng: L.LatLng) => {
-      const dot = L.circleMarker(latlng, {
-        radius: 4,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: accent,
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(layer);
-      measureVertices.current.push(dot);
-    };
-
-    const redraw = (cursor?: L.LatLng) => {
-      if (measureShape.current) {
-        layer.removeLayer(measureShape.current);
-        measureShape.current = null;
-      }
-      if (measureRadiusLine.current) {
-        layer.removeLayer(measureRadiusLine.current);
-        measureRadiusLine.current = null;
-      }
-      labelLayer.clearLayers();
-      const pts = measurePoints.current;
-      if (!pts.length) {
-        setMeasureReadout(null);
-        return;
-      }
-
-      if (measureMode === 'distance') {
-        const preview = cursor ? [...pts, cursor] : pts;
-        measureShape.current = L.polyline(preview, {
-          color: accent,
-          weight: 3,
-          opacity: 0.95,
-          dashArray: cursor ? '6 6' : undefined,
-          interactive: false,
-        }).addTo(layer);
-        // اندازهٔ هر قطعه روی همان خط و مجموع در انتهای مسیر نوشته می‌شود.
-        for (let i = 1; i < pts.length; i += 1) {
-          addLabel(midpoint(pts[i - 1], pts[i]), fmtDistanceM(pts[i - 1].distanceTo(pts[i])));
-        }
-        if (cursor && pts.length) {
-          addLabel(midpoint(pts[pts.length - 1], cursor), fmtDistanceM(pts[pts.length - 1].distanceTo(cursor)));
-        }
-        addLabel(pts[pts.length - 1], `مجموع: ${fmtDistanceM(pathLengthM(preview))}`, 'total');
-        setMeasureReadout({
-          kind: 'distance',
-          points: pts.length,
-          lengthM: pathLengthM(preview),
-          areaM2: 0,
-          perimeterM: null,
-          radiusM: null,
-          segments: pts.slice(1).map((point, index) => pts[index].distanceTo(point)),
-        });
-        return;
-      }
-
-      if (measureMode === 'area') {
-        const ring = cursor ? [...pts, cursor] : pts;
-        const closed = ring.length >= 3;
-        measureShape.current = (closed
-          ? L.polygon(ring, { color: accent, weight: 2.5, fillColor: accent, fillOpacity: 0.12, interactive: false })
-          : L.polyline(ring, { color: accent, weight: 2.5, dashArray: '6 6', interactive: false })
-        ).addTo(layer);
-        const segments: number[] = [];
-        for (let i = 1; i < pts.length; i += 1) segments.push(pts[i - 1].distanceTo(pts[i]));
-        segments.forEach((value, index) => addLabel(midpoint(pts[index], pts[index + 1]), fmtDistanceM(value)));
-        const perimeterM = closed ? pathLengthM([...ring, ring[0]]) : null;
-        const areaM2 = closed ? geodesicAreaM2(ring) : 0;
-        if (closed) {
-          // ضلع بستن (از آخرین نقطه به نقطهٔ اول) فقط در رسم نهایی نمایش داده می‌شود.
-          if (!cursor) {
-            const closing = pts[pts.length - 1].distanceTo(pts[0]);
-            segments.push(closing);
-            addLabel(midpoint(pts[pts.length - 1], pts[0]), fmtDistanceM(closing));
-          }
-          addLabel(centroid(ring), `مساحت: ${fmtAreaM2(areaM2)}`, 'total');
-        }
-        setMeasureReadout({
-          kind: 'area',
-          points: pts.length,
-          lengthM: perimeterM ?? pathLengthM(ring),
-          areaM2,
-          perimeterM,
-          radiusM: null,
-          segments,
-        });
-        return;
-      }
-
-      const center = pts[0];
-      const edge = cursor ?? measureRadiusEdge.current;
-      if (!edge) {
-        setMeasureReadout({ kind: 'radius', points: 1, lengthM: 0, areaM2: 0, perimeterM: 0, radiusM: 0, segments: [] });
-        return;
-      }
-      measureRadiusEdge.current = edge;
-      const radiusM = center.distanceTo(edge);
-      measureShape.current = L.circle(center, {
-        radius: radiusM,
-        color: accent,
-        weight: 2.5,
-        fillColor: accent,
-        fillOpacity: 0.1,
-        interactive: false,
-      }).addTo(layer);
-      measureRadiusLine.current = L.polyline([center, edge], {
-        color: accent,
-        weight: 1.5,
-        dashArray: '4 4',
-        interactive: false,
-      }).addTo(layer);
-      addLabel(midpoint(center, edge), fmtDistanceM(radiusM));
-      addLabel(center, `مساحت: ${fmtAreaM2(Math.PI * radiusM * radiusM)}`, 'total');
-      setMeasureReadout({
-        kind: 'radius',
-        points: 1,
-        lengthM: radiusM,
-        areaM2: Math.PI * radiusM * radiusM,
-        perimeterM: 2 * Math.PI * radiusM,
-        radiusM,
-        segments: [],
-      });
-    };
-    measureRedraw.current = () => redraw();
-
-    const onClick = (e: L.LeafletMouseEvent) => {
-      if (measureModeRef.current === 'radius') {
-        if (!measurePoints.current.length) {
-          measurePoints.current = [e.latlng];
-          measureRadiusEdge.current = null;
-          addVertex(e.latlng);
-          setMeasureReadout({ kind: 'radius', points: 1, lengthM: 0, areaM2: 0, perimeterM: 0, radiusM: 0, segments: [] });
-        } else {
-          // دومین کلیک، شعاع را دقیقاً همان‌جا قطعی می‌کند و ترسیم تمام می‌شود.
-          measureRadiusEdge.current = e.latlng;
-          redraw(e.latlng);
-          setMeasureMode('off');
-        }
-        return;
-      }
-      measurePoints.current = [...measurePoints.current, e.latlng];
-      addVertex(e.latlng);
-      redraw();
-    };
-
-    const onMove = (e: L.LeafletMouseEvent) => {
-      if (measureModeRef.current === 'distance' || measureModeRef.current === 'area') {
-        if (measurePoints.current.length) redraw(e.latlng);
-        return;
-      }
-      if (measureModeRef.current === 'radius' && measurePoints.current.length === 1) redraw(e.latlng);
-    };
-
-    const onContext = (e: L.LeafletMouseEvent) => {
-      e.originalEvent?.preventDefault?.();
-      if (measureModeRef.current === 'radius') return;
-      if (!measurePoints.current.length) return;
-      measurePoints.current = measurePoints.current.slice(0, -1);
-      const last = measureVertices.current.pop();
-      if (last) layer.removeLayer(last);
-      redraw();
-    };
-
-    const onKey = (e: KeyboardEvent) => {
-      if (measureTypingTarget(e.target)) return;
-      if (e.key === 'Escape') {
-        setMeasureMode('off');
-        clearMeasure();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        finishMeasure();
-      }
-    };
-
-    map.on('click', onClick);
-    map.on('mousemove', onMove);
-    map.on('contextmenu', onContext);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      map.off('click', onClick);
-      map.off('mousemove', onMove);
-      map.off('contextmenu', onContext);
-      window.removeEventListener('keydown', onKey);
-      container.style.cursor = '';
-      measureRedraw.current = null;
-    };
-  }, [clearMeasure, finishMeasure, measureMode, ready]);
+  const {
+    measureOpen,
+    setMeasureOpen,
+    measureMode,
+    measureReadout,
+    measureModeRef,
+    canFinishMeasure,
+    clearMeasure,
+    finishMeasure,
+    startMeasure,
+    closeMeasure,
+  } = useMapMeasure({ mapRef, ready });
 
   /* ------------------------- drag & drop از فهرست به نقشه ------------------------- */
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -1502,210 +905,33 @@ export default function MapPage() {
                 />
               ) : null}
               {measureOpen ? (
-              <div
-                className="pointer-events-auto w-[258px] max-w-[calc(100vw-4rem)] rounded-card border border-ink-200/70 bg-surface/95 p-2.5 shadow-pop backdrop-blur"
-                dir="rtl"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="flex items-center gap-1 text-[11.5px] font-semibold text-ink-700">
-                    <Ruler size={13} className="text-accent" />
-                    اندازه‌گیری روی نقشه
-                  </p>
-                  <button
-                    type="button"
-                    className="grid h-6 w-6 place-items-center rounded-md text-ink-400 hover:bg-ink-50 hover:text-ink-700"
-                    onClick={() => {
-                      setMeasureMode('off');
-                      setMeasureOpen(false);
-                      clearMeasure();
-                    }}
-                    aria-label="بستن ابزار اندازه‌گیری"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-
-                <div className="mt-2 grid grid-cols-3 gap-1" role="group" aria-label="ابزار اندازه‌گیری">
-                  {MEASURE_META.map((item) => (
-                    <button
-                      key={item.mode}
-                      type="button"
-                      onClick={() => startMeasure(item.mode)}
-                      aria-pressed={measureMode === item.mode}
-                      className={`inline-flex items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[11px] font-medium transition ${
-                        measureMode === item.mode ? 'text-white' : 'border-ink-200 bg-surface text-ink-600 hover:border-brand-200'
-                      }`}
-                      style={measureMode === item.mode ? { background: item.color, borderColor: item.color } : undefined}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-2 rounded-soft border border-ink-100 bg-ink-50/60 p-2 text-[11px] text-ink-600">
-                  {measureReadout ? (
-                    <div className="space-y-0.5">
-                      {measureReadout.kind === 'distance' ? (
-                        <>
-                          <p>
-                            طول کل: <span className="num font-semibold text-ink-800">{fmtDistanceM(measureReadout.lengthM)}</span>
-                          </p>
-                          <p className="num text-[10px] text-ink-400">
-                            {faDigits(measureReadout.points)} نقطه · {faDigits(measureReadout.segments.length)} قطعه
-                          </p>
-                        </>
-                      ) : measureReadout.kind === 'area' ? (
-                        <>
-                          <p>
-                            مساحت: <span className="num font-semibold text-ink-800">{fmtAreaM2(measureReadout.areaM2)}</span>
-                          </p>
-                          <p>
-                            محیط: <span className="num text-ink-700">{measureReadout.perimeterM != null ? fmtDistanceM(measureReadout.perimeterM) : '—'}</span>
-                          </p>
-                          <p className="num text-[10px] text-ink-400">
-                            {faDigits(measureReadout.points)} نقطه · {faDigits(measureReadout.segments.length)} ضلع
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p>
-                            شعاع: <span className="num font-semibold text-ink-800">{fmtDistanceM(measureReadout.radiusM ?? 0)}</span>
-                          </p>
-                          <p>
-                            مساحت دایره: <span className="num text-ink-700">{fmtAreaM2(measureReadout.areaM2)}</span>
-                          </p>
-                          <p>
-                            محیط: <span className="num text-ink-700">{fmtDistanceM(measureReadout.perimeterM ?? 0)}</span>
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <p>
-                      {measureMode === 'distance'
-                        ? 'نقطه‌های مسیر را یکی‌یکی روی نقشه کلیک کنید.'
-                        : measureMode === 'area'
-                          ? 'نقطه‌های محیط زمین را کلیک کنید؛ از سه نقطه به بعد مساحت محاسبه می‌شود.'
-                          : measureMode === 'radius'
-                            ? 'ابتدا مرکز دایره و سپس لبهٔ آن را کلیک کنید.'
-                            : 'مسافت، مساحت یا شعاع را انتخاب کنید.'}
-                    </p>
-                  )}
-                  {measureMode !== 'off' ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                      <button
-                        type="button"
-                        className="btn-primary btn-xs"
-                        onClick={finishMeasure}
-                        disabled={!canFinishMeasure}
-                        title="بستن ترسیم و نگه داشتن نتیجه (Enter)"
-                      >
-                        <Flag size={11} />
-                        پایان ترسیم
-                      </button>
-                      <button type="button" className="btn-ghost btn-xs" onClick={clearMeasure}>
-                        <Trash2 size={11} />
-                        پاک کردن
-                      </button>
-                    </div>
-                  ) : measureReadout ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                      <span className="rounded-pill bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-success">
-                        پایان‌یافته
-                      </span>
-                      <button type="button" className="btn-ghost btn-xs" onClick={clearMeasure}>
-                        <Trash2 size={11} />
-                        پاک کردن
-                      </button>
-                    </div>
-                  ) : null}
-                  <p className="mt-1 text-[9.5px] leading-4 text-ink-400">
-                    کلیک: نقطه · Enter یا «پایان ترسیم»: بستن رسم · راست‌کلیک: حذف نقطه · Esc: پاک کردن · نتیجه ذخیره
-                    نمی‌شود
-                  </p>
-                </div>
-              </div>
-            ) : null}
+                <MapMeasurePanel
+                  mode={measureMode}
+                  readout={measureReadout}
+                  canFinish={canFinishMeasure}
+                  onStart={startMeasure}
+                  onFinish={finishMeasure}
+                  onClear={clearMeasure}
+                  onClose={closeMeasure}
+                />
+              ) : null}
             </div>
             {/* راهنمای شناور پایین نقشه: جانمایی علامت، حالت جابه‌جایی و موقعیت
                 انتخاب‌شده در یک ستون می‌آیند تا روی هم نیفتند. متن بلند راهنما
                 فقط با دکمهٔ آیکون راهنما باز می‌شود. */}
-            {armedType || editing || pending ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-[900] flex flex-col items-center gap-2 px-3" dir="rtl">
-                {armedType ? (
-                  <div className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-pill border border-brand-200 bg-surface/97 py-1.5 pe-2 ps-3 shadow-pop backdrop-blur">
-                    <Crosshair size={14} className="shrink-0 text-accent" />
-                    <span className="text-[12px] text-ink-700">برای جانمایی علامت روی نقشه کلیک کنید.</span>
-                    <button type="button" className="btn-ghost btn-xs shrink-0" onClick={() => setArmedType(null)}>
-                      انصراف
-                    </button>
-                  </div>
-                ) : null}
-
-                {editing ? (
-                  <div className="animate-fade-up pointer-events-auto relative flex max-w-full items-center gap-2 rounded-pill border border-sun-200 bg-surface/97 py-1.5 pe-2 ps-3 shadow-pop backdrop-blur">
-                    <Crosshair size={14} className="shrink-0 text-warning" />
-                    <span className="text-[12px] text-ink-700">
-                      حالت جابه‌جایی فعال است
-                      {placingDevice ? (
-                        <span className="ms-1 font-semibold text-warning">— در انتظار انتخاب محل جدید برای تجهیز #{faDigits(placingDevice)}</span>
-                      ) : null}
-                    </span>
-                    <button
-                      type="button"
-                      className={`grid h-6 w-6 shrink-0 place-items-center rounded-full transition ${
-                        moveHelpOpen ? 'bg-brand-50 text-accent' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700'
-                      }`}
-                      onClick={() => setMoveHelpOpen((value) => !value)}
-                      aria-label="راهنمای حالت جابه‌جایی"
-                      title="راهنمای حالت جابه‌جایی"
-                      aria-expanded={moveHelpOpen}
-                      aria-pressed={moveHelpOpen}
-                    >
-                      <HelpCircle size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-warn btn-xs shrink-0"
-                      onClick={stopEditMode}
-                      title="پایان حالت جابه‌جایی"
-                    >
-                      <Check size={12} />
-                      پایان
-                    </button>
-                    {moveHelpOpen ? (
-                      <div
-                        className="absolute bottom-full end-0 mb-2 w-[300px] max-w-[calc(100vw-2rem)] rounded-card border border-ink-200 bg-surface p-3 text-[11.5px] leading-5 text-ink-600 shadow-pop"
-                        role="dialog"
-                        aria-label="راهنمای حالت جابه‌جایی"
-                      >
-                        نشانگر تجهیز، ایستگاه یا علامت را بگیرید و بکشید. برای تجهیز می‌توانید روی نشانگر کلیک کنید و
-                        محل جدید را روی نقشه انتخاب کنید، یا آن را از فهرست بکشید و روی نقشه رها کنید. جابه‌جایی هر
-                        تجهیز عضو ایستگاه، کل ایستگاه را به همان نقطه می‌برد.
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {pending ? (
-                  <div className="animate-fade-up pointer-events-auto flex w-full max-w-lg items-center justify-between gap-3 rounded-soft border border-brand-200 bg-surface/97 p-3 shadow-pop backdrop-blur">
-                    <span className="text-[12px] text-ink-600">
-                      موقعیت جدید: <span className="num font-semibold">{pending.latitude}, {pending.longitude}</span>
-                    </span>
-                    <div className="flex gap-2">
-                      <button type="button" className="btn-ghost btn-xs" onClick={() => setPending(null)}>
-                        انصراف
-                      </button>
-                      <button type="button" className="btn-primary btn-xs" disabled={saving} onClick={savePosition}>
-                        <Save size={13} />
-                        {saving ? 'در حال ذخیره…' : 'ذخیره موقعیت'}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <MapEditBanner
+              armedType={armedType}
+              editing={editing}
+              pending={pending}
+              placingDevice={placingDevice}
+              moveHelpOpen={moveHelpOpen}
+              saving={saving}
+              onCancelArmed={() => setArmedType(null)}
+              onToggleHelp={() => setMoveHelpOpen((value) => !value)}
+              onStopEditing={stopEditMode}
+              onCancelPending={() => setPending(null)}
+              onSavePosition={savePosition}
+            />
           </div>
           <style>{`
             /* برچسب اندازه‌گیری: کادر مستقل از استایل پیش‌فرض Leaflet، فونت

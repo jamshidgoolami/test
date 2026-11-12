@@ -25,6 +25,15 @@ export type MapSite = {
   longitude: number | null;
 };
 
+export type ArmedMarkerType = {
+  typeId: number;
+  typeName: string;
+  typeColor: string;
+  typeIcon: string;
+};
+
+export type PendingMapPosition = { id: number; latitude: number; longitude: number };
+
 /** نمای قابل‌کنترل پاپ‌آپ ایستگاه: فهرست تجهیزات یا جزئیات یک تجهیز. */
 export type SitePopupView = {
   element: HTMLElement;
