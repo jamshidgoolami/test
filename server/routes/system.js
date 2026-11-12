@@ -132,8 +132,34 @@ router.get('/restore/status', (_req, res) => {
   res.json(restoreStatus());
 });
 
+/** مسیرهای مطلق سرویس در پاسخ API نمی‌آیند؛ فقط نام پایه برای نمایش/پشتیبانی کافی است. */
+function publicBackupPath(name) {
+  return path.join(path.basename(BACKUP_DIR), String(name || ''));
+}
+
+function publicBackupManifest(manifest) {
+  return manifest ? { ...manifest, dbPath: manifest.dbPath ? path.basename(manifest.dbPath) : manifest.dbPath } : manifest;
+}
+
+function publicBackupReport(report) {
+  return {
+    ...report,
+    dbFile: report?.dbFile ? path.basename(report.dbFile) : null,
+    manifest: publicBackupManifest(report?.manifest),
+    mbtiles: (report?.mbtiles || []).map((item) => ({ ...item, path: item.path ? path.basename(item.path) : null })),
+    attachments: (report?.attachments || []).map((item) => ({ ...item, path: item.path ? path.basename(item.path) : null })),
+    credentialsKey: report?.credentialsKey
+      ? { ...report.credentialsKey, file: report.credentialsKey.file ? path.basename(report.credentialsKey.file) : null }
+      : report?.credentialsKey,
+  };
+}
+
 router.get('/backups', (_req, res) => {
-  res.json({ dir: BACKUP_DIR, items: listBackups(), status: backupStatus() });
+  res.json({
+    dir: path.basename(BACKUP_DIR),
+    items: listBackups().map((item) => ({ ...item, dir: publicBackupPath(path.basename(item.dir)) })),
+    status: backupStatus(),
+  });
 });
 
 router.post('/backups', requireAdmin, (req, res) => {
@@ -145,8 +171,8 @@ router.post('/backups', requireAdmin, (req, res) => {
     });
     res.status(201).json({
       name: result.name,
-      dir: result.dir,
-      manifest: result.manifest,
+      dir: publicBackupPath(result.name),
+      manifest: publicBackupManifest(result.manifest),
     });
   } catch (e) {
     const status = Number(e.status) || (e.code === 'DB_DISK_FULL' ? 507 : 500);
@@ -157,7 +183,7 @@ router.post('/backups', requireAdmin, (req, res) => {
 router.post('/backups/verify', requireAdmin, (req, res) => {
   const target = resolveBackupTarget(req.body?.name, req.body?.path);
   if (target.error) return res.status(target.status).json({ error: target.error });
-  const report = verifyBackup(target.path);
+  const report = publicBackupReport(verifyBackup(target.path));
   res.status(report.ok ? 200 : 400).json(report);
 });
 
@@ -192,7 +218,12 @@ router.post('/backups/restore', requireAdmin, (req, res) => {
     });
     if (!dryRun && wasRunning) engine.start().catch((e) => log('error', `راه‌اندازی موتور پس از بازیابی ناموفق: ${e.message}`));
     log('warn', `بازیابی از پشتیبان «${target.name}» توسط ${req.user?.username || 'ناشناس'} انجام شد.`);
-    res.json(result);
+    res.json({
+      ...result,
+      source: result?.source ? path.basename(result.source) : result?.source,
+      safetyCopy: result?.safetyCopy ? path.basename(result.safetyCopy) : result?.safetyCopy,
+      verification: result?.verification ? publicBackupReport(result.verification) : result?.verification,
+    });
   } catch (e) {
     if (wasRunning && !dryRun) engine.start().catch(() => {});
     if (wasLeader) logEvent('warn', 'restore_leader_lost', {});

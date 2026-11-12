@@ -155,3 +155,27 @@ test('deeply malformed query values do not crash the server', async () => {
   const health = await api(srv.base, 'GET', '/api/health', undefined, { auth: false });
   assert.equal(health.status, 200);
 });
+
+test('bulk id lists reject malformed shapes and oversized batches before SQL', async () => {
+  const malformed = [
+    ['POST', '/api/alerts/bulk', { ids: '1,2', action: 'ack' }],
+    ['DELETE', '/api/markers/bulk', { ids: '1,2' }],
+    ['POST', '/api/tags/1/devices', { ids: '1,2', mode: 'add' }],
+  ];
+  for (const [method, url, body] of malformed) {
+    const res = await api(srv.base, method, url, body);
+    assert.equal(res.status, 400, `${method} ${url} → ${res.status}`);
+  }
+
+  const tooMany = Array.from({ length: 4001 }, (_, i) => i + 1);
+  const oversized = [
+    ['POST', '/api/alerts/bulk', { ids: tooMany, action: 'ack' }],
+    ['DELETE', '/api/markers/bulk', { ids: tooMany }],
+    ['POST', '/api/tags/1/devices', { ids: tooMany, mode: 'add' }],
+  ];
+  for (const [method, url, body] of oversized) {
+    const res = await api(srv.base, method, url, body);
+    assert.equal(res.status, 413, `${method} ${url} → ${res.status}`);
+  }
+  assert.equal(srv.child.exitCode, null, 'server must stay alive');
+});

@@ -58,8 +58,22 @@ function writeRestoreState(patch) {
 function restoreStatus() {
   const state = readRestoreState();
   if (!state) return { status: 'never', inProgress: false };
+  const publicPath = (value) => (value ? path.basename(String(value)) : value);
+  const scrub = (value) => (value ? String(value).split(DATA_DIR).join('.') : value);
   return {
     ...state,
+    safetyFile: publicPath(state.safetyFile),
+    journalDir: publicPath(state.journalDir),
+    error: scrub(state.error),
+    rollbackError: scrub(state.rollbackError),
+    fileOperations: (state.fileOperations || []).map((operation) => ({
+      ...operation,
+      target: publicPath(operation.target),
+      backup: publicPath(operation.backup),
+    })),
+    fileRollback: state.fileRollback
+      ? { ...state.fileRollback, errors: (state.fileRollback.errors || []).map(scrub) }
+      : state.fileRollback,
     inProgress: state.status === 'in_progress',
     stale: state.status === 'in_progress' && Date.now() - Number(state.updatedAt || 0) > 10 * 60 * 1000,
   };

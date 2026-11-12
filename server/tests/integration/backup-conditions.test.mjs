@@ -49,6 +49,7 @@ test('a backup taken before a change restores the exact previous state', async (
   });
   assert.equal(restored.status, 200, JSON.stringify(restored.data));
   assert.equal(restored.data.restored, true);
+  assert.equal(path.isAbsolute(restored.data.source), false, 'restore response must not expose an absolute source path');
 
   const row = await api(srv.base, 'GET', `/api/devices/${deviceId}`);
   assert.equal(row.status, 200, 'device deleted after the backup must come back');
@@ -61,7 +62,8 @@ test('a tampered backup is rejected before restore and current data stays intact
   assert.equal(backups.status, 200);
   const item = backups.data.items.find((b) => b.name === backupName);
   assert.ok(item, 'backup must be listed');
-  const dbFile = path.join(item.dir, 'netwatch.db');
+  assert.equal(path.isAbsolute(item.dir), false, 'backup listing must not expose an absolute server path');
+  const dbFile = path.join(dir, 'backups', item.name, 'netwatch.db');
   assert.ok(fs.existsSync(dbFile));
 
   // یک بایت به انتهای فایل اضافه می‌کنیم: checksum دیگر با manifest نمی‌خواند.

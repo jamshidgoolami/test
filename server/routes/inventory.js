@@ -13,6 +13,7 @@ import { mbtilesOnly, mbtilesLimits, UPLOAD_TMP_DIR, ensureUploadTmpDir } from '
 import { runJob } from '../jobs.js';
 import { fileGuardMessage } from '../file-guard.js';
 import { logEvent } from '../logger.mjs';
+import { parseIdList } from '../validation.js';
 
 const router = express.Router();
 
@@ -347,7 +348,12 @@ router.delete('/device-types/:id', (req, res) => {
 /** اختصاص/حذف تگ از تجهیز به‌صورت تکی */
 router.post('/tags/:tagId/devices', (req, res) => {
   const tagId = Number(req.params.tagId);
-  const ids = (req.body?.ids || []).map(Number).filter(Boolean);
+  const parsed = parseIdList(req.body?.ids);
+  if (parsed.invalid) return res.status(400).json({ error: 'فهرست تجهیزات نامعتبر است.' });
+  if (parsed.tooMany) {
+    return res.status(413).json({ error: 'تعداد تجهیزات انتخابی برای عملیات تگ بیش از حد مجاز (۴۰۰۰) است.' });
+  }
+  const ids = parsed.ids;
   const mode = req.body?.mode === 'remove' ? 'remove' : 'add';
   const stmt =
     mode === 'add'
@@ -367,7 +373,8 @@ router.get('/layers', (_req, res) => {
     .prepare('SELECT * FROM map_layers ORDER BY is_default DESC, name')
     .all()
     .map((l) => ({ ...l, fileInfo: l.file_name ? mbtiles.info(l.file_name, { countTiles: false }) : null }));
-  res.json({ items, files: mbtiles.listFiles(), tilesDir: MBTILES_DIR, settings: getSettings() });
+  // فقط نام پوشه برگردانده می‌شود؛ مسیر مطلق سرویس نباید در پاسخ API بیاید.
+  res.json({ items, files: mbtiles.listFiles(), tilesDir: path.basename(MBTILES_DIR), settings: getSettings() });
 });
 
 /** لایه‌هایی که به یک فایل MBTiles مشخص ارجاع می‌دهند. */
@@ -512,7 +519,8 @@ router.delete('/layers/:id', (req, res) => {
     try {
       fs.renameSync(filePath, stagedPath);
     } catch (e) {
-      return res.status(500).json({ error: `آماده‌سازی حذف فایل نقشه ناموفق بود: ${e.message}` });
+      logEvent('error', 'map_layer_delete_stage_failed', { layerId: id, message: String(e?.message || e) });
+      return res.status(500).json({ error: 'آماده‌سازی حذف فایل نقشه ناموفق بود.' });
     }
   }
   let deleted;
@@ -600,7 +608,8 @@ router.post('/layers/upload', upload.single('file'), async (req, res) => {
     }
   } catch (e) {
     cleanup();
-    return res.status(507).json({ error: `ذخیرهٔ فایل نقشه ناموفق بود: ${e.message}` });
+    logEvent('error', 'map_layer_store_failed', { message: String(e?.message || e) });
+    return res.status(507).json({ error: 'ذخیرهٔ فایل نقشه ناموفق بود.' });
   }
   try {
     const b = req.body || {};
@@ -673,7 +682,7 @@ router.get('/tiles/:layerId/:z/:x/:y', (req, res) => {
 });
 
 router.get('/mbtiles/files', (_req, res) => {
-  res.json({ items: mbtiles.listFiles(), dir: MBTILES_DIR });
+  res.json({ items: mbtiles.listFiles(), dir: path.basename(MBTILES_DIR) });
 });
 
 router.delete('/mbtiles/files/:name', (req, res) => {

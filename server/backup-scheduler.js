@@ -138,13 +138,16 @@ function backupStatus() {
   const backups = listBackups();
   const state = readState();
   const settings = getSettings();
+  const latest = backups[0]
+    ? { ...backups[0], dir: path.join(path.basename(BACKUP_DIR), path.basename(backups[0].dir)) }
+    : null;
   return {
-    dir: BACKUP_DIR,
+    dir: path.basename(BACKUP_DIR),
     appVersion: APP_VERSION,
     schemaVersion: SCHEMA_VERSION,
     count: backups.length,
     lastBackupAt: Number(state.lastBackupAt) || lastBackupAt || null,
-    latest: backups[0] || null,
+    latest,
     running: isBackupRunning(),
     restoring: isRestoreRunning(),
     restore: restoreStatus(),

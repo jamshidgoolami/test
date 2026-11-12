@@ -14,6 +14,7 @@ import { routePermission } from '../permissions.js';
 import { spreadsheetUpload as upload } from '../upload.js';
 import { markerTemplateRows, MARKER_EXPORT_HEADERS } from '../impexp.js';
 import { runJob } from '../jobs.js';
+import { parseIdList } from '../validation.js';
 
 const router = express.Router();
 
@@ -351,8 +352,12 @@ router.put('/markers/:id', (req, res) => {
 });
 
 router.delete('/markers/bulk', (req, res) => {
-  const ids = (req.body?.ids || []).map(Number).filter(Boolean);
-  if (!ids.length) return res.status(400).json({ error: 'هیچ علامتی انتخاب نشده است' });
+  const parsed = parseIdList(req.body?.ids);
+  if (parsed.invalid || !parsed.ids.length) return res.status(400).json({ error: 'هیچ علامتی انتخاب نشده است' });
+  if (parsed.tooMany) {
+    return res.status(413).json({ error: 'تعداد علامت‌های انتخابی برای حذف گروهی بیش از حد مجاز (۴۰۰۰) است.' });
+  }
+  const ids = parsed.ids;
   const ph = ids.map(() => '?').join(',');
   res.json({ deleted: db.prepare(`DELETE FROM map_markers WHERE id IN (${ph})`).run(...ids).changes });
 });

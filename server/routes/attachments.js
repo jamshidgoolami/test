@@ -9,6 +9,7 @@ import multer from 'multer';
 import fs from 'node:fs';
 import { db, getSettings } from '../db.js';
 import { routePermission } from '../permissions.js';
+import { logEvent } from '../logger.mjs';
 import {
   attachmentMaxBytes,
   detectFileType,
@@ -70,7 +71,11 @@ router.post('/:id/attachments', upload.single('file'), (req, res) => {
   try {
     written = writeAttachmentFile(req.file.buffer, type);
   } catch (e) {
-    return res.status(507).json({ error: `ذخیرهٔ پیوست ناموفق بود: ${e.message}` });
+    logEvent('error', 'attachment_store_failed', {
+      deviceId,
+      message: String(e?.message || e),
+    });
+    return res.status(507).json({ error: 'ذخیرهٔ پیوست ناموفق بود.' });
   }
   try {
     const now = Date.now();

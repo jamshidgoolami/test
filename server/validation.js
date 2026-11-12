@@ -72,4 +72,16 @@ export function positiveInt(value) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export default { isPlainObject, hasDangerousKeys, validateRequestUrl, validateJsonBody, positiveInt };
+/**
+ * فهرست شناسه‌های گروهی را normalize می‌کند.
+ * ورودی غیرآرایه نامعتبر است و تعداد یکتاها برای پرهیز از ساخت پرس‌وجوی غول‌آسا
+ * و عبور از سقف پارامترهای SQLite مرزگذاری می‌شود.
+ * @returns {{ ids: number[], invalid: boolean, tooMany: boolean }}
+ */
+export function parseIdList(value, max = 4000) {
+  if (!Array.isArray(value)) return { ids: [], invalid: true, tooMany: false };
+  const ids = [...new Set(value.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  return { ids, invalid: false, tooMany: ids.length > max };
+}
+
+export default { isPlainObject, hasDangerousKeys, validateRequestUrl, validateJsonBody, positiveInt, parseIdList };

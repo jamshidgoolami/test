@@ -7,6 +7,7 @@ import { engine, bus } from '../engine.js';
 import { routePermission, requirePermission } from '../permissions.js';
 import { probeTargetGuard, allowedProbeDeviceIds } from '../probe-guard.js';
 import { probeQueue } from '../probe-queue.js';
+import { parseIdList } from '../validation.js';
 
 const router = express.Router();
 
@@ -109,15 +110,19 @@ router.post('/alerts/:id/resolve', (req, res) => {
 });
 
 router.post('/alerts/bulk', (req, res) => {
-  const { ids = [], action } = req.body || {};
-  const list = ids.map(Number).filter(Boolean);
-  if (!list.length) return res.status(400).json({ error: 'هیچ هشداری انتخاب نشده است' });
+  const { ids, action } = req.body || {};
+  const parsed = parseIdList(ids);
+  if (parsed.invalid || !parsed.ids.length) return res.status(400).json({ error: 'هیچ هشداری انتخاب نشده است' });
+  if (parsed.tooMany) {
+    return res.status(413).json({ error: 'تعداد هشدارهای انتخابی برای عملیات گروهی بیش از حد مجاز (۴۰۰۰) است.' });
+  }
+  if (!['ack', 'resolve', 'delete'].includes(action)) return res.status(400).json({ error: 'عملیات نامعتبر' });
+  const list = parsed.ids;
   const ph = list.map(() => '?').join(',');
   let n;
   if (action === 'ack') n = db.prepare(`UPDATE alerts SET status='acknowledged', acknowledged_at=?, acknowledged_by=? WHERE id IN (${ph})`).run(Date.now(), 'مدیر شبکه', ...list).changes;
   else if (action === 'resolve') n = db.prepare(`UPDATE alerts SET status='resolved', resolved_at=? WHERE id IN (${ph})`).run(Date.now(), ...list).changes;
-  else if (action === 'delete') n = db.prepare(`DELETE FROM alerts WHERE id IN (${ph})`).run(...list).changes;
-  else return res.status(400).json({ error: 'عملیات نامعتبر' });
+  else n = db.prepare(`DELETE FROM alerts WHERE id IN (${ph})`).run(...list).changes;
   bus.emit('alerts-changed', { ids: list });
   res.json({ updated: n });
 });

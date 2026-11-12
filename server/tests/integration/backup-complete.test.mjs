@@ -15,7 +15,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ROOT, addDevice, cleanupDir, useTempDataDir } from '../helpers.mjs';
 
 const sourceDir = useTempDataDir('backup-complete-source');
-const { db, MBTILES_DIR, seedIfEmpty } = await import('../../db.js');
+const { db, MBTILES_DIR, SCHEMA_VERSION, seedIfEmpty } = await import('../../db.js');
 const { createBackup, verifyBackup } = await import('../../backup.js');
 const { ALLOWED_TYPES, writeAttachmentFile } = await import('../../attachments.js');
 const { CREDENTIAL_KEY_FILE } = await import('../../credential-crypto.js');
@@ -68,7 +68,7 @@ test('a complete backup restores database, MBTiles, attachments and key into an 
   try {
     const row = conn.prepare('SELECT name FROM devices WHERE id = ?').get(deviceId);
     assert.equal(row?.name, 'restored-into-empty-dir');
-    assert.equal(Number(conn.prepare('PRAGMA user_version').get().user_version), 22);
+    assert.equal(Number(conn.prepare('PRAGMA user_version').get().user_version), SCHEMA_VERSION);
   } finally {
     conn.close();
   }

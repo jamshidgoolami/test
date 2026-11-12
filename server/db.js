@@ -78,7 +78,6 @@ export function diskSpace() {
   const free = freeDiskBytes(DATA_DIR);
   return {
     freeBytes: free,
-    dataDir: DATA_DIR,
     minFreeBytes: Number(process.env.NETWATCH_MIN_FREE_BYTES) || 64 * 1024 * 1024,
   };
 }

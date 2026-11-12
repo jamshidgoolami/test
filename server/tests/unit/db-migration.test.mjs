@@ -45,7 +45,8 @@ test('an old schema is backed up before migration and upgraded in place', () => 
        const meta = db.prepare("SELECT value FROM engine_meta WHERE key = 'leader_epoch'").get();
        const version = db.prepare('PRAGMA user_version').get().user_version;
        const hasSamplesIndex = db.prepare("SELECT name FROM sqlite_schema WHERE type='index' AND name='idx_samples_operation'").get();
-       process.stdout.write('RESULT:' + JSON.stringify({ columns, row, meta, version, schemaVersion: SCHEMA_VERSION, hasSamplesIndex: !!hasSamplesIndex }) + '\\n');
+       const hasTagIndex = db.prepare("SELECT name FROM sqlite_schema WHERE type='index' AND name='idx_device_tags_tag'").get();
+       process.stdout.write('RESULT:' + JSON.stringify({ columns, row, meta, version, schemaVersion: SCHEMA_VERSION, hasSamplesIndex: !!hasSamplesIndex, hasTagIndex: !!hasTagIndex }) + '\\n');
        db.close();`,
     ],
     {
@@ -71,6 +72,7 @@ test('an old schema is backed up before migration and upgraded in place', () => 
   assert.equal(Number(result.meta.value), 0, 'epoch counter is initialized');
   assert.equal(Number(result.version), Number(result.schemaVersion));
   assert.equal(result.hasSamplesIndex, true, 'duplicate-result guard index exists');
+  assert.equal(result.hasTagIndex, true, 'reverse device-tag index exists');
 
   // پشتیبان پیش از Migration باید موجود و خودش یک SQLite سالم با دادهٔ قدیمی باشد.
   const backups = fs.readdirSync(dir).filter((f) => f.includes('.pre-migration-v1-'));

@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS device_tags (
   tag_id    INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   PRIMARY KEY (device_id, tag_id)
 );
+CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id, device_id);
 
 CREATE TABLE IF NOT EXISTS samples (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

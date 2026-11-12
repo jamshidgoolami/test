@@ -9,6 +9,8 @@
  */
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { useTempDataDir, cleanupDir, startServer, api, login } from '../helpers.mjs';
 
 const dir = useTempDataDir('status-app-health');
@@ -66,4 +68,46 @@ test('viewer can read dashboard status but not the privileged system health endp
 
   // بازگشت به نشست مدیر برای پایان‌بندی سایر آزمون‌ها
   await login(srv.base);
+});
+
+test('privileged diagnostics and backup listings do not expose absolute server paths', async () => {
+  for (const endpoint of ['/api/system/health', '/api/system/db/health', '/api/layers', '/api/mbtiles/files']) {
+    const res = await api(srv.base, 'GET', endpoint);
+    assert.equal(res.status, 200, endpoint);
+    assert.equal(JSON.stringify(res.data).includes(dir), false, `${endpoint} must not expose the data directory`);
+  }
+
+  const created = await api(srv.base, 'POST', '/api/system/backups', { includeMbtiles: false });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.equal(path.isAbsolute(created.data.dir), false, 'backup creation must not return an absolute path');
+
+  const listed = await api(srv.base, 'GET', '/api/system/backups');
+  assert.equal(listed.status, 200);
+  assert.equal(JSON.stringify(listed.data).includes(dir), false);
+  const item = listed.data.items.find((b) => b.name === created.data.name);
+  assert.ok(item);
+  assert.equal(path.isAbsolute(item.dir), false, 'backup list must not return absolute item paths');
+
+  const verified = await api(srv.base, 'POST', '/api/system/backups/verify', { name: created.data.name });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(JSON.stringify(verified.data).includes(dir), false, 'verification report must not expose absolute paths');
+});
+
+test('restore status hides absolute paths persisted by a failed restore', async () => {
+  fs.writeFileSync(
+    path.join(dir, '.restore-state.json'),
+    JSON.stringify({
+      status: 'failed',
+      safetyFile: path.join(dir, 'netwatch.db.pre-restore-1'),
+      journalDir: path.join(dir, '.restore-journal-1'),
+      error: `کپی از ${path.join(dir, 'backups', 'set', 'netwatch.db')} ناموفق بود`,
+      fileOperations: [{ type: 'db', target: path.join(dir, 'netwatch.db'), backup: path.join(dir, 'backup.db') }],
+      fileRollback: { ok: false, errors: [`خطا در ${path.join(dir, 'netwatch.db')}`] },
+    })
+  );
+
+  const res = await api(srv.base, 'GET', '/api/system/restore/status');
+  assert.equal(res.status, 200);
+  assert.equal(JSON.stringify(res.data).includes(dir), false, 'restore status must not expose the data directory');
+  assert.equal(res.data.fileOperations[0].target, 'netwatch.db');
 });

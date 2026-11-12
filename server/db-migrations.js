@@ -452,6 +452,7 @@ const MIGRATIONS = [
   { version: 20, name: 'device-sites', up: applySitesMigration },
   { version: 21, name: 'credentials-vault', up: applyCredentialsVaultMigration },
   { version: 22, name: 'user-extra-permissions', up: applyUserExtraPermissionsMigration },
+  { version: 23, name: 'device-tags-reverse-index', up: applyDeviceTagReverseIndexMigration },
 ];
 
 /**
@@ -464,6 +465,17 @@ function applyUserExtraPermissionsMigration() {
   if (!hasColumn('users', 'extra_permissions')) {
     db.exec("ALTER TABLE users ADD COLUMN extra_permissions TEXT NOT NULL DEFAULT '[]'");
   }
+}
+
+/**
+ * گام ۲۳: ایندکس معکوس تگ‌ها.
+ *
+ * کلید اصلی `device_tags(device_id, tag_id)` پرس‌وجوهای «تجهیزات یک تگ» را
+ * پوشش نمی‌دهد؛ شمارش همبسته در فهرست تگ‌ها برای هر تگ یک SCAN کامل بود.
+ * این ایندکس همان پرس‌وجو و `EXISTS` فیلتر تگ را به SEARCH تبدیل می‌کند.
+ */
+function applyDeviceTagReverseIndexMigration() {
+  db.exec('CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id, device_id)');
 }
 
 /**
