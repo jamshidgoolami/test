@@ -19,7 +19,7 @@ import { markInterruptedRetentionRuns } from './retention.js';
 import { cleanupStaleUploads } from './upload.js';
 import { sweepAttachmentOrphans } from './attachments.js';
 import { sweepOrphanFiles as sweepMbtilesOrphans } from './mbtiles.js';
-import { pruneBrokenDiagramLinks } from './routes/diagrams.js';
+import { pruneBrokenDiagramLinks } from './services/diagram-links.js';
 import { createApplication } from './app.js';
 import { createServerRuntime } from './server-lifecycle.js';
 import { createShutdown } from './server-shutdown.js';

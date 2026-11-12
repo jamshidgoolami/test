@@ -2,39 +2,47 @@
  * NetWatch — API تجهیزات
  */
 import express from 'express';
-import { db, getSettings, transaction, requireDiskSpace } from '../db.js';
+import { db, getSettings } from '../db.js';
 import {
   listDevices,
   getDevice,
   createDevice,
   updateDevice,
   deleteDevices,
-  closeDeviceMonitoringState,
   getDeviceAccessPassword,
   parseListQuery,
-  attachTags,
-  groupByName,
-  buildDeviceWhere,
   setDeviceGroups,
 } from '../store.js';
-import { runJob } from '../jobs.js';
-import { engine } from '../engine.js';
-import { isValidIp } from '../ping.js';
-import { templateRows, EXPORT_HEADERS } from '../impexp.js';
 import { routePermission, requirePermission, hasPermission } from '../permissions.js';
 import { spreadsheetUpload as upload } from '../upload.js';
-import { probeTargetGuard, allowedProbeDeviceIds } from '../probe-guard.js';
-import { probeQueue, createProbeBatch, recordProbeBatchResult, getProbeBatch } from '../probe-queue.js';
+import { probeTargetGuard } from '../probe-guard.js';
+import { probeQueue, getProbeBatch } from '../probe-queue.js';
 import { cleanupDeviceAttachmentFiles } from '../attachments.js';
-import { jalaliLabelFromMs } from '../jalali.js';
 import { importErrorStatus, syncVaultCredential } from '../services/device-access.js';
-import { RANGE_BUCKETS, RANGE_MS, seriesFor, seriesWindowFor } from '../services/device-series.js';
+import { seriesFor, seriesWindowFor } from '../services/device-series.js';
+import { mapPayload, sparklinesPayload } from '../services/device-views.js';
+import {
+  buildDeviceExport,
+  buildDeviceTemplate,
+  previewDeviceImport,
+  commitDeviceImport,
+  buildGeoExport,
+  importGeoFile,
+} from '../services/device-transfer.js';
+import { applyBulkMutation, startBulkProbe, updatePositions } from '../services/device-bulk.js';
+import { clamp, pingDevice, probeStatus } from '../services/device-probe.js';
+import {
+  outagesPayload,
+  availabilityPayload,
+  samplesPayload,
+  healthPayload,
+  maintenancePayload,
+} from '../services/device-history.js';
 
 const router = express.Router();
 
 // خواندن با devices:read و هر تغییر با devices:write (Viewer فقط می‌خواند).
 router.use(routePermission({ read: 'devices:read', write: 'devices:write' }));
-
 
 router.get('/', (req, res) => {
   const filters = parseListQuery(req.query);
@@ -58,8 +66,14 @@ router.get('/meta', (_req, res) => {
          FROM groups g ORDER BY g.name`
       )
       .all(),
-    tags: db.prepare('SELECT t.*, (SELECT COUNT(*) FROM device_tags dt WHERE dt.tag_id = t.id) AS device_count FROM tags t ORDER BY t.name').all(),
-    types: db.prepare('SELECT device_type AS value, COUNT(*) AS count FROM devices GROUP BY device_type ORDER BY count DESC').all(),
+    tags: db
+      .prepare(
+        'SELECT t.*, (SELECT COUNT(*) FROM device_tags dt WHERE dt.tag_id = t.id) AS device_count FROM tags t ORDER BY t.name'
+      )
+      .all(),
+    types: db
+      .prepare('SELECT device_type AS value, COUNT(*) AS count FROM devices GROUP BY device_type ORDER BY count DESC')
+      .all(),
     // فهرست مرجع انواع تجهیز (قابل مدیریت در تنظیمات) — حتی نوع بدون تجهیز.
     deviceTypes: db
       .prepare(
@@ -67,8 +81,16 @@ router.get('/meta', (_req, res) => {
          FROM device_types t ORDER BY t.name`
       )
       .all(),
-    locations: db.prepare("SELECT location AS value, COUNT(*) AS count FROM devices WHERE location != '' GROUP BY location ORDER BY count DESC").all(),
-    vendors: db.prepare("SELECT vendor AS value, COUNT(*) AS count FROM devices WHERE vendor != '' GROUP BY vendor ORDER BY count DESC").all(),
+    locations: db
+      .prepare(
+        "SELECT location AS value, COUNT(*) AS count FROM devices WHERE location != '' GROUP BY location ORDER BY count DESC"
+      )
+      .all(),
+    vendors: db
+      .prepare(
+        "SELECT vendor AS value, COUNT(*) AS count FROM devices WHERE vendor != '' GROUP BY vendor ORDER BY count DESC"
+      )
+      .all(),
     priorities: db.prepare('SELECT priority AS value, COUNT(*) AS count FROM devices GROUP BY priority').all(),
     layers: db.prepare('SELECT * FROM map_layers ORDER BY is_default DESC, name').all(),
     settings,
@@ -76,94 +98,31 @@ router.get('/meta', (_req, res) => {
 });
 
 router.get('/export', async (req, res) => {
-  const format = String(req.query.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv';
-  const filters = { ...parseListQuery({ ...req.query, page: '1', pageSize: '500' }) };
-  let rows;
-  if (req.query.ids) {
-    const ids = String(req.query.ids).split(',').map((n) => Number(n)).filter(Boolean);
-    rows = ids.map((id) => getDevice(id)).filter(Boolean);
-  } else {
-    filters.pageSize = 5000;
-    rows = listDevices(filters).items;
-  }
-  const data = rows.map((d) => {
-    // خروجی فایل نباید اعتبارنامهٔ دسترسی را به یک فایل بدون رمز منتقل کند.
-    const { accessUsername: _accessUsername, hasAccessPassword: _hasAccessPassword, ...row } = d;
-    return {
-    ...row,
-    priority: d.priority,
-    tags: (d.tags || []).map((t) => t.name).join(', '),
-    enabled: d.enabled ? 1 : 0,
-    monitoring_enabled: d.monitoringEnabled ? 1 : 0,
-    location: d.location,
-    group: d.groupName,
-    device_type: d.deviceType,
-    mac_address: d.macAddress,
-    asset_tag: d.assetTag,
-    latitude: d.latitude,
-    longitude: d.longitude,
-    last_rtt_ms: d.lastRtt,
-    uptime_pct: d.uptimePct,
-    loss_pct: d.lossPct,
-    status: d.status,
-    installed_at: d.installedAt ? jalaliLabelFromMs(d.installedAt, getSettings().timezone_offset_minutes) : '',
-    };
-  });
-  // ساخت Excel/CSV در Worker انجام می‌شود تا رشتهٔ اصلی سرور در طول پردازش
-  // فایل بزرگ (هزاران ردیف) قفل نشود.
-  const result = await runJob('export', { rows: data, headers: EXPORT_HEADERS, format }, { timeoutMs: 120000 });
+  const { format, buffer } = await buildDeviceExport(req.query);
   const stamp = new Date().toISOString().slice(0, 10);
-  res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Type',
+    format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
   res.setHeader('Content-Disposition', `attachment; filename="netwatch-devices-${stamp}.${format}"`);
-  res.send(Buffer.from(result.buffer));
+  res.send(buffer);
 });
 
 router.get('/template', async (req, res) => {
-  const format = String(req.query.format || 'xlsx').toLowerCase() === 'csv' ? 'csv' : 'xlsx';
-  const result = await runJob('export', { rows: templateRows(), headers: EXPORT_HEADERS, format }, { timeoutMs: 30000 });
-  res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const { format, buffer } = await buildDeviceTemplate(req.query);
+  res.setHeader(
+    'Content-Type',
+    format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
   res.setHeader('Content-Disposition', `attachment; filename="netwatch-devices-template.${format}"`);
-  res.send(Buffer.from(result.buffer));
+  res.send(buffer);
 });
 
 /** پیش‌نمایش ورود گروهی از فایل */
 router.post('/import/preview', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایلی دریافت نشد' });
   try {
-    const existing = db.prepare('SELECT id, name, ip FROM devices').all();
-    // پارس و اعتبارسنجی فایل در Worker؛ بدنهٔ درخواست در حافظه می‌ماند اما
-    // CPU سرور برای پاسخ‌دهی به بقیهٔ APIها آزاد است.
-    const result = await runJob(
-      'devicesPreview',
-      { buffer: req.file.buffer, filename: req.file.originalname, existing },
-      { timeoutMs: 120000 }
-    );
-    const knownGroups = new Set(db.prepare('SELECT name FROM groups').all().map((r) => r.name));
-    const knownTags = new Set(db.prepare('SELECT name FROM tags').all().map((r) => r.name));
-    // پاسخ پیش‌نمایش برای فایل ۵۰٬۰۰۰ ردیفی نباید ده‌ها مگابایت JSON شود؛
-    // رابط کاربری فقط شمارش‌ها و چند نمونهٔ خطا را نشان می‌دهد. شمارش کامل در
-    // summary می‌ماند و نمونه‌ها سقف دارند تا حافظهٔ کلاینت/سرور کنترل شود.
-    const PREVIEW_ITEMS = 200;
-    res.json({
-      fileName: req.file.originalname,
-      headers: result.headers,
-      totalRows: result.totalRows,
-      valid: result.valid.slice(0, PREVIEW_ITEMS),
-      errors: result.errors.slice(0, PREVIEW_ITEMS),
-      duplicates: result.duplicates.slice(0, PREVIEW_ITEMS),
-      truncated: {
-        valid: result.valid.length > PREVIEW_ITEMS,
-        errors: result.errors.length > PREVIEW_ITEMS,
-        duplicates: result.duplicates.length > PREVIEW_ITEMS,
-      },
-      summary: {
-        valid: result.valid.length,
-        invalid: result.errors.length,
-        duplicates: result.duplicates.length,
-        newGroups: [...new Set(result.valid.map((r) => r.group).filter(Boolean))].filter((g) => !knownGroups.has(g)),
-        newTags: [...new Set(result.valid.flatMap((r) => r.tags))].filter((t) => !knownTags.has(t)),
-      },
-    });
+    res.json(await previewDeviceImport(req.file));
   } catch (e) {
     res.status(importErrorStatus(e)).json({ error: `خطا در خواندن فایل: ${e.message}` });
   }
@@ -174,44 +133,10 @@ router.post('/import/commit', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایلی دریافت نشد' });
   const onlyValid = String(req.body?.onlyValid ?? '1') !== '0';
   try {
-    const existing = db.prepare('SELECT id, name, ip FROM devices').all();
-    const { valid, errors } = await runJob(
-      'devicesParse',
-      { buffer: req.file.buffer, filename: req.file.originalname, existing },
-      { timeoutMs: 120000 }
-    );
-    const list = onlyValid ? valid : [...valid, ...errors.filter((e) => e.ip && isValidIp(e.ip))];
-    // پیش از نوشتن دستهٔ بزرگ، فضای دیسک بررسی می‌شود؛ در غیر این صورت پر شدن
-    // دیسک وسط کار، همهٔ ردیف‌ها را با خطای پایگاه‌داده برمی‌گرداند.
-    requireDiskSpace(list.length * 1024 + 4 * 1024 * 1024, `ورود گروهی ${list.length} تجهیز`);
-    // ورود گروهی یک عملیات اتمیک است: اگر یک ردیف شکست بخورد، هیچ تجهیزی ثبت
-    // نمی‌شود (پیش‌تر ردیف‌های موفق باقی می‌ماندند و کاربر فکر می‌کرد همه ثبت شده).
-    const result = transaction(
-      () => {
-        let inserted = 0;
-        for (const r of list) {
-          try {
-            createDevice(r, { source: 'import' });
-            inserted++;
-          } catch (e) {
-            const err = new Error(`ردیف «${r.name ?? ''}» (${r.ip ?? ''}) ثبت نشد: ${e.message}`);
-            err.importIndex = inserted;
-            throw err;
-          }
-        }
-        db.prepare('INSERT INTO engine_log(ts, level, message) VALUES (?,?,?)').run(
-          Date.now(),
-          'info',
-          `ورود گروهی: ${inserted} تجهیز افزوده شد.`
-        );
-        return { inserted };
-      },
-      { label: 'devices.import' }
-    );
-    res.json({ inserted: result.inserted, failed: [], atomic: true, skipped: onlyValid ? errors.length : 0 });
+    const result = await commitDeviceImport(req.file, { onlyValid });
+    res.json({ inserted: result.inserted, failed: [], atomic: true, skipped: result.skipped });
   } catch (e) {
-    const status = importErrorStatus(e);
-    res.status(status).json({
+    res.status(importErrorStatus(e)).json({
       error: `ورود گروهی انجام نشد و هیچ تغییری ثبت نگردید: ${e.message}`,
       rolledBack: true,
     });
@@ -226,182 +151,20 @@ router.post('/import/commit', upload.single('file'), async (req, res) => {
  * تجهیزات و انواع علامت انتخاب‌شده در دیالوگ صفحهٔ نقشه محدود می‌کنند.
  */
 router.get('/export/geo', async (req, res) => {
-  const format = String(req.query.format || 'csv').toLowerCase() === 'xlsx' ? 'xlsx' : 'csv';
-  // انتخاب چندگروهی دیالوگ نقشه: `groups` فهرست نام گروه‌ها با کاما است و
-  // `__none_selected__` یعنی کاربر هیچ گروهی را انتخاب نکرده است. پارامتر
-  // تک‌گروهی `group` برای سازگاری با فراخوانی‌های قدیمی حفظ می‌شود.
-  const group = String(req.query.group || '').trim();
-  const hasGroupsParam = req.query.groups !== undefined;
-  const groups = String(req.query.groups || '')
-    .split(',')
-    .map((g) => g.trim())
-    .filter((g) => g && g !== '__none_selected__')
-    .slice(0, 200);
-  const includeMarkers = String(req.query.markers || '') === '1';
-  const typeIds = String(req.query.types || '')
-    .split(',')
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v > 0);
-
-  const where = ['d.latitude IS NOT NULL', 'd.longitude IS NOT NULL'];
-  const params = [];
-  if (hasGroupsParam && !groups.length) {
-    // هیچ گروهی انتخاب نشده است؛ فایل فقط علامت‌ها را در بر می‌گیرد.
-    where.push('0 = 1');
-  } else if (groups.length) {
-    const named = groups.filter((g) => g !== '__none__');
-    const clauses = [];
-    if (named.length) {
-      const ph = named.map(() => '?').join(',');
-      clauses.push(
-        `g.name IN (${ph})`,
-        `EXISTS (
-           SELECT 1 FROM device_group_members m JOIN groups mg ON mg.id = m.group_id
-           WHERE m.device_id = d.id AND mg.name IN (${ph}))`
-      );
-      params.push(...named, ...named);
-    }
-    if (groups.includes('__none__')) {
-      clauses.push(
-        '(d.group_id IS NULL AND NOT EXISTS (SELECT 1 FROM device_group_members m WHERE m.device_id = d.id))'
-      );
-    }
-    where.push(`(${clauses.join(' OR ')})`);
-  } else if (group === '__none__') {
-    // بدون گروه: نه ستون قدیمی group_id و نه عضویت چندگروهی
-    where.push('d.group_id IS NULL AND NOT EXISTS (SELECT 1 FROM device_group_members m WHERE m.device_id = d.id)');
-  } else if (group) {
-    where.push(
-      `(g.name = ? OR EXISTS (
-         SELECT 1 FROM device_group_members m JOIN groups mg ON mg.id = m.group_id
-         WHERE m.device_id = d.id AND mg.name = ?))`
-    );
-    params.push(group, group);
-  }
-  const deviceRows = db
-    .prepare(
-      `SELECT d.name, d.ip, d.device_type AS type, d.location, d.latitude, d.longitude, d.status, COALESCE(g.name,'') AS group_name
-       FROM devices d LEFT JOIN groups g ON g.id = d.group_id
-       WHERE ${where.join(' AND ')}
-       ORDER BY d.name`
-    )
-    .all(...params);
-
-  const markerRows = includeMarkers
-    ? db
-        .prepare(
-          `SELECT m.name, m.latitude, m.longitude, m.notes, COALESCE(t.name,'') AS type_name
-           FROM map_markers m LEFT JOIN marker_types t ON t.id = m.type_id
-           ${typeIds.length ? `WHERE m.type_id IN (${typeIds.map(() => '?').join(',')})` : ''}
-           ORDER BY m.name`
-        )
-        .all(...typeIds)
-    : [];
-
-  const rows = includeMarkers
-    ? [
-        ...deviceRows.map((r) => ({
-          'نوع رکورد': 'تجهیز',
-          'نام': r.name,
-          'آدرس IP': r.ip,
-          'نوع': r.type,
-          'گروه': r.group_name,
-          'موقعیت': r.location,
-          'عرض جغرافیایی': r.latitude,
-          'طول جغرافیایی': r.longitude,
-          'وضعیت': r.status,
-        })),
-        ...markerRows.map((r) => ({
-          'نوع رکورد': 'علامت',
-          'نام': r.name,
-          'آدرس IP': '',
-          'نوع': r.type_name,
-          'گروه': '',
-          'موقعیت': r.notes,
-          'عرض جغرافیایی': r.latitude,
-          'طول جغرافیایی': r.longitude,
-          'وضعیت': '',
-        })),
-      ]
-    : deviceRows.map((r) => ({
-        'نام تجهیز': r.name,
-        'آدرس IP': r.ip,
-        'نوع': r.type,
-        'موقعیت': r.location,
-        'عرض جغرافیایی': r.latitude,
-        'طول جغرافیایی': r.longitude,
-        'وضعیت': r.status,
-      }));
-  const headers = Object.keys(
-    rows[0] ||
-      (includeMarkers
-        ? {
-            'نوع رکورد': '',
-            'نام': '',
-            'آدرس IP': '',
-            'نوع': '',
-            'گروه': '',
-            'موقعیت': '',
-            'عرض جغرافیایی': '',
-            'طول جغرافیایی': '',
-            'وضعیت': '',
-          }
-        : {
-            'نام تجهیز': '',
-            'آدرس IP': '',
-            'نوع': '',
-            'موقعیت': '',
-            'عرض جغرافیایی': '',
-            'طول جغرافیایی': '',
-            'وضعیت': '',
-          })
-  ).map((k) => [k, k]);
-  const result = await runJob('export', { rows, headers, format }, { timeoutMs: 120000 });
-  res.setHeader('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const { format, buffer } = await buildGeoExport(req.query);
+  res.setHeader(
+    'Content-Type',
+    format === 'csv' ? 'text/csv; charset=utf-8' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
   res.setHeader('Content-Disposition', `attachment; filename="netwatch-locations.${format}"`);
-  res.send(Buffer.from(result.buffer));
+  res.send(buffer);
 });
 
 /** ورود مختصات جغرافیایی */
 router.post('/import/geo', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'فایلی دریافت نشد' });
   try {
-    const { rows } = await runJob(
-      'parse',
-      { buffer: req.file.buffer, filename: req.file.originalname },
-      { timeoutMs: 120000 }
-    );
-    let updated = 0;
-    const errors = [];
-    const upd = db.prepare('UPDATE devices SET latitude = ?, longitude = ?, updated_at = ? WHERE ip = ?');
-    const byName = db.prepare('SELECT id FROM devices WHERE name = ?');
-    for (const r of rows) {
-      const lat = Number(r.latitude);
-      const lng = Number(r.longitude);
-      const ip = String(r.ip ?? '').trim();
-      const name = String(r.name ?? '').trim();
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        errors.push({ row: r.__row, reason: 'مختصات نامعتبر' });
-        continue;
-      }
-      if (ip) {
-        const n = upd.run(lat, lng, Date.now(), ip).changes;
-        if (n) {
-          updated += n;
-          continue;
-        }
-      }
-      if (name) {
-        const d = byName.get(name);
-        if (d) {
-          db.prepare('UPDATE devices SET latitude=?, longitude=?, updated_at=? WHERE id=?').run(lat, lng, Date.now(), d.id);
-          updated++;
-          continue;
-        }
-      }
-      errors.push({ row: r.__row, reason: 'تجهیزی با این IP یا نام یافت نشد' });
-    }
-    res.json({ updated, errors });
+    res.json(await importGeoFile(req.file));
   } catch (e) {
     res.status(400).json({ error: `خطا در خواندن فایل: ${e.message}` });
   }
@@ -415,116 +178,24 @@ router.post('/bulk', (req, res) => {
   if (!list.length) return res.status(400).json({ error: 'هیچ تجهیزی انتخاب نشده است' });
   // سقف ورودی گروهی: درخواست با ده‌ها‌هزار شناسه نه منطقی است و نه باید
   // تراکنشی با هزاران پارامتر SQL بسازد.
-  if (list.length > 5000) return res.status(413).json({ error: 'تعداد تجهیزات انتخابی برای عملیات گروهی بیش از حد مجاز (۵۰۰۰) است.' });
-  const ph = list.map(() => '?').join(',');
+  if (list.length > 5000)
+    return res.status(413).json({ error: 'تعداد تجهیزات انتخابی برای عملیات گروهی بیش از حد مجاز (۵۰۰۰) است.' });
   // Probe (اسکن فعال) نوشتن دیتابیس نیست و به‌صورت غیرهمگام اجرا می‌شود؛ پیش از
   // تراکنش و جداگانه رسیدگی می‌شود.
   if (action === 'ping') {
-    if (!hasPermission(req.user, 'probe:run')) return res.status(403).json({ error: 'شما مجوز انجام Probe را ندارید.' });
+    if (!hasPermission(req.user, 'probe:run'))
+      return res.status(403).json({ error: 'شما مجوز انجام Probe را ندارید.' });
     if (list.length > MAX_BULK_PROBE) {
       return res.status(413).json({ error: `هر درخواست Ping گروهی حداکثر ${MAX_BULK_PROBE} تجهیز را می‌پذیرد.` });
     }
-    const rows = db.prepare(`SELECT id, ip FROM devices WHERE id IN (${ph})`).all(...list);
-    const allowed = allowedProbeDeviceIds(rows);
-    const skipped = rows.length - allowed.length;
-    // عملیات طولانی به یک Job قابل پیگیری تبدیل می‌شود؛ هر Probe از صف مرکزی
-    // با سقف هم‌زمانی/ظرفیت عبور می‌کند و هرگز Promise.all نامحدود ساخته نمی‌شود.
-    const job = createProbeBatch({ total: allowed.length, skipped, owner: req.user?.id ?? null });
-    if (!allowed.length) {
-      job.status = 'done';
-      job.finishedAt = Date.now();
-    }
-    for (const id of allowed) {
-      probeQueue
-        .submit(`device:${id}:manual`, ({ signal }) => pingDevice(id, { manual: true, source: 'manual', signal }), {
-          timeoutMs: 60000,
-        })
-        .then((result) => recordProbeBatchResult(job.id, { deviceId: id, ok: result?.ok }))
-        .catch((error) => recordProbeBatchResult(job.id, { deviceId: id, error: error?.message || String(error) }));
-    }
-    return res.status(202).json({
-      jobId: job.id,
-      statusUrl: `/api/devices/bulk/probe/${job.id}`,
-      queued: allowed.length,
-      affected: allowed.length,
-      skipped,
-      total: rows.length,
-    });
+    return res.status(202).json(startBulkProbe({ list, user: req.user }));
   }
-  let affected;
   try {
-    // عملیات گروهی می‌تواند روی صدها تجهیز اثر بگذارد؛ اتمیک است تا خطای میانی
-    // فقط بخشی از تجهیزات را تغییر ندهد.
-    affected = transaction(
-      () => {
-  switch (action) {
-    case 'enable':
-      affected = db.prepare(`UPDATE devices SET enabled=1, next_check_at=0, updated_at=? WHERE id IN (${ph})`).run(Date.now(), ...list).changes;
-      break;
-    case 'disable':
-      affected = db.prepare(`UPDATE devices SET enabled=0, updated_at=? WHERE id IN (${ph})`).run(Date.now(), ...list).changes;
-      // قطعی باز و هشدارهای فعال نباید برای تجهیز خارج‌شده از پایش باقی بمانند
-      for (const id of list) closeDeviceMonitoringState(id);
-      break;
-    case 'monitoring_on':
-      affected = db.prepare(`UPDATE devices SET monitoring_enabled=1, next_check_at=0, updated_at=? WHERE id IN (${ph})`).run(Date.now(), ...list).changes;
-      break;
-    case 'monitoring_off':
-      affected = db.prepare(`UPDATE devices SET monitoring_enabled=0, updated_at=? WHERE id IN (${ph})`).run(Date.now(), ...list).changes;
-      for (const id of list) closeDeviceMonitoringState(id);
-      break;
-    case 'delete': {
-      // فایل‌های پیوست پیش از حذف ردیف‌ها نگه داشته می‌شوند؛ پس از حذف تجهیز،
-      // فایل یتیم روی دیسک نمی‌ماند (DB با CASCADE ردیف‌ها را پاک می‌کند).
-      const attachmentRows = db
-        .prepare(`SELECT stored_name FROM device_attachments WHERE device_id IN (${ph})`)
-        .all(...list);
-      affected = deleteDevices(list);
-      cleanupDeviceAttachmentFiles(attachmentRows);
-      break;
-    }
-    case 'group': {
-      const g = groupByName(payload.group);
-      affected = g ? db.prepare(`UPDATE devices SET group_id=?, updated_at=? WHERE id IN (${ph})`).run(g.id, Date.now(), ...list).changes : 0;
-      // عضویت چندگانه هم ثبت می‌شود تا فهرست گروه‌های تجهیز و گزارش‌ها هم‌گام بمانند.
-      if (g) {
-        const addMember = db.prepare('INSERT OR IGNORE INTO device_group_members(device_id, group_id, added_at) VALUES (?,?,?)');
-        for (const id of list) addMember.run(id, g.id, Date.now());
-      }
-      break;
-    }
-    case 'priority':
-      affected = db.prepare(`UPDATE devices SET priority=?, updated_at=? WHERE id IN (${ph})`).run(payload.priority || 'normal', Date.now(), ...list).changes;
-      break;
-    case 'interval':
-      affected = db.prepare(`UPDATE devices SET ping_interval=?, updated_at=? WHERE id IN (${ph})`).run(payload.interval ? Number(payload.interval) : null, Date.now(), ...list).changes;
-      break;
-    case 'tag': {
-      for (const id of list) attachTags(id, [payload.tag]);
-      affected = list.length;
-      break;
-    }
-    case 'untag':
-      affected = payload.tagId
-        ? db.prepare(`DELETE FROM device_tags WHERE tag_id=? AND device_id IN (${ph})`).run(Number(payload.tagId), ...list).changes
-        : 0;
-      break;
-    default:
-      throw new Error(`عملیات ناشناخته: ${action}`);
-  }
-        db.prepare('INSERT INTO engine_log(ts, level, message) VALUES (?,?,?)').run(
-          Date.now(),
-          'info',
-          `عملیات گروهی «${action}» روی ${affected} تجهیز اجرا شد.`
-        );
-        return affected;
-      },
-      { label: 'devices.bulk' }
-    );
+    const affected = applyBulkMutation({ list, action, payload });
+    res.json({ affected, action });
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
-  res.json({ affected, action });
 });
 
 /** وضعیت Job گروهی Probe (قابل پیگیری پس از بسته‌شدن اتصال اولیه) */
@@ -541,181 +212,23 @@ router.get('/bulk/probe/:jobId', (req, res) => {
 /** به‌روزرسانی سریع موقعیت روی نقشه */
 router.post('/positions', (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
-  const upd = db.prepare('UPDATE devices SET latitude=?, longitude=?, map_layer_id=COALESCE(?, map_layer_id), updated_at=? WHERE id=?');
-  // جابه‌جایی روی نقشه یک عملیات واحد است؛ مختصات باید همه یا هیچ‌کدام ثبت شوند.
-  let n;
   try {
-    n = transaction(
-      () => {
-        let count = 0;
-        for (const it of items) {
-          const lat = it.latitude == null ? null : Number(it.latitude);
-          const lng = it.longitude == null ? null : Number(it.longitude);
-          count += upd.run(lat, lng, it.mapLayerId ?? null, Date.now(), Number(it.id)).changes;
-        }
-        return count;
-      },
-      { label: 'devices.positions' }
-    );
+    const n = updatePositions(items);
+    res.json({ updated: n });
   } catch (e) {
     return res.status(400).json({ error: `ثبت موقعیت‌ها انجام نشد: ${e.message}` });
   }
-  res.json({ updated: n });
 });
 
 /** سری نمونه‌ای سبک برای نمودار کارت‌های فهرست تجهیزات */
 router.get('/sparklines', (req, res) => {
-  const ids = String(req.query.ids || '')
-    .split(',')
-    .map(Number)
-    .filter(Boolean)
-    .slice(0, 300);
-  const range = String(req.query.range || '1h');
-  if (!ids.length) return res.json({ range, series: {} });
-  const bucket = RANGE_BUCKETS[range] || RANGE_BUCKETS['1h'];
-  const from = Date.now() - (RANGE_MS[range] || RANGE_MS['1h']);
-  const ph = ids.map(() => '?').join(',');
-  const rows = db
-    .prepare(
-      `SELECT device_id, (ts / CAST(? AS INTEGER)) * CAST(? AS INTEGER) AS bucket,
-              AVG(CASE WHEN ok=1 THEN rtt_ms END) AS rtt,
-              AVG(ok) * 100 AS availability
-       FROM samples WHERE device_id IN (${ph}) AND ts >= ?
-       GROUP BY device_id, bucket ORDER BY bucket`
-    )
-    .all(bucket.ms, bucket.ms, ...ids, from);
-  const series = {};
-  for (const r of rows) {
-    if (!series[r.device_id]) series[r.device_id] = [];
-    series[r.device_id].push({
-      t: r.bucket,
-      rtt: r.rtt == null ? null : Math.round(r.rtt * 100) / 100,
-      loss: r.availability == null ? 0 : Math.round((100 - r.availability) * 10) / 10,
-    });
-  }
-  res.json({ range, bucketMs: bucket.ms, series });
+  res.json(sparklinesPayload(req.query));
 });
 
 /* --------------------------- نقشه --------------------------- */
 
-// سقف پاسخ نقشه برای حفظ حافظه؛ اما بسیار بالاتر از محدودیت قبلی (۵۰۰) است،
-// پس صدها/هزاران تجهیز دارای مختصات قابل نمایش‌اند. محدودهٔ جغرافیایی
-// (bbox) تعداد Markerها را در نمای نزدیک به‌طور طبیعی کم می‌کند.
-const MAP_MAX_DEVICES = (() => {
-  const n = Number(process.env.NETWATCH_MAP_MAX);
-  return Number.isFinite(n) && n >= 1000 ? Math.min(50000, Math.floor(n)) : 25000;
-})();
-const MAP_STATUSES = ['online', 'warning', 'offline', 'maintenance', 'unknown'];
-
-/** bbox=minLng,minLat,maxLng,maxLat (اختیاری، با اعتبارسنجی و مرزگذاری) */
-function parseBbox(raw) {
-  if (!raw) return null;
-  const parts = String(raw)
-    .split(',')
-    .map((n) => Number(n));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-  const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
-  let [minLng, minLat, maxLng, maxLat] = parts;
-  minLng = clamp(minLng, -180, 180);
-  maxLng = clamp(maxLng, -180, 180);
-  minLat = clamp(minLat, -90, 90);
-  maxLat = clamp(maxLat, -90, 90);
-  if (minLat > maxLat) [minLat, maxLat] = [maxLat, minLat];
-  return { minLng, minLat, maxLng, maxLat, wrap: minLng > maxLng };
-}
-
-/**
- * API اختصاصی نقشه.
- *
- * تفاوت کلیدی با فهرست تجهیزات:
- *   • تعداد کل، تعداد دارای مختصات و تعداد بدون مختصات مستقل محاسبه می‌شوند.
- *   • فیلتر محدودهٔ جغرافیایی (bbox) و زوم از کلاینت می‌آید تا فقط نقاط نمای
- *     فعلی منتقل شوند؛ اما آمار سراسری فیلترها هم برگردانده می‌شود.
- *   • payload سبک است (بدون تاریخچه/تگ/فیلدهای تزئینی) تا هزاران Marker بدون
- *     فشار حافظه پاسخ داده شوند.
- */
 router.get('/map', (req, res) => {
-  // فهرست تجهیزات نقشه می‌تواند تجهیزات بدون مختصات را هم برگرداند
-  // (`includeMissing=1`) تا کاربر از همان فهرست تجهیز را بکشد/انتخاب کند و
-  // موقعیتش را ثبت کند؛ نشانگرها فقط برای تجهیزات دارای مختصات ساخته می‌شوند.
-  const includeMissing = String(req.query.includeMissing || '') === '1';
-  const withGeoFilters = parseListQuery({ ...req.query, geo: 'with' });
-  const withGeoWhere = buildDeviceWhere(withGeoFilters);
-  // تعداد کل مستقل از وجود مختصات است
-  const totalWhere = buildDeviceWhere({ ...withGeoFilters, geo: '' });
-  const join = 'FROM devices d LEFT JOIN groups g ON g.id = d.group_id LEFT JOIN sites s ON s.id = d.site_id';
-  const total = db.prepare(`SELECT COUNT(*) AS c ${join} ${totalWhere.clause}`).get(...totalWhere.params).c;
-  const withGeo = db.prepare(`SELECT COUNT(*) AS c ${join} ${withGeoWhere.clause}`).get(...withGeoWhere.params).c;
-
-  const stats = Object.fromEntries(MAP_STATUSES.map((s) => [s, 0]));
-  for (const row of db
-    .prepare(`SELECT d.status, COUNT(*) AS c ${join} ${withGeoWhere.clause} GROUP BY d.status`)
-    .all(...withGeoWhere.params)) {
-    stats[row.status] = row.c;
-  }
-
-  // با includeMissing فهرست باید کامل باشد؛ فیلتر bbox فقط برای نشانگرهای
-  // دارای مختصات معنا دارد و اعمالش تجهیزات بدون موقعیت را حذف می‌کرد.
-  const bbox = includeMissing ? null : parseBbox(req.query.bbox);
-  const params = [...(includeMissing ? totalWhere.params : withGeoWhere.params)];
-  let bboxSql = '';
-  if (bbox) {
-    if (bbox.wrap) {
-      bboxSql =
-        ' AND d.latitude >= ? AND d.latitude <= ? AND (d.longitude >= ? OR d.longitude <= ?)';
-      params.push(bbox.minLat, bbox.maxLat, bbox.minLng, bbox.maxLng);
-    } else {
-      bboxSql =
-        ' AND d.latitude >= ? AND d.latitude <= ? AND d.longitude >= ? AND d.longitude <= ?';
-      params.push(bbox.minLat, bbox.maxLat, bbox.minLng, bbox.maxLng);
-    }
-  }
-  const limit = Math.min(
-    MAP_MAX_DEVICES,
-    Math.max(100, parseInt(req.query.limit || String(MAP_MAX_DEVICES), 10) || MAP_MAX_DEVICES)
-  );
-  const rows = db
-    .prepare(
-      `SELECT d.id, d.name, d.ip, d.status, d.latitude, d.longitude, d.location,
-              d.device_type, d.last_rtt_ms, d.priority, d.map_layer_id, d.site_id, s.name AS site_name,
-              g.name AS group_name
-       ${join}
-       ${includeMissing ? totalWhere.clause : withGeoWhere.clause}${bboxSql}
-       ORDER BY CASE d.status WHEN 'offline' THEN 0 WHEN 'warning' THEN 1 WHEN 'maintenance' THEN 2 ELSE 3 END, d.name
-       LIMIT ?`
-    )
-    .all(...params, limit + 1);
-
-  const truncated = rows.length > limit;
-  const items = (truncated ? rows.slice(0, limit) : rows).map((r) => ({
-    id: r.id,
-    name: r.name,
-    ip: r.ip,
-    status: r.status,
-    latitude: r.latitude,
-    longitude: r.longitude,
-    deviceType: r.device_type,
-    groupName: r.group_name || null,
-    siteId: r.site_id ?? null,
-    siteName: r.site_name || null,
-    lastRtt: r.last_rtt_ms,
-    priority: r.priority,
-    location: r.location || '',
-    mapLayerId: r.map_layer_id,
-  }));
-
-  res.json({
-    items,
-    total,
-    withGeo,
-    missingGeo: Math.max(0, total - withGeo),
-    returned: items.length,
-    truncated,
-    stats,
-    bbox: bbox ? [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat] : null,
-    zoom: Math.min(22, Math.max(0, Number(req.query.zoom) || 0)),
-    generatedAt: Date.now(),
-  });
+  res.json(mapPayload(req.query));
 });
 
 /* --------------------------- CRUD --------------------------- */
@@ -726,22 +239,18 @@ router.get('/map', (req, res) => {
  * پیش‌فرض این مجوز را ندارد و فقط Administrator یا کاربر با اعطای صریح مدیر
  * می‌تواند رمز واقعی را ببیند. هیچ پاسخی کش نمی‌شود.
  */
-router.get(
-  '/:id/credentials',
-  requirePermission('devices:write', 'credentials:reveal'),
-  (req, res) => {
-    const device = getDevice(req.params.id, { withTags: false });
-    if (!device) return res.status(404).json({ error: 'تجهیز یافت نشد' });
-    try {
-      const password = getDeviceAccessPassword(device.id);
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Pragma', 'no-cache');
-      res.json({ username: device.accessUsername || '', password: password ?? '' });
-    } catch {
-      res.status(500).json({ error: 'خواندن اعتبارنامه ممکن نشد؛ کلید رمزنگاری را بررسی کنید.' });
-    }
+router.get('/:id/credentials', requirePermission('devices:write', 'credentials:reveal'), (req, res) => {
+  const device = getDevice(req.params.id, { withTags: false });
+  if (!device) return res.status(404).json({ error: 'تجهیز یافت نشد' });
+  try {
+    const password = getDeviceAccessPassword(device.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.json({ username: device.accessUsername || '', password: password ?? '' });
+  } catch {
+    res.status(500).json({ error: 'خواندن اعتبارنامه ممکن نشد؛ کلید رمزنگاری را بررسی کنید.' });
   }
-);
+});
 
 router.get('/:id', (req, res) => {
   const d = getDevice(req.params.id);
@@ -760,7 +269,9 @@ router.get('/:id', (req, res) => {
     },
     stats: {
       outages: d.outageCount || 0,
-      openOutage: d.currentOutageStartedAt ? Math.max(0, Math.round((Date.now() - d.currentOutageStartedAt) / 1000)) : null,
+      openOutage: d.currentOutageStartedAt
+        ? Math.max(0, Math.round((Date.now() - d.currentOutageStartedAt) / 1000))
+        : null,
       packets: { sent: d.totalChecks, received: d.successCount, lost: d.failCount },
     },
   });
@@ -799,7 +310,9 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const attachments = db.prepare('SELECT stored_name FROM device_attachments WHERE device_id = ?').all(Number(req.params.id));
+  const attachments = db
+    .prepare('SELECT stored_name FROM device_attachments WHERE device_id = ?')
+    .all(Number(req.params.id));
   const n = deleteDevices([req.params.id]);
   if (!n) return res.status(404).json({ error: 'تجهیز یافت نشد' });
   cleanupDeviceAttachmentFiles(attachments);
@@ -823,27 +336,7 @@ router.put('/:id/groups', (req, res) => {
 
 /* --------------------------- بررسی لحظه‌ای --------------------------- */
 
-// مرزگذاری پارامترهای ورودی کاربر (تعداد packet و مدت انتظار از بدنهٔ درخواست می‌آید)
-function clamp(v, min, max) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return min;
-  return Math.min(max, Math.max(min, n));
-}
-
-async function pingDevice(id, opts = {}) {
-  const row = db.prepare('SELECT * FROM devices WHERE id = ?').get(Number(id));
-  if (!row) return null;
-  return engine.checkDevice(row, { manual: true, source: 'manual', ...opts });
-}
-
-/** خطای Probe/صف به وضعیت HTTP قابل‌فهم تبدیل می‌شود. */
-function probeStatus(error) {
-  if (Number(error?.status) === 499) return 499;
-  if (Number(error?.status) === 503) return 503;
-  if (Number(error?.status) === 504) return 504;
-  if (error?.code === 'ENGINE_NOT_LEADER') return 409;
-  return 500;
-}
+const MAX_BULK_PROBE = 500;
 
 /**
  * AbortSignal درخواست: اگر کلاینت پیش از پایان قطع شود، منتظر این Probe حذف
@@ -858,8 +351,6 @@ function requestSignal(req, res) {
   res.once('close', onClose);
   return { signal: controller.signal, cleanup: () => res.removeListener('close', onClose) };
 }
-
-const MAX_BULK_PROBE = 500;
 
 router.post('/:id/ping', requirePermission('probe:run'), probeTargetGuard, async (req, res) => {
   const d = getDevice(req.params.id, { withTags: false });
@@ -888,12 +379,10 @@ router.post('/:id/ping', requirePermission('probe:run'), probeTargetGuard, async
   } catch (e) {
     const status = probeStatus(e);
     if (status === 499) return res.status(499).json({ error: 'درخواست لغو شد.', code: 'PROBE_CANCELLED' });
-    res
-      .status(status)
-      .json({
-        error: status === 409 ? e.message : `خطا در ارسال Ping: ${e.message}`,
-        code: e?.code || undefined,
-      });
+    res.status(status).json({
+      error: status === 409 ? e.message : `خطا در ارسال Ping: ${e.message}`,
+      code: e?.code || undefined,
+    });
   } finally {
     cleanup();
   }
@@ -930,13 +419,32 @@ router.get('/:id/probe', requirePermission('probe:run'), probeTargetGuard, async
         if (d.status === 'offline') {
           // تجهیزی که در وضعیت قطع است، در حالت شبیه‌سازی هم نباید پاسخ موفق بدهد؛
           // پیش‌تر پنجرهٔ پینگ زنده برای تجهیزات قطع، مقدار و نمودار «وصل» نشان می‌داد.
-          return { ok: false, reachable: false, service: 'unknown', rtt: null, packetsSent: 1, packetsRecv: 0, lossPct: 100, mode: 'simulate', error: 'NO_RESPONSE' };
+          return {
+            ok: false,
+            reachable: false,
+            service: 'unknown',
+            rtt: null,
+            packetsSent: 1,
+            packetsRecv: 0,
+            lossPct: 100,
+            mode: 'simulate',
+            error: 'NO_RESPONSE',
+          };
         }
         const base = d.avgRtt ?? d.lastRtt ?? 12;
         const jitter = (Math.random() - 0.5) * Math.max(2, base * 0.35);
         const rtt = Math.max(0.3, base + jitter);
         // شبیه‌سازی هرگز سلامت سرویس را ادعا نمی‌کند.
-        return { ok: true, reachable: true, service: 'unknown', rtt: Math.round(rtt * 100) / 100, packetsSent: 1, packetsRecv: 1, lossPct: 0, mode: 'simulate' };
+        return {
+          ok: true,
+          reachable: true,
+          service: 'unknown',
+          rtt: Math.round(rtt * 100) / 100,
+          packetsSent: 1,
+          packetsRecv: 1,
+          lossPct: 0,
+          mode: 'simulate',
+        };
       },
       { signal, timeoutMs: timeoutMs * 3 + 3000, cancelWhenNoWaiters: true }
     );
@@ -971,129 +479,26 @@ router.get('/:id/series', (req, res) => {
 });
 
 router.get('/:id/outages', (req, res) => {
-  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '100', 10) || 100));
-  const from = Number(req.query.from);
-  const to = Number(req.query.to);
-  const hasWindow = Number.isFinite(from) && Number.isFinite(to) && to > from;
-  const rows = hasWindow
-    ? db
-        .prepare(
-          `SELECT * FROM outages
-           WHERE device_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)
-           ORDER BY started_at DESC LIMIT ?`
-        )
-        .all(Number(req.params.id), to, from, limit)
-    : db
-        .prepare('SELECT * FROM outages WHERE device_id = ? ORDER BY started_at DESC LIMIT ?')
-        .all(Number(req.params.id), limit);
-  const total = hasWindow
-    ? db
-        .prepare(
-          `SELECT COUNT(*) AS c FROM outages
-           WHERE device_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)`
-        )
-        .get(Number(req.params.id), to, from).c
-    : db.prepare('SELECT COUNT(*) AS c FROM outages WHERE device_id = ?').get(Number(req.params.id)).c;
-  const openRow = db.prepare('SELECT * FROM outages WHERE device_id = ? AND open = 1 ORDER BY started_at DESC LIMIT 1').get(Number(req.params.id));
-  res.json({
-    total,
-    from: hasWindow ? from : null,
-    to: hasWindow ? to : null,
-    open: openRow
-      ? { ...openRow, durationSec: Math.round((Date.now() - openRow.started_at) / 1000) }
-      : null,
-    items: rows.map((r) => ({
-      id: r.id,
-      startedAt: r.started_at,
-      endedAt: r.ended_at,
-      durationSec: r.ended_at ? r.duration_sec ?? Math.round((r.ended_at - r.started_at) / 1000) : Math.round((Date.now() - r.started_at) / 1000),
-      cause: r.cause,
-      detail: r.detail,
-      lat: r.lat,
-      lng: r.lng,
-      open: !!r.open,
-      maintenance: db.prepare('SELECT id, action, technician FROM maintenance_records WHERE outage_id = ?').get(r.id) || null,
-    })),
-  });
+  res.json(outagesPayload(req.params.id, req.query));
 });
 
 router.get('/:id/availability', (req, res) => {
-  const range = String(req.query.range || '24h');
-  const series = seriesFor(req.params.id, range);
-  const buckets = series.points;
-  const overall = buckets.length ? buckets.reduce((a, b) => a + b.availability, 0) / buckets.length : 100;
-  const checks = buckets.reduce((a, b) => a + b.samples, 0);
-  const failed = buckets.reduce((a, b) => a + b.down, 0);
-  res.json({
-    range,
-    bucketLabel: series.bucketLabel,
-    overall: Math.round(overall * 100) / 100,
-    checks,
-    failed,
-    worstBucket: buckets.length ? buckets.reduce((a, b) => (a.availability <= b.availability ? a : b)) : null,
-    buckets: buckets.map((b) => ({ t: b.t, availability: b.availability, down: b.down, samples: b.samples })),
-  });
+  res.json(availabilityPayload(req.params.id, req.query));
 });
 
 router.get('/:id/samples', (req, res) => {
-  const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '200', 10) || 200));
-  const rows = db
-    .prepare('SELECT ts, rtt_ms, loss_pct, status, ok, mode, packets_sent, packets_recv FROM samples WHERE device_id = ? ORDER BY ts DESC LIMIT ?')
-    .all(Number(req.params.id), limit);
-  res.json({
-    items: rows.map((r) => ({
-      ts: r.ts,
-      rtt: r.rtt_ms,
-      lossPct: r.loss_pct,
-      status: r.status,
-      ok: !!r.ok,
-      mode: r.mode,
-      sent: r.packets_sent,
-      received: r.packets_recv,
-    })),
-  });
+  res.json(samplesPayload(req.params.id, req.query));
 });
 
 /** نمای کلی سلامت تجهیز برای سربرگ صفحه جزئیات */
 router.get('/:id/health', (req, res) => {
-  const d = getDevice(req.params.id);
-  if (!d) return res.status(404).json({ error: 'تجهیز یافت نشد' });
-  const day = db
-    .prepare('SELECT * FROM daily_stats WHERE device_id = ? ORDER BY day DESC LIMIT 14')
-    .all(Number(req.params.id));
-  const mtbf = db
-    .prepare('SELECT AVG(diff) AS mtbf FROM (SELECT started_at - LAG(ended_at) OVER (ORDER BY started_at) AS diff FROM outages WHERE device_id = ? AND ended_at IS NOT NULL)')
-    .get(Number(req.params.id));
-  // MTTR فقط برای قطعی‌هایی که رکورد تعمیر متصل دارند محاسبه می‌شود؛ تعداد
-  // مبنا و موارد کنارگذاشته‌شده برای شفافیت برگردانده می‌شوند.
-  const mttr = db
-    .prepare(
-      `SELECT AVG(CAST(MAX(o.ended_at - o.started_at, 0) AS REAL) / 1000.0) AS mttr, COUNT(*) AS c
-       FROM outages o WHERE o.device_id = ? AND o.ended_at IS NOT NULL
-         AND EXISTS (SELECT 1 FROM maintenance_records m WHERE m.outage_id = o.id)`
-    )
-    .get(Number(req.params.id));
-  const closedOutages = db
-    .prepare('SELECT COUNT(*) AS c FROM outages WHERE device_id = ? AND ended_at IS NOT NULL')
-    .get(Number(req.params.id)).c;
-  res.json({
-    deviceId: d.id,
-    daily: day.reverse(),
-    mtbfSec: mtbf?.mtbf ? Math.round(mtbf.mtbf / 1000) : null,
-    mttrSec: mttr?.mttr != null ? Math.round(mttr.mttr) : null,
-    mttrEvents: mttr?.c || 0,
-    mttrExcluded: Math.max(0, closedOutages - (mttr?.c || 0)),
-    maintenance: db
-      .prepare('SELECT COUNT(*) AS c FROM maintenance_records WHERE device_id = ?')
-      .get(Number(req.params.id)).c,
-  });
+  const body = healthPayload(req.params.id);
+  if (!body) return res.status(404).json({ error: 'تجهیز یافت نشد' });
+  res.json(body);
 });
 
 router.get('/:id/maintenance', (req, res) => {
-  const rows = db
-    .prepare('SELECT * FROM maintenance_records WHERE device_id = ? ORDER BY started_at DESC')
-    .all(Number(req.params.id));
-  res.json({ items: rows });
+  res.json(maintenancePayload(req.params.id));
 });
 
 export { pingDevice };
