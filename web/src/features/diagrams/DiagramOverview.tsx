@@ -23,27 +23,7 @@
  *   همان‌جا با یک کلیک پاک می‌شود.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  ChevronDown,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  GitBranch,
-  Info,
-  LayoutGrid,
-  Link2,
-  Maximize2,
-  Minus,
-  Move,
-  Pencil,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { AlertTriangle, ExternalLink, Link2, RefreshCw, Trash2, X } from 'lucide-react';
 import {
   Background,
   BackgroundVariant,
@@ -64,6 +44,10 @@ import type { HandleSide } from '../../lib/diagrams';
 import type { DiagramConnectionKind, DiagramGraph, DiagramGraphBrokenLink } from '../../lib/types';
 import { DiagramCard } from './overview/DiagramCard';
 import { OverviewLinkEdge } from './overview/OverviewLinkEdge';
+import { OverviewHeader } from './overview/OverviewHeader';
+import { OverviewLinkForm } from './overview/OverviewLinkForm';
+import { OverviewToolbar } from './overview/OverviewToolbar';
+import { OverviewCardInspector, OverviewLinkInspector } from './overview/OverviewInspector';
 import { asSide, automaticSides, layout, readLayoutPrefs, writeLayoutPrefs } from './overview/layout';
 import { COMPACT_ZOOM, MAX_ZOOM, MIN_ZOOM, NODE_H, NODE_W, OverviewUi } from './overview/model';
 import type { OverviewEdge, OverviewNode, Placed, PositionMap } from './overview/model';
@@ -655,244 +639,44 @@ function OverviewBoard({
 
   const nameOf = (id: number) => positions.get(id)?.name ?? `#${id}`;
 
-  const inspector = (() => {
-    if (!selectedLinkData && selectedItem == null) return null;
+  const selectedCard = selectedItem == null ? null : items.find((item) => item.id === selectedItem) ?? null;
 
-    if (selectedLinkData) {
-      const link = selectedLinkData;
-      const meta = connectionType(link.kind);
-      return (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-[12.5px] font-semibold text-ink-800">جزئیات ارتباط</h3>
-            <button
-              type="button"
-              className="btn-ghost btn-xs !px-1.5"
-              onClick={() => setSelectedLink(null)}
-              aria-label="بستن جزئیات ارتباط"
-            >
-              <X size={13} />
-            </button>
-          </div>
-
-          <div className="rounded-soft border border-ink-100 bg-ink-50/50 p-2.5">
-            <p className="flex flex-wrap items-center gap-1 text-[12px] leading-5 text-ink-700">
-              <strong className="font-semibold">{nameOf(link.from)}</strong>
-              <span className="text-ink-400">↔</span>
-              <strong className="font-semibold">{nameOf(link.to)}</strong>
-            </p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span
-                className="rounded-pill px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ color: meta.color, background: `${meta.color}14` }}
-              >
-                {meta.label}
-              </span>
-              {link.nodeLabel ? <span className="text-[10px] text-ink-400">{link.nodeLabel}</span> : null}
-            </div>
-          </div>
-
-          {canEdit ? (
-            <>
-              <label className="block">
-                <span className="label mb-1">برچسب ارتباط</span>
-                <input
-                  className="field"
-                  value={labelDraft}
-                  maxLength={120}
-                  onChange={(event) => setLabelDraft(event.target.value)}
-                  placeholder="مثلاً اتصال به مرکز مخابرات"
-                />
-              </label>
-              <button
-                type="button"
-                className="btn-primary btn-xs w-full justify-center"
-                disabled={busy || labelDraft.trim() === (link.label ?? '')}
-                onClick={() => void updateLinkMeta({ label: labelDraft.trim() })}
-              >
-                <Pencil size={12} />
-                ذخیرهٔ برچسب
-              </button>
-
-              <label className="block">
-                <span className="label mb-1">نوع ارتباط</span>
-                <select
-                  className="field !py-1.5 text-[11.5px]"
-                  value={link.kind}
-                  disabled={busy}
-                  onChange={(event) => void changeLinkKind(event.target.value as DiagramConnectionKind)}
-                >
-                  {CONNECTION_TYPES.map((type) => (
-                    <option key={type.kind} value={type.kind}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : (
-            <p className="text-[10.5px] text-ink-400">برای ویرایش پیوند، حالت ویرایش را فعال کنید.</p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2">
-            <button
-              type="button"
-              className="btn-soft btn-xs flex-1 justify-center"
-              onClick={() => onOpen(link.from, link.nodeId)}
-            >
-              <ExternalLink size={12} />
-              باز کردن مبدأ
-            </button>
-            {canEdit ? (
-              <button
-                type="button"
-                className="btn-ghost btn-xs text-danger hover:!border-red-200 hover:!text-danger"
-                disabled={busy}
-                onClick={() => void removeLink(link.from, link.nodeId, link.nodeLabel || link.label || 'پیوند')}
-              >
-                <Trash2 size={12} />
-                حذف
-              </button>
-            ) : null}
-          </div>
-          <p className="text-[10px] leading-4 text-ink-400">
-            این ارتباط دوطرفه نمایش داده می‌شود؛ حذف آن جزء متناظر در دیاگرام مقصد را هم برمی‌دارد.
-          </p>
-        </div>
-      );
-    }
-
-    const card = items.find((item) => item.id === selectedItem);
-    if (!card) return null;
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-[12.5px] font-semibold text-ink-800">جزئیات دیاگرام</h3>
-          <button
-            type="button"
-            className="btn-ghost btn-xs !px-1.5"
-            onClick={() => setSelectedItem(null)}
-            aria-label="بستن جزئیات دیاگرام"
-          >
-            <X size={13} />
-          </button>
-        </div>
-
-        <div className="rounded-soft border border-ink-100 bg-ink-50/50 p-2.5">
-          <p className="truncate text-[13px] font-semibold text-ink-800">{card.name}</p>
-          <p className="num mt-1 text-[10.5px] text-ink-400">
-            {faDigits(card.nodeCount)} جزء · {faDigits(card.edgeCount)} ارتباط · {faDigits(card.childCount)}{' '}
-            زیرمجموعه
-          </p>
-          {card.description ? (
-            <p className="mt-1 text-[10.5px] leading-5 text-ink-500">{card.description}</p>
-          ) : null}
-        </div>
-
-        <div className="flex gap-1.5">
-          <button type="button" className="btn-soft btn-xs flex-1 justify-center" onClick={() => onOpen(card.id)}>
-            <ExternalLink size={12} />
-            باز کردن
-          </button>
-          {canEdit ? (
-            <button
-              type="button"
-              className="btn-ghost btn-xs"
-              onClick={() => {
-                setConnectMode(true);
-                setConnectSource(card.id);
-                setSelectedItem(null);
-              }}
-              title="اتصال از این دیاگرام به دیاگرام دیگر"
-            >
-              <Link2 size={12} />
-              اتصال
-            </button>
-          ) : null}
-        </div>
-
-        <div>
-          <p className="label mb-1">ارتباط‌های خروجی ({faDigits(cardLinks.outgoing.length)})</p>
-          {cardLinks.outgoing.length ? (
-            <div className="space-y-1">
-              {cardLinks.outgoing.map((link) => (
-                <button
-                  key={`${link.from}:${link.nodeId}`}
-                  type="button"
-                  className="flex w-full items-center gap-1.5 rounded-lg border border-ink-100 px-2 py-1.5 text-right text-[10.5px] text-ink-600 transition hover:border-brand-200 hover:bg-brand-50/30"
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setSelectedLink(`${link.from}:${link.nodeId}`);
-                  }}
-                >
-                  <span
-                    className="h-0.5 w-4 shrink-0 rounded"
-                    style={{ background: connectionType(link.kind).color }}
-                    aria-hidden
-                  />
-                  <span className="truncate">{nameOf(link.to)}</span>
-                  <span className="ms-auto shrink-0 text-[9px] text-ink-400">
-                    {connectionType(link.kind).label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[10px] text-ink-400">—</p>
-          )}
-        </div>
-
-        <div>
-          <p className="label mb-1">ارتباط‌های ورودی ({faDigits(cardLinks.incoming.length)})</p>
-          {cardLinks.incoming.length ? (
-            <div className="space-y-1">
-              {cardLinks.incoming.map((link) => (
-                <button
-                  key={`${link.from}:${link.nodeId}`}
-                  type="button"
-                  className="flex w-full items-center gap-1.5 rounded-lg border border-ink-100 px-2 py-1.5 text-right text-[10.5px] text-ink-600 transition hover:border-brand-200 hover:bg-brand-50/30"
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setSelectedLink(`${link.from}:${link.nodeId}`);
-                  }}
-                >
-                  <span
-                    className="h-0.5 w-4 shrink-0 rounded"
-                    style={{ background: connectionType(link.kind).color }}
-                    aria-hidden
-                  />
-                  <span className="truncate">{nameOf(link.from)}</span>
-                  <span className="ms-auto shrink-0 text-[9px] text-ink-400">
-                    {connectionType(link.kind).label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[10px] text-ink-400">—</p>
-          )}
-        </div>
-
-        {childItems.length ? (
-          <div>
-            <p className="label mb-1">زیرمجموعه‌ها ({faDigits(childItems.length)})</p>
-            <div className="flex flex-wrap gap-1">
-              {childItems.map((child) => (
-                <button
-                  key={child.id}
-                  type="button"
-                  className="rounded-pill border border-ink-200 px-2 py-0.5 text-[10px] text-ink-600 transition hover:border-brand-300 hover:text-accent"
-                  onClick={() => setSelectedItem(child.id)}
-                >
-                  {child.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    );
-  })();
+  const inspector = selectedLinkData ? (
+    <OverviewLinkInspector
+      link={selectedLinkData}
+      canEdit={canEdit}
+      busy={busy}
+      labelDraft={labelDraft}
+      nameOf={nameOf}
+      onLabelDraft={setLabelDraft}
+      onClose={() => setSelectedLink(null)}
+      onUpdateMeta={(patch) => void updateLinkMeta(patch)}
+      onChangeKind={(kind) => void changeLinkKind(kind)}
+      onRemove={(from, nodeId, title) => void removeLink(from, nodeId, title)}
+      onOpen={onOpen}
+    />
+  ) : selectedCard ? (
+    <OverviewCardInspector
+      card={selectedCard}
+      outgoing={cardLinks.outgoing}
+      incoming={cardLinks.incoming}
+      children={childItems}
+      canEdit={canEdit}
+      nameOf={nameOf}
+      onClose={() => setSelectedItem(null)}
+      onOpen={onOpen}
+      onConnect={(id) => {
+        setConnectMode(true);
+        setConnectSource(id);
+        setSelectedItem(null);
+      }}
+      onSelectLink={(key) => {
+        setSelectedItem(null);
+        setSelectedLink(key);
+      }}
+      onSelectItem={setSelectedItem}
+    />
+  ) : null;
 
   /* ------------------------------ رندر ------------------------------ */
   const matchCount = matchedIds ? matchedIds.size : items.length;
@@ -911,385 +695,75 @@ function OverviewBoard({
           className="flex h-full max-h-[95vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-surface shadow-pop"
           onClick={(event) => event.stopPropagation()}
         >
-          {/* سربرگ */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-ink-100 px-3 py-2">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-accent">
-              <GitBranch size={16} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-[13.5px] font-semibold text-ink-800">نقشهٔ ارتباط دیاگرام‌ها</h2>
-              <p className="num text-[10px] text-ink-400">
-                {faDigits(stats?.diagrams ?? items.length)} دیاگرام · {faDigits(stats?.links ?? 0)} پیوند ·{' '}
-                {faDigits(stats?.children ?? 0)} زیرمجموعه · {faDigits(stats?.orphans ?? 0)} بدون ارتباط
-              </p>
-            </div>
+          <OverviewHeader
+            stats={stats}
+            itemCount={items.length}
+            query={query}
+            onQuery={setQuery}
+            needle={needle}
+            matchCount={matchCount}
+            onFocusMatches={focusMatches}
+            mode={mode}
+            onMode={setMode}
+            canWrite={canWrite}
+            onRefresh={onRefresh}
+            loading={loading}
+            onClose={onClose}
+          />
 
-            <div className="ms-auto flex flex-wrap items-center gap-1.5">
-              <div className="relative">
-                <Search
-                  size={12}
-                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400"
-                />
-                <input
-                  className="field !w-[190px] !rounded-pill !py-1.5 pr-7 text-[11.5px]"
-                  placeholder="جست‌وجوی نام یا توضیح…"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  aria-label="جست‌وجوی دیاگرام در نقشهٔ ارتباط"
-                />
-              </div>
-              {needle ? (
-                <button
-                  type="button"
-                  className="btn-ghost btn-xs"
-                  onClick={focusMatches}
-                  disabled={!matchCount}
-                  title="نمایش فقط نتایج جست‌وجو روی بوم"
-                >
-                  <span className="num text-[10px]">{faDigits(matchCount)} نتیجه</span>
-                </button>
-              ) : null}
+          <OverviewToolbar
+            items={items}
+            broken={broken}
+            canEdit={canEdit}
+            linkKind={linkKind}
+            onLinkKind={setLinkKind}
+            connectMode={connectMode}
+            onToggleConnect={() => {
+              setConnectMode((value) => !value);
+              setConnectSource(null);
+              setSelectedItem(null);
+              setSelectedLink(null);
+            }}
+            showCreate={showCreate}
+            onToggleCreate={() => setShowCreate((value) => !value)}
+            autoLayout={autoLayout}
+            onAutoLayout={enableAuto}
+            onManualLayout={enableManual}
+            onResetLayout={resetLayout}
+            treeOnly={treeOnly}
+            onToggleTree={() => {
+              const next = !treeOnly;
+              setTreeOnly(next);
+              // با پنهان‌شدن پیوندهای دستی، جزئیات پیوند انتخاب‌شده هم بسته شود.
+              if (next) setSelectedLink(null);
+            }}
+            showEdgeLabels={showEdgeLabels}
+            onToggleEdgeLabels={() => setShowEdgeLabels((value) => !value)}
+            legendOpen={legendOpen}
+            onToggleLegend={() => setLegendOpen((value) => !value)}
+            brokenOpen={brokenOpen}
+            onToggleBroken={() => setBrokenOpen((value) => !value)}
+            zoom={zoom}
+            onZoomOut={() => void zoomOut({ duration: 160 })}
+            onZoomIn={() => void zoomIn({ duration: 160 })}
+            onFit={() => setFitNonce((value) => value + 1)}
+          />
 
-              <div
-                className="inline-flex items-center rounded-pill border border-ink-200 bg-surface p-0.5"
-                role="group"
-                aria-label="حالت نقشهٔ ارتباط"
-              >
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
-                    mode === 'view' ? 'bg-brand-50 text-accent' : 'text-ink-500'
-                  }`}
-                  onClick={() => setMode('view')}
-                  aria-pressed={mode === 'view'}
-                  title="فقط مشاهده و کاوش؛ پیوند و جابه‌جایی غیرفعال است"
-                >
-                  <Eye size={11} />
-                  نمایش
-                </button>
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1 rounded-pill px-2 py-1 text-[10.5px] font-medium transition ${
-                    mode === 'edit' ? 'bg-brand-50 text-accent' : 'text-ink-500'
-                  }`}
-                  onClick={() => setMode('edit')}
-                  disabled={!canWrite}
-                  aria-pressed={mode === 'edit'}
-                  title={canWrite ? 'ویرایش چیدمان و پیوندها' : 'برای ویرایش، دسترسی لازم است'}
-                >
-                  <Pencil size={11} />
-                  ویرایش
-                </button>
-              </div>
-
-              <button
-                type="button"
-                className="btn-ghost btn-xs"
-                onClick={onRefresh}
-                disabled={loading}
-                title="بازخوانی ارتباط‌ها"
-                aria-label="بازخوانی ارتباط‌ها"
-              >
-                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-              </button>
-              <button type="button" className="btn-ghost btn-xs" onClick={onClose} aria-label="بستن">
-                <X size={15} />
-              </button>
-            </div>
-          </div>
-
-          {/* نوار ابزار */}
-          <div
-            className="flex flex-wrap items-center gap-2 border-b border-ink-100 bg-ink-50/40 px-3 py-1.5 text-[10.5px] text-ink-500"
-            dir="rtl"
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-0 w-5 border-t-2 border-dashed border-ink-400" aria-hidden />
-              زیرمجموعه
-            </span>
-            <div className="relative">
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1 rounded-pill border px-1.5 py-0.5 text-[10px] font-medium transition ${
-                  legendOpen
-                    ? 'border-brand-300 bg-brand-50 text-accent'
-                    : 'border-ink-200 bg-surface text-ink-500 hover:text-ink-700'
-                }`}
-                onClick={() => setLegendOpen((value) => !value)}
-                aria-expanded={legendOpen}
-                aria-label="راهنمای نوع ارتباط‌ها"
-              >
-                <Info size={11} />
-                راهنمای نوع‌ها
-                <ChevronDown size={11} className={legendOpen ? 'rotate-180' : ''} />
-              </button>
-              {legendOpen ? (
-                <div
-                  className="absolute right-0 top-full z-40 mt-1 w-56 rounded-soft border border-ink-200 bg-surface p-2 shadow-pop"
-                  dir="rtl"
-                  role="dialog"
-                  aria-label="نوع‌های ارتباط"
-                >
-                  <p className="mb-1 px-1 text-[10px] font-semibold text-ink-500">نوع ارتباط</p>
-                  {CONNECTION_TYPES.map((type) => (
-                    <div
-                      key={type.kind}
-                      className="flex items-center gap-2 rounded-md px-1 py-1 text-[10.5px] text-ink-600"
-                    >
-                      <span
-                        aria-hidden
-                        className="w-7 shrink-0"
-                        style={
-                          type.dash
-                            ? { borderTop: `2px dashed ${type.color}` }
-                            : { height: 3, background: type.color, borderRadius: 2 }
-                        }
-                      />
-                      <span className="flex-1">{type.label}</span>
-                    </div>
-                  ))}
-                  <div className="mt-1 flex items-center gap-2 border-t border-ink-100 px-1 pt-1.5 text-[10px] text-ink-500">
-                    <span className="w-7 shrink-0 border-t-2 border-dashed border-ink-400" aria-hidden />
-                    زیرمجموعه
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full border-2 border-brand-500 bg-brand-100" aria-hidden />
-              دیاگرام جاری
-            </span>
-            {broken.length ? (
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-pill border border-sun-200 bg-sun-50 px-1.5 py-0.5 text-[10px] font-medium text-warning"
-                onClick={() => setBrokenOpen((value) => !value)}
-                aria-expanded={brokenOpen}
-                title="پیوندهای شکسته را ببینید و پاک کنید"
-              >
-                <AlertTriangle size={11} />
-                {faDigits(broken.length)} پیوند شکسته
-                <ChevronDown size={11} className={brokenOpen ? 'rotate-180' : ''} />
-              </button>
-            ) : null}
-
-            <span className="mx-0.5 h-4 w-px bg-ink-200" aria-hidden />
-
-            {canEdit ? (
-              <>
-                <label className="inline-flex items-center gap-1 rounded-pill border border-ink-200 bg-surface px-1.5 py-0.5">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: connectionType(linkKind).color }}
-                    aria-hidden
-                  />
-                  <span className="text-[9.5px] text-ink-400">نوع اتصال</span>
-                  <select
-                    className="max-w-[120px] bg-transparent text-[10.5px] font-medium text-ink-700 outline-none"
-                    value={linkKind}
-                    onChange={(event) => setLinkKind(event.target.value as DiagramConnectionKind)}
-                    aria-label="نوع ارتباط پیوند جدید"
-                  >
-                    {CONNECTION_TYPES.map((type) => (
-                      <option key={type.kind} value={type.kind}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className={`btn-ghost btn-xs ${connectMode ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
-                  onClick={() => {
-                    setConnectMode((value) => !value);
-                    setConnectSource(null);
-                    setSelectedItem(null);
-                    setSelectedLink(null);
-                  }}
-                  disabled={items.length < 2}
-                  aria-pressed={connectMode}
-                  title="حالت اتصال کلیک‌به‌کلیک: اول مبدأ، بعد مقصد"
-                >
-                  <Link2 size={12} />
-                  حالت اتصال
-                </button>
-                <button
-                  type="button"
-                  className={`btn-ghost btn-xs ${showCreate ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
-                  onClick={() => setShowCreate((value) => !value)}
-                  disabled={items.length < 2}
-                  aria-expanded={showCreate}
-                  title="ساخت پیوند با انتخاب مبدأ و مقصد"
-                >
-                  <Link2 size={12} />
-                  پیوند تازه
-                </button>
-                <span className="mx-0.5 h-4 w-px bg-ink-200" aria-hidden />
-                <span className="flex items-center gap-0.5 rounded-pill bg-surface p-0.5">
-                  <button
-                    type="button"
-                    className={`btn-ghost btn-xs ${autoLayout ? '!border-brand-300 !text-accent shadow-soft' : ''}`}
-                    onClick={enableAuto}
-                    title="چیدمان خودکار بر اساس ساختار درخت و جهت پیوندها"
-                    aria-pressed={autoLayout}
-                  >
-                    <LayoutGrid size={12} />
-                    خودکار
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn-ghost btn-xs ${!autoLayout ? '!border-sky-300 !text-info shadow-soft' : ''}`}
-                    onClick={enableManual}
-                    title="چیدمان آزاد: کارت‌ها را با کشیدن جابه‌جا کنید"
-                    aria-pressed={!autoLayout}
-                  >
-                    <Move size={12} />
-                    آزاد
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost btn-xs"
-                    onClick={resetLayout}
-                    title="بازگشت به چیدمان خودکار و پاک کردن جابه‌جایی‌ها"
-                    aria-label="بازنشانی چیدمان"
-                  >
-                    <RotateCcw size={12} />
-                  </button>
-                </span>
-              </>
-            ) : null}
-
-            <button
-              type="button"
-              className={`btn-ghost btn-xs ${treeOnly ? '!border-brand-300 !bg-brand-50 !text-accent' : ''}`}
-              onClick={() => {
-                const next = !treeOnly;
-                setTreeOnly(next);
-                // با پنهان‌شدن پیوندهای دستی، جزئیات پیوند انتخاب‌شده هم بسته شود.
-                if (next) setSelectedLink(null);
-              }}
-              aria-pressed={treeOnly}
-              title="فقط ساختار درختی؛ پیوندهای دستی پنهان می‌شوند"
-            >
-              <GitBranch size={11} />
-              فقط درخت
-            </button>
-            <button
-              type="button"
-              className={`btn-ghost btn-xs ${showEdgeLabels ? '' : '!text-ink-400'}`}
-              onClick={() => setShowEdgeLabels((value) => !value)}
-              aria-pressed={showEdgeLabels}
-              title="نمایش یا پنهان‌کردن برچسب ارتباط‌ها"
-            >
-              {showEdgeLabels ? <Eye size={11} /> : <EyeOff size={11} />}
-              برچسب‌ها
-            </button>
-
-            <span className="ms-auto flex items-center gap-1">
-              <button
-                type="button"
-                className="btn-ghost btn-xs"
-                onClick={() => void zoomOut({ duration: 160 })}
-                title="کوچک‌نمایی"
-                aria-label="کوچک‌نمایی"
-              >
-                <Minus size={12} />
-              </button>
-              <span className="num w-9 text-center text-[10px] text-ink-400">{faDigits(Math.round(zoom * 100))}٪</span>
-              <button
-                type="button"
-                className="btn-ghost btn-xs"
-                onClick={() => void zoomIn({ duration: 160 })}
-                title="بزرگ‌نمایی"
-                aria-label="بزرگ‌نمایی"
-              >
-                <Plus size={12} />
-              </button>
-              <button
-                type="button"
-                className="btn-ghost btn-xs"
-                onClick={() => setFitNonce((value) => value + 1)}
-                title="جا دادن همهٔ کارت‌ها در کادر"
-              >
-                <Maximize2 size={12} />
-                جا دادن
-              </button>
-            </span>
-          </div>
-
-          {/* فرم ساخت پیوند */}
           {showCreate && canEdit ? (
-            <div
-              className="flex flex-wrap items-end gap-2 border-b border-ink-100 bg-brand-50/40 px-3 py-2"
-              dir="rtl"
-            >
-              <label className="flex min-w-[140px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
-                دیاگرام مبدأ
-                <select
-                  className="field !py-1 text-[11.5px]"
-                  value={sourceId}
-                  onChange={(event) => setSourceId(Number(event.target.value))}
-                >
-                  {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex min-w-[140px] flex-1 flex-col gap-0.5 text-[10px] text-ink-500">
-                دیاگرام مقصد
-                <select
-                  className="field !py-1 text-[11.5px]"
-                  value={targetId}
-                  onChange={(event) => setTargetId(Number(event.target.value))}
-                >
-                  {items
-                    .filter((item) => item.id !== sourceId)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="flex min-w-[150px] flex-[1.4] flex-col gap-0.5 text-[10px] text-ink-500">
-                برچسب (اختیاری)
-                <input
-                  className="field !py-1 text-[11.5px]"
-                  value={linkLabel}
-                  placeholder="مثلاً اتصال به مرکز مخابرات"
-                  maxLength={120}
-                  onChange={(event) => setLinkLabel(event.target.value)}
-                />
-              </label>
-              <label className="flex min-w-[110px] flex-col gap-0.5 text-[10px] text-ink-500">
-                نوع ارتباط
-                <select
-                  className="field !py-1 text-[11.5px]"
-                  value={linkKind}
-                  onChange={(event) => setLinkKind(event.target.value as DiagramConnectionKind)}
-                >
-                  {CONNECTION_TYPES.map((type) => (
-                    <option key={type.kind} value={type.kind}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="btn-primary btn-xs"
-                onClick={() => void createLink()}
-                disabled={busy || !targetId}
-              >
-                <Plus size={12} />
-                {busy ? 'در حال ساخت…' : 'ساخت پیوند'}
-              </button>
-              <button type="button" className="btn-ghost btn-xs" onClick={() => setShowCreate(false)}>
-                انصراف
-              </button>
-            </div>
+            <OverviewLinkForm
+              items={items}
+              sourceId={sourceId}
+              targetId={targetId}
+              label={linkLabel}
+              kind={linkKind}
+              busy={busy}
+              onSource={setSourceId}
+              onTarget={setTargetId}
+              onLabel={setLinkLabel}
+              onKind={setLinkKind}
+              onCreate={() => void createLink()}
+              onCancel={() => setShowCreate(false)}
+            />
           ) : null}
 
           {/* بوم + بازرس ارتباط */}
