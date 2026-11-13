@@ -34,6 +34,9 @@ if (major < 22 || (major === 22 && minor < 12)) {
 } else {
   ok(`Node.js ${process.versions.node} (${process.arch})`);
 }
+if (process.platform === 'win32' && process.arch !== 'x64') {
+  errors.push(`64-bit Node.js is required on Windows (found ${process.arch}).`);
+}
 
 /**
  * بسته‌های محدود به **همین پلتفرم** که باید در node_modules باشند.

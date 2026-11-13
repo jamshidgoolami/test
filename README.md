@@ -18,7 +18,7 @@ npm start            # اجرای سامانه روی پورت 8787
 
 سپس در مرورگر آدرس `http://localhost:8787` را باز کنید. از این مرحله به بعد هیچ نیازی به اینترنت نیست.
 
-> **نصب روی سیستم بدون اینترنت (ویندوز x64):** بستهٔ کامل را روی یک سیستم آنلاین با `npm run offline:prepare` بسازید، منتقل کنید و با `install.cmd` نصب کنید؛ بروزرسانی‌های بعدی با `update.cmd` انجام می‌شود **بدون آنکه داده‌های `data/` از بین بروند**. راهنمای گام‌به‌گام: [docs/offline-install-update.md](docs/offline-install-update.md).
+> **نصب روی سیستم بدون اینترنت (ویندوز x64):** بستهٔ کامل را روی یک سیستم آنلاین با `npm run offline:prepare` بسازید، منتقل کنید و با `install.cmd` نصب کنید؛ بروزرسانی‌های بعدی با `update.cmd` انجام می‌شود **بدون آنکه داده‌های `data/` از بین بروند**. اگر سیستم مقصد Node.js هم ندارد، با `npm run offline:portable` بستهٔ Portable بسازید و فقط `NetWatch.cmd` را اجرا کنید. راهنمای گام‌به‌گام: [docs/offline-install-update.md](docs/offline-install-update.md).
 
 | دستور | توضیح |
 | --- | --- |
@@ -590,7 +590,7 @@ npm run release:prepare # پشتیبان پیش از انتشار + آرشیو �
 
 ## ۱۱. تضمین کیفیت، پایداری و انتشار
 
-نسخهٔ فعلی `1.3.0` است. مجموعهٔ آزمون شامل Unit، Frontend Unit، Integration،
+نسخهٔ فعلی `1.4.1` است. مجموعهٔ آزمون شامل Unit، Frontend Unit، Integration،
 E2E (سمک + جریان‌ها + سناریوی انتشار)، Browser E2E با Playwright و یک آزمون
 Heavy برای ورود ۵۰٬۰۰۰ ردیف است. همهٔ Endpointهای ثبت‌شده با فهرست بسته در
 `server/tests/integration/endpoints.test.mjs` پوشش داده شده‌اند؛ افزودن مسیر

@@ -47,6 +47,7 @@ const IGNORE = [
   /^\.git(\/|$)/,
   /^\.offline(\/|$)/,
   /^\.freebuff(\/|$)/,
+  /^\.cloud-attachments(\/|$)/,
   /^web\/dist(\/|$)/,
   /^test-results(\/|$)/,
   /^playwright-report(\/|$)/,
@@ -148,7 +149,8 @@ log(`${copied} مورد از سورس برنامه کپی شد (بدون data، 
 // کارهای نصب/بروزرسانی در ریشهٔ بسته با دابل‌کلیک در دسترس باشند
 for (const f of ['install.cmd', 'update.cmd']) {
   const src = path.join(SCRIPT_DIR, f);
-  if (fs.existsSync(src)) fs.copyFileSync(src, path.join(BUNDLE_DIR, f));
+  if (!fs.existsSync(src)) fail(`فایل راه‌انداز ${f} در scripts/offline پیدا نشد.`);
+  fs.copyFileSync(src, path.join(BUNDLE_DIR, f));
 }
 
 /* ------------------------------------------------------------------ */

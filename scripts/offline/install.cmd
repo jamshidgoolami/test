@@ -12,6 +12,11 @@ if errorlevel 1 (
   echo         Install 64-bit Node.js 22.12 or newer, then run this again.
   exit /b 1
 )
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] npm not found on PATH. Reinstall Node.js 22.12 or newer.
+  exit /b 1
+)
 
 echo [1/4] Checking prerequisites...
 node "%~dp0scripts\offline\verify-install.mjs" --stage pre

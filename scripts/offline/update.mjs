@@ -50,6 +50,10 @@ if (!positional.length) {
 const installDir = path.resolve(positional[0]);
 const cacheDir = path.resolve(optValue('--cache') ?? path.join(BUNDLE_DIR, '.npm-cache'));
 
+if (process.platform === 'win32' && process.arch !== 'x64') {
+  fail(`64-bit Node.js is required on Windows (found ${process.arch}).`);
+}
+
 const readPkg = (dir) => {
   const f = path.join(dir, 'package.json');
   if (!fs.existsSync(f)) return null;
@@ -72,6 +76,13 @@ if (!installPkg || installPkg.name !== bundlePkg.name) {
 if (installDir === BUNDLE_DIR) fail('the install folder and the bundle folder are the same path.');
 
 const sameDir = fs.realpathSync(installDir) === fs.realpathSync(BUNDLE_DIR);
+const isNested = (parent, child) => {
+  const rel = path.relative(parent, child);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+if (isNested(BUNDLE_DIR, installDir) || isNested(installDir, BUNDLE_DIR)) {
+  fail('the install folder and the bundle folder must not contain each other.');
+}
 info(`installed version: ${installPkg.version ?? '?'}   new version: ${bundlePkg.version ?? '?'}`);
 if (!fs.existsSync(cacheDir)) fail(`npm cache not found: ${cacheDir}`);
 
@@ -105,43 +116,45 @@ if (!flags.has('--ignore-running')) {
 
 /* --- 2) پشتیبان از پایگاه‌داده ------------------------------------ */
 
-function run(cmd, args, cwd) {
-  const res = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
+function run(cmd, args, cwd, extraEnv = {}) {
+  const res = spawnSync(cmd, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    env: { ...process.env, ...extraEnv },
+  });
   if (res.error) fail(`could not run ${cmd}: ${res.error.message}`);
   if (res.status !== 0) fail(`${cmd} ${args.join(' ')} failed with code ${res.status}.`);
 }
 
-const dataDir = path.join(installDir, 'data');
-const dbFile = path.join(dataDir, 'netwatch.db');
+const configuredDataDir = process.env.NETWATCH_DATA_DIR?.trim();
+const dataDir = configuredDataDir ? path.resolve(installDir, configuredDataDir) : path.join(installDir, 'data');
+const configuredDb = process.env.NETWATCH_DB?.trim();
+const dbFile = configuredDb ? path.resolve(installDir, configuredDb) : path.join(dataDir, 'netwatch.db');
 const hasModules = fs.existsSync(path.join(installDir, 'node_modules'));
 let backupLabel = null;
 
 if (fs.existsSync(dbFile)) {
-  if (hasModules) {
-    info('creating a database backup (npm run db:backup)…');
-    const res = spawnSync('npm', ['run', 'db:backup'], {
-      cwd: installDir,
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-    });
-    process.stdout.write(res.stdout ?? '');
-    process.stderr.write(res.stderr ?? '');
-    if (res.status !== 0) {
-      fail('database backup failed - nothing was changed. Fix the backup first, then re-run.');
-    }
-    const m = /"dir":\s*"([^"]+)"/.exec(res.stdout ?? '');
-    backupLabel = m ? m[1] : 'data/backups';
-    info(`backup created: ${backupLabel}`);
-  } else {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dest = path.join(dataDir, 'backups', `pre-update-${stamp}`);
-    fs.mkdirSync(dest, { recursive: true });
-    for (const f of fs.readdirSync(dataDir)) {
-      if (f.startsWith('netwatch.db')) fs.copyFileSync(path.join(dataDir, f), path.join(dest, f));
-    }
-    backupLabel = path.relative(installDir, dest);
-    info(`backup created (file copy): ${backupLabel}`);
+  if (!hasModules) {
+    fail(
+      'node_modules is missing, so a verified backup cannot be created.\n' +
+        '  Run install.cmd in the existing installation first, then retry the update.',
+    );
   }
+  info('creating a database backup (npm run db:backup)…');
+  const res = spawnSync('npm', ['run', 'db:backup'], {
+    cwd: installDir,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  });
+  process.stdout.write(res.stdout ?? '');
+  process.stderr.write(res.stderr ?? '');
+  if (res.status !== 0) {
+    fail('database backup failed - nothing was changed. Fix the backup first, then re-run.');
+  }
+  const m = /"dir":\s*"([^"]+)"/.exec(res.stdout ?? '');
+  backupLabel = m ? m[1] : 'data/backups';
+  info(`backup created: ${backupLabel}`);
 } else {
   info('no database yet - skipping backup.');
 }
@@ -149,7 +162,7 @@ if (fs.existsSync(dbFile)) {
 /* --- 3) کپی کد جدید (بدون دست‌زدن به data/) ------------------------ */
 
 const SKIP =
-  /^(node_modules|data|\.npm-cache|\.git|\.offline|\.freebuff|test-results|playwright-report|artifacts|web\/dist)(\/|$)|^\.env(?!\.example$)|\.log$|^\.DS_Store$/;
+  /^(node_modules|data|\.npm-cache|\.git|\.offline|\.freebuff|\.cloud-attachments|test-results|playwright-report|artifacts|web\/dist)(\/|$)|^\.env(?!\.example$)|\.log$|^\.DS_Store$/;
 
 if (sameDir) {
   info('the bundle folder IS the install folder - skipping the file copy.');
@@ -172,7 +185,7 @@ if (sameDir) {
 /* --- 4) وابستگی‌ها + 5) ساخت و راستی‌آزمایی ------------------------ */
 
 info('installing dependencies from the bundle cache (npm ci --offline)…');
-run('npm', ['ci', '--offline', '--no-audit', '--no-fund', '--cache', cacheDir], installDir);
+run('npm', ['ci', '--offline', '--no-audit', '--no-fund'], installDir, { npm_config_cache: cacheDir });
 run('node', [path.join('scripts', 'offline', 'verify-install.mjs'), '--stage', 'deps'], installDir);
 
 if (flags.has('--no-build')) {
@@ -186,7 +199,7 @@ if (flags.has('--no-build')) {
 console.log(`
 [DONE] Update applied successfully.
   version : ${installPkg.version ?? '?'} -> ${bundlePkg.version ?? '?'}
-  data    : ${path.join(installDir, 'data')}  (never modified by this script)
+  data    : ${dataDir}  (never modified by this script)
   backup  : ${backupLabel ?? '- (no database yet)'}
   start   : cd "${installDir}" && npm start     then open http://localhost:8787
 

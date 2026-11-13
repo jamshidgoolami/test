@@ -38,6 +38,7 @@
     "release:prepare": "node server/scripts/release-prepare.mjs",
     "release:artifact": "node server/scripts/release-artifact.mjs",
     "offline:prepare": "node scripts/offline/prepare.mjs",
+    "offline:portable": "node scripts/offline/prepare-portable.mjs",
     "seed:reset": "node server/scripts/reset-demo.js",
     "db:backup": "node server/scripts/db-backup.mjs",
     "db:restore": "node server/scripts/db-restore.mjs",
