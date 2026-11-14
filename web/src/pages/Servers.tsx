@@ -274,8 +274,16 @@ export default function Servers() {
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Badge tone={server.bmcProtocol === 'redfish' || server.bmcProtocol === 'ipmi' ? 'brand' : server.bmcProtocol === 'demo' ? 'violet' : 'ink'}>
-                    {server.bmcProtocol === 'redfish' ? 'Redfish' : server.bmcProtocol === 'ipmi' ? 'IPMI' : server.bmcProtocol === 'demo' ? 'نمایشی' : 'بدون BMC'}
+                  <Badge tone={['redfish', 'ipmi', 'smcipmi'].includes(server.bmcProtocol) ? 'brand' : server.bmcProtocol === 'demo' ? 'violet' : 'ink'}>
+                    {server.bmcProtocol === 'redfish'
+                      ? 'Redfish'
+                      : server.bmcProtocol === 'ipmi'
+                        ? 'IPMI'
+                        : server.bmcProtocol === 'smcipmi'
+                          ? 'SMC IPMI'
+                          : server.bmcProtocol === 'demo'
+                            ? 'نمایشی'
+                            : 'بدون BMC'}
                   </Badge>
                   {server.bmcIp ? (
                     <span className="chip border-ink-200 bg-ink-50 text-ink-500" dir="ltr">

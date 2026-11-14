@@ -103,6 +103,30 @@ function linksFrom(json) {
     .slice(0, 256);
 }
 
+function linkPath(value) {
+  const path = typeof value === 'string' ? value : value?.['@odata.id'];
+  return typeof path === 'string' && path.startsWith('/redfish/') ? path : '';
+}
+
+/** شناسه‌های اعضای یک Collection را بدون فرض «1» استخراج می‌کند. */
+function memberIds(collection) {
+  return (Array.isArray(collection?.Members) ? collection.Members : [])
+    .map((member) => {
+      const path = linkPath(member);
+      const match = /\/redfish\/v1\/(?:Systems|Chassis|Managers)\/([^/?#]+)/i.exec(path);
+      return match ? decodeURIComponent(match[1]) : '';
+    })
+    .filter((id) => Boolean(id))
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .slice(0, 16);
+}
+
+function resourceId(value, fallback) {
+  const raw = text(value || fallback, 200);
+  const match = /\/redfish\/v1\/(?:Systems|Chassis|Managers)\/([^/?#]+)/i.exec(raw);
+  return match ? decodeURIComponent(match[1]) : raw;
+}
+
 async function mapLimit(items, limit, fn) {
   const output = new Array(items.length);
   let next = 0;
@@ -200,13 +224,14 @@ export async function collectRedfish(profile) {
   if (!username || !password) throw new Error('نام کاربری/رمز BMC تنظیم نشده است.');
   const verifyTls = profile.bmc_verify_tls !== 0;
   const ca = profile.bmc_ca_pem || '';
-  const systemId = encodeURIComponent(text(profile.bmc_system_id || '1', 32));
-  const chassisId = encodeURIComponent(text(profile.bmc_chassis_id || '1', 32));
+  let systemId = resourceId(profile.bmc_system_id, '1');
+  let chassisId = resourceId(profile.bmc_chassis_id, '1');
+  const managerId = '1';
   const base = `/redfish/v1`;
   let token = null;
   let sessionPath = null;
   let authMode = 'session';
-  let lastRequestError = '';
+  let lastRequest = { path: '', status: 0, error: '' };
 
   async function login() {
     try {
@@ -257,36 +282,91 @@ export async function collectRedfish(profile) {
   }
 
   async function get(path) {
+    lastRequest = { path, status: 0, error: '' };
     try {
       const res = await requestJson({ host, path, headers: authHeaders(), verifyTls, ca });
-      if (res.status === 401 && authMode === 'session') {
+      let status = res.status;
+      let json = res.status >= 200 && res.status < 300 ? res.json : null;
+      lastRequest.status = status;
+      if (status === 401 && authMode === 'session') {
         await login();
         const retry = await requestJson({ host, path, headers: authHeaders(), verifyTls, ca });
-        return { status: retry.status, json: retry.json };
+        status = retry.status;
+        json = retry.status >= 200 && retry.status < 300 ? retry.json : null;
+        lastRequest.status = status;
       }
-      return { status: res.status, json: res.json };
+      return { status, json };
     } catch (e) {
-      lastRequestError = String(e?.message || e).slice(0, 240);
-      return { status: 0, json: null, error: lastRequestError };
+      lastRequest.error = String(e?.message || e).slice(0, 240);
+      return { status: 0, json: null, error: lastRequest.error };
     }
+  }
+
+  /**
+   * اگر شناسهٔ پیکربندی‌شده در دسترس نبود، Collection را می‌خواند و اولین
+   * عضو قابل‌خواندن را انتخاب می‌کند. Supermicro معمولاً «1» دارد، اما بعضی
+   * فریمورها از «Self» یا UUID استفاده می‌کنند.
+   */
+  async function resolveResource(label, preferred, collectionPath) {
+    const tried = new Set();
+    const first = await get(`${base}/${label}/${encodeURIComponent(preferred)}`);
+    if (first.json) return { id: preferred, json: first.json };
+    const firstFailure = { ...lastRequest };
+    tried.add(preferred);
+
+    const collection = (await get(collectionPath)).json;
+    const candidates = [...memberIds(collection), 'Self'];
+    if (label === 'Managers') candidates.push('bmc');
+    for (const id of candidates) {
+      if (tried.has(id)) continue;
+      tried.add(id);
+      const res = await get(`${base}/${label}/${encodeURIComponent(id)}`);
+      if (res.json) return { id, json: res.json };
+    }
+    return { id: null, json: null, failure: firstFailure };
+  }
+
+  function systemFailureMessage(failure) {
+    const status = Number(failure?.status) || 0;
+    const path = failure?.path || `${base}/Systems/${systemId}`;
+    const reason =
+      failure?.error ||
+      (status ? `HTTP ${status}${status >= 200 && status < 300 ? ' (پاسخ JSON معتبر نبود)' : ''}` : 'پاسخ JSON معتبر نبود');
+    let hint = '';
+    if (status === 401 || status === 403) {
+      hint = ' نام کاربری/رمز BMC یا مجوز Redfish را بررسی کنید.';
+    } else if (status === 404) {
+      hint =
+        ' Redfish روی این BMC فعال نیست یا لایسنس OOB آن فعال نشده است؛ در BMC لایسنس SFT-OOB-LIC را فعال کنید یا در NetWatch پروتکل IPMI را انتخاب کنید.';
+    } else if (!status) {
+      hint = ' اتصال HTTPS، پورت 443 و گواهی TLS در تنظیمات سرور را بررسی کنید.';
+    }
+    return `سیستم Redfish در BMC پیدا نشد (${path} → ${reason}).${hint}`;
   }
 
   await login();
   try {
-    const system = (await get(`${base}/Systems/${systemId}`)).json;
-    if (!system) {
-      throw new Error(
-        `سیستم Redfish در BMC پیدا نشد (Systems/${systemId}).` + (lastRequestError ? ` — ${lastRequestError}` : '')
-      );
-    }
+    const root = (await get(base)).json;
+    const systemsCollection = linkPath(root?.Systems) || `${base}/Systems`;
+    const chassisCollection = linkPath(root?.Chassis) || `${base}/Chassis`;
+    const managersCollection = linkPath(root?.Managers) || `${base}/Managers`;
 
-    const manager = (await get(`${base}/Managers/1`)).json;
-    const thermalLegacy = (await get(`${base}/Chassis/${chassisId}/Thermal`)).json;
-    const powerLegacy = (await get(`${base}/Chassis/${chassisId}/Power`)).json;
-    const thermalMetrics = (await get(`${base}/Chassis/${chassisId}/ThermalSubsystem/ThermalMetrics`)).json;
+    const systemResult = await resolveResource('Systems', systemId, systemsCollection);
+    if (!systemResult.json) throw new Error(systemFailureMessage(systemResult.failure));
+    const system = systemResult.json;
+    systemId = systemResult.id;
+
+    const managerResult = await resolveResource('Managers', managerId, managersCollection);
+    const manager = managerResult.json;
+    const chassisResult = await resolveResource('Chassis', chassisId, chassisCollection);
+    if (chassisResult.json) chassisId = chassisResult.id;
+
+    const thermalLegacy = (await get(`${base}/Chassis/${encodeURIComponent(chassisId)}/Thermal`)).json;
+    const powerLegacy = (await get(`${base}/Chassis/${encodeURIComponent(chassisId)}/Power`)).json;
+    const thermalMetrics = (await get(`${base}/Chassis/${encodeURIComponent(chassisId)}/ThermalSubsystem/ThermalMetrics`)).json;
 
     const sensors = thermalSensors(thermalLegacy);
-    const sensorLinks = linksFrom((await get(`${base}/Chassis/${chassisId}/Sensors`)).json);
+    const sensorLinks = linksFrom((await get(`${base}/Chassis/${encodeURIComponent(chassisId)}/Sensors`)).json);
     if (sensorLinks.length) {
       const fetched = await mapLimit(sensorLinks.slice(0, SENSOR_LIMIT), 4, async (path) => {
         const res = await get(path);
@@ -325,7 +405,7 @@ export async function collectRedfish(profile) {
       }
     }
 
-    const storageLinks = linksFrom((await get(`${base}/Systems/${systemId}/Storage`)).json);
+    const storageLinks = linksFrom((await get(`${base}/Systems/${encodeURIComponent(systemId)}/Storage`)).json);
     const disks = [];
     for (const storagePath of storageLinks.slice(0, 16)) {
       const storage = (await get(storagePath)).json;
@@ -356,13 +436,13 @@ export async function collectRedfish(profile) {
       }
     }
 
-    const processorLinks = linksFrom((await get(`${base}/Systems/${systemId}/Processors`)).json);
+    const processorLinks = linksFrom((await get(`${base}/Systems/${encodeURIComponent(systemId)}/Processors`)).json);
     const processors = await mapLimit(processorLinks.slice(0, 16), 3, async (path) => (await get(path)).json);
     const cpuModel = text(processors.find((p) => p?.Model)?.Model ?? system.ProcessorSummary?.Model, 180);
     const cpuCores = processors.reduce((sum, p) => sum + (num(p?.TotalCores, 0) ?? 0), 0) || num(system.ProcessorSummary?.CoreCount, 0);
     const cpuThreads = processors.reduce((sum, p) => sum + (num(p?.TotalThreads, 0) ?? 0), 0) || num(system.ProcessorSummary?.LogicalProcessorCount, 0);
 
-    const memoryLinks = linksFrom((await get(`${base}/Systems/${systemId}/Memory`)).json);
+    const memoryLinks = linksFrom((await get(`${base}/Systems/${encodeURIComponent(systemId)}/Memory`)).json);
     const dimms = await mapLimit(memoryLinks.slice(0, 64), 3, async (path) => (await get(path)).json);
     const dimmCount = dimms.filter((m) => m && m.CapacityMiB != null).length || null;
     const memoryBytes = dimms.length
@@ -371,7 +451,7 @@ export async function collectRedfish(profile) {
         ? num(system.MemorySummary.TotalSystemMemoryGiB) * 1024 ** 3
         : null;
 
-    const nicLinks = linksFrom((await get(`${base}/Systems/${systemId}/EthernetInterfaces`)).json);
+    const nicLinks = linksFrom((await get(`${base}/Systems/${encodeURIComponent(systemId)}/EthernetInterfaces`)).json);
     const nics = await mapLimit(nicLinks.slice(0, 32), 3, async (path) => {
       const n = (await get(path)).json;
       if (!n) return null;
@@ -449,7 +529,7 @@ export async function collectRedfish(profile) {
           sensorCount: sensors.length,
         },
       },
-      raw: { source: 'redfish', systemId, chassisId },
+      raw: { source: 'redfish', systemId, chassisId, managerId: managerResult.id || null },
     };
   } finally {
     await logout();

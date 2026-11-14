@@ -14,7 +14,7 @@ import { evaluateServerAlerts } from './alerts.js';
 
 export const SERVER_HEALTH = Object.freeze(['unknown', 'ok', 'warning', 'critical']);
 const HEALTH_RANK = { unknown: 0, ok: 1, warning: 2, critical: 3 };
-const PROTOCOLS = new Set(['redfish', 'ipmi', 'demo', 'none']);
+const PROTOCOLS = new Set(['redfish', 'ipmi', 'smcipmi', 'demo', 'none']);
 const RANGE = {
   '15m': { ms: 15 * 60 * 1000, bucket: 60 * 1000 },
   '1h': { ms: 60 * 60 * 1000, bucket: 5 * 60 * 1000 },
@@ -130,6 +130,12 @@ function metricRow(row) {
 
 function inventoryRow(row) {
   if (!row) return null;
+  let raw = {};
+  try {
+    raw = JSON.parse(row.raw_json || '{}');
+  } catch {
+    /* دادهٔ خام خراب نباید جزئیات سرور را از کار بیندازد */
+  }
   return {
     manufacturer: row.manufacturer || '',
     model: row.model || '',
@@ -144,6 +150,7 @@ function inventoryRow(row) {
     psuCount: row.psu_count,
     osName: row.os_name || '',
     osVersion: row.os_version || '',
+    raw,
     updatedAt: row.updated_at,
   };
 }
@@ -325,7 +332,7 @@ function normalizeInput(input, { partial = false } = {}) {
   }
   if (!partial || input.bmcProtocol !== undefined) {
     const protocol = text(input.bmcProtocol || 'redfish', 20).toLowerCase();
-    if (!PROTOCOLS.has(protocol)) throw Object.assign(new Error('پروتکل BMC باید redfish، ipmi، demo یا none باشد.'), { status: 400 });
+    if (!PROTOCOLS.has(protocol)) throw Object.assign(new Error('پروتکل BMC باید redfish، ipmi، smcipmi، demo یا none باشد.'), { status: 400 });
     out.bmc_protocol = protocol;
   }
   if (!partial || input.enabled !== undefined) out.enabled = bool(input.enabled, true) ? 1 : 0;

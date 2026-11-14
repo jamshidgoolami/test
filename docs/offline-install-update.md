@@ -105,13 +105,13 @@ npm run offline:prepare
 2. باز کنید: در ویندوز ۱۱ روی فایل راست‌کلیک ← Extract، یا از خط فرمان:
 
    ```bat
-   tar -xzf netwatch-offline-1.4.1-win64.tar.gz
+   tar -xzf netwatch-offline-1.4.2-win64.tar.gz
    ```
 
 3. داخل پوشهٔ بازشده، `install.cmd` را اجرا کنید (دابل‌کلیک کافی است).
 
    ```bat
-   cd netwatch-offline-1.4.1-win64
+   cd netwatch-offline-1.4.2-win64
    install.cmd
    ```
 
@@ -154,10 +154,10 @@ npm start
 :: ۱) توقف برنامه (Ctrl+C در همان پنجره، یا توقف سرویس)
 
 :: ۲) باز کردن بستهٔ جدید در یک پوشهٔ جداگانه (مهم: پوشهٔ نصب قبلی نباشد)
-tar -xzf netwatch-offline-1.4.1-win64.tar.gz
+tar -xzf netwatch-offline-1.4.2-win64.tar.gz
 
 :: ۳) اجرای بروزرسانی از داخل همان بستهٔ جدید، با اشاره به پوشهٔ نصب فعلی
-cd netwatch-offline-1.4.1-win64
+cd netwatch-offline-1.4.2-win64
 update.cmd C:\NetWatch
 ```
 

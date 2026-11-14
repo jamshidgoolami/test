@@ -14,7 +14,7 @@ type FormState = {
   model: string;
   serial: string;
   bmcIp: string;
-  bmcProtocol: 'redfish' | 'ipmi' | 'demo' | 'none';
+  bmcProtocol: 'redfish' | 'ipmi' | 'smcipmi' | 'demo' | 'none';
   bmcUsername: string;
   bmcPassword: string;
   bmcVerifyTls: boolean;
@@ -252,7 +252,8 @@ export default function ServerForm({
             <Field label="پروتکل">
               <select className="field" value={form.bmcProtocol} onChange={(e) => set('bmcProtocol', e.target.value as FormState['bmcProtocol'])}>
                 <option value="redfish">Redfish (پیشنهادی)</option>
-                <option value="ipmi">IPMI 2.0 (BMC قدیمی، نیازمند ipmitool)</option>
+                <option value="ipmi">IPMI 2.0 (نیازمند ipmitool)</option>
+                <option value="smcipmi">IPMI 2.0 با SMCIPMITool (ویندوز)</option>
                 <option value="demo">نمایشی (بدون سخت‌افزار)</option>
                 <option value="none">بدون BMC</option>
               </select>
@@ -293,6 +294,13 @@ export default function ServerForm({
               />
             </div>
           </div>
+          {form.bmcProtocol === 'smcipmi' ? (
+            <p className="rounded-soft border border-brand-100 bg-brand-50/50 px-3 py-2 text-[11px] leading-relaxed text-ink-600">
+              پوشهٔ <code dir="ltr">SMCIPMITool</code> باید در ریشهٔ نصب NetWatch باشد (کنار پوشهٔ{' '}
+              <code dir="ltr">server</code>). مسیر جایگزین را با متغیر محیطی{' '}
+              <code dir="ltr">NETWATCH_SMCIPMITOOL</code> تنظیم کنید. این آداپتور فقط روی ویندوز اجرا می‌شود.
+            </p>
+          ) : null}
           <button type="button" className="text-[11px] text-accent" onClick={() => setAdvanced((v) => !v)}>
             {advanced ? 'بستن تنظیمات پیشرفته' : 'تنظیمات پیشرفتهٔ Redfish و TLS'}
           </button>

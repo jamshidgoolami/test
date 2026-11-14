@@ -9,6 +9,7 @@ import { db } from '../db.js';
 import { logEvent } from '../logger.mjs';
 import { collectRedfish } from './redfish.js';
 import { collectIpmi } from './ipmi.js';
+import { collectSmcIpmi } from './smcipmi.js';
 import { demoSnapshot } from './demo.js';
 import { ingestSnapshot, markPollFailure, pruneServerMetrics } from './store.js';
 
@@ -30,8 +31,10 @@ async function pollOne(row) {
         ? demoSnapshot(row, now)
         : row.bmc_protocol === 'ipmi'
           ? await collectIpmi(row)
-          : await collectRedfish(row);
-    const source = row.bmc_protocol === 'demo' ? 'demo' : row.bmc_protocol === 'ipmi' ? 'ipmi' : 'redfish';
+          : row.bmc_protocol === 'smcipmi'
+            ? await collectSmcIpmi(row)
+            : await collectRedfish(row);
+    const source = row.bmc_protocol === 'demo' ? 'demo' : row.bmc_protocol === 'redfish' ? 'redfish' : 'ipmi';
     ingestSnapshot(row.id, snapshot, source);
   } catch (e) {
     const message = String(e?.message || e).slice(0, 500);
@@ -57,7 +60,7 @@ async function tick() {
     const due = db
       .prepare(
         `SELECT * FROM servers
-         WHERE enabled = 1 AND bmc_protocol IN ('redfish','ipmi','demo')
+         WHERE enabled = 1 AND bmc_protocol IN ('redfish','ipmi','smcipmi','demo')
            AND (last_poll_at IS NULL OR last_poll_at + poll_interval_sec * 1000 <= ?)
          ORDER BY COALESCE(last_poll_at, 0) ASC, id ASC
          LIMIT 8`

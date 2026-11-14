@@ -590,7 +590,7 @@ npm run release:prepare # پشتیبان پیش از انتشار + آرشیو �
 
 ## ۱۱. تضمین کیفیت، پایداری و انتشار
 
-نسخهٔ فعلی `1.4.1` است. مجموعهٔ آزمون شامل Unit، Frontend Unit، Integration،
+نسخهٔ فعلی `1.4.2` است. مجموعهٔ آزمون شامل Unit، Frontend Unit، Integration،
 E2E (سمک + جریان‌ها + سناریوی انتشار)، Browser E2E با Playwright و یک آزمون
 Heavy برای ورود ۵۰٬۰۰۰ ردیف است. همهٔ Endpointهای ثبت‌شده با فهرست بسته در
 `server/tests/integration/endpoints.test.mjs` پوشش داده شده‌اند؛ افزودن مسیر

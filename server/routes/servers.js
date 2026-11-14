@@ -18,6 +18,7 @@ import {
 } from '../server-monitoring/store.js';
 import { collectRedfish } from '../server-monitoring/redfish.js';
 import { collectIpmi } from '../server-monitoring/ipmi.js';
+import { collectSmcIpmi } from '../server-monitoring/smcipmi.js';
 import { demoSnapshot } from '../server-monitoring/demo.js';
 
 const router = express.Router();
@@ -98,8 +99,14 @@ router.post('/:id/collect', async (req, res) => {
   if (row.bmc_protocol === 'none') return res.status(400).json({ error: 'برای این سرور پروتکل BMC فعال نیست.' });
   try {
     const snapshot =
-      row.bmc_protocol === 'demo' ? demoSnapshot(row) : row.bmc_protocol === 'ipmi' ? await collectIpmi(row) : await collectRedfish(row);
-    const source = row.bmc_protocol === 'demo' ? 'demo' : row.bmc_protocol === 'ipmi' ? 'ipmi' : 'redfish';
+      row.bmc_protocol === 'demo'
+        ? demoSnapshot(row)
+        : row.bmc_protocol === 'ipmi'
+          ? await collectIpmi(row)
+          : row.bmc_protocol === 'smcipmi'
+            ? await collectSmcIpmi(row)
+            : await collectRedfish(row);
+    const source = row.bmc_protocol === 'demo' ? 'demo' : row.bmc_protocol === 'redfish' ? 'redfish' : 'ipmi';
     ingestSnapshot(row.id, snapshot, source);
     return res.json({
       ok: true,

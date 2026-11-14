@@ -1316,6 +1316,7 @@ export interface ServerInventory {
   psuCount: number | null;
   osName: string;
   osVersion: string;
+  raw?: Record<string, unknown>;
   updatedAt: number;
 }
 
@@ -1382,7 +1383,7 @@ export interface ServerSummary {
   agentKeyPrefix: string;
   agentRegisteredAt: number | null;
   bmcIp: string;
-  bmcProtocol: 'redfish' | 'ipmi' | 'demo' | 'none';
+  bmcProtocol: 'redfish' | 'ipmi' | 'smcipmi' | 'demo' | 'none';
   bmcUsername: string;
   hasBmcPassword: boolean;
   bmcVerifyTls: boolean;

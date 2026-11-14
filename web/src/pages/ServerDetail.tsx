@@ -148,6 +148,15 @@ export default function ServerDetail() {
   if (detail.error && !data) return <ErrorState message={detail.error} onRetry={() => void detail.refresh()} />;
   if (!data) return <ErrorState message="سرور یافت نشد." />;
 
+  const smcRaw = (data.inventory?.raw ?? {}) as {
+    bmcMac?: string;
+    powerState?: string;
+    ipmiVersion?: string;
+    summary?: Record<string, string>;
+    sel?: { count?: number; entries?: string[] };
+  };
+  const smcSummary = smcRaw.summary ?? {};
+  const selEntries = smcRaw.sel?.entries ?? [];
   const temp = redfish?.maxTempC ?? ipmi?.maxTempC ?? demo?.maxTempC ?? agent?.maxTempC ?? null;
   const cpu = agent?.cpuPct ?? demo?.cpuPct ?? null;
   const memPct = agent?.memPct ?? demo?.memPct ?? null;
@@ -468,9 +477,11 @@ export default function ServerDetail() {
                       ? 'Redfish'
                       : data.bmcProtocol === 'ipmi'
                         ? 'IPMI 2.0 (ipmitool)'
-                        : data.bmcProtocol === 'demo'
-                          ? 'نمایشی'
-                          : 'غیرفعال'
+                        : data.bmcProtocol === 'smcipmi'
+                          ? 'IPMI 2.0 (SMCIPMITool)'
+                          : data.bmcProtocol === 'demo'
+                            ? 'نمایشی'
+                            : 'غیرفعال'
                   }
                 />
                 <InfoRow label="آدرس" value={<span dir="ltr">{data.bmcIp || '—'}</span>} />
@@ -487,12 +498,22 @@ export default function ServerDetail() {
               </div>
             </Card>
             <Card>
-              <CardHeader title="موجودی سخت‌افزار" subtitle="از SMBIOS/Redfish" icon={<Info size={16} />} />
+              <CardHeader title="موجودی سخت‌افزار" subtitle="از Redfish / FRU IPMI" icon={<Info size={16} />} />
               <div className="mt-3 space-y-2 text-xs">
                 <InfoRow label="سازنده / مدل" value={[data.inventory?.manufacturer, data.inventory?.model].filter(Boolean).join(' ') || '—'} />
                 <InfoRow label="سریال" value={<span dir="ltr">{data.inventory?.serial || data.serial || '—'}</span>} />
                 <InfoRow label="BIOS" value={data.inventory?.biosVersion || '—'} />
                 <InfoRow label="Firmware BMC" value={data.inventory?.bmcFirmware || '—'} />
+                {data.bmcProtocol === 'smcipmi' ? (
+                  <>
+                    <InfoRow label="BMC MAC" value={<span dir="ltr">{smcRaw.bmcMac || '—'}</span>} />
+                    <InfoRow label="CPLD" value={<span dir="ltr">{smcSummary['CPLD Version'] || '—'}</span>} />
+                    <InfoRow
+                      label="وضعیت سرور"
+                      value={smcRaw.powerState === 'on' ? 'روشن' : smcRaw.powerState === 'off' ? 'خاموش' : '—'}
+                    />
+                  </>
+                ) : null}
                 <InfoRow label="CPU" value={data.inventory?.cpuModel || '—'} />
                 <InfoRow
                   label="هسته / رشته"
@@ -511,6 +532,23 @@ export default function ServerDetail() {
               <SensorTable sensors={data.sensors} />
             </div>
           </Card>
+
+          {data.bmcProtocol === 'smcipmi' && selEntries.length ? (
+            <Card>
+              <CardHeader
+                title="رویدادهای اخیر BMC"
+                subtitle={`${faDigits(smcRaw.sel?.count ?? selEntries.length)} رویداد از SEL`}
+                icon={<Info size={16} />}
+              />
+              <div className="mt-3 divide-y divide-ink-50 rounded-soft border border-ink-100 text-[10.5px] text-ink-600">
+                {selEntries.slice(-10).reverse().map((entry, index) => (
+                  <p key={`${index}-${entry}`} className="break-all px-3 py-2 font-mono" dir="ltr">
+                    {entry}
+                  </p>
+                ))}
+              </div>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader
