@@ -453,6 +453,8 @@ const MIGRATIONS = [
   { version: 21, name: 'credentials-vault', up: applyCredentialsVaultMigration },
   { version: 22, name: 'user-extra-permissions', up: applyUserExtraPermissionsMigration },
   { version: 23, name: 'device-tags-reverse-index', up: applyDeviceTagReverseIndexMigration },
+  { version: 24, name: 'server-monitoring', up: applyServerMonitoringMigration },
+  { version: 25, name: 'server-alert-thresholds', up: applyServerAlertThresholdsMigration },
 ];
 
 /**
@@ -465,6 +467,181 @@ function applyUserExtraPermissionsMigration() {
   if (!hasColumn('users', 'extra_permissions')) {
     db.exec("ALTER TABLE users ADD COLUMN extra_permissions TEXT NOT NULL DEFAULT '[]'");
   }
+}
+
+/**
+ * گام ۲۴: پایش ماژولار سرورها.
+ *
+ * سرور از تجهیزات شبکه جدا نگه داشته می‌شود تا متریک‌های سنگین (تاریخچهٔ
+ * CPU/RAM/شبکه/دما) و اعتبارنامهٔ BMC، جدول devices را شلوغ نکنند. هر سرور
+ * می‌تواند هم‌زمان از Agent ویندوز (متریک‌های OS) و BMC (دما/سلامت سخت‌افزار)
+ * داده بگیرد؛ `source` در تمام جدول‌های snapshot نگه داشته می‌شود تا دادهٔ دو
+ * کانال روی هم بازنویسی نشود.
+ */
+/**
+ * گام ۲۵: آستانه‌های هشدار سرور و اتصال هشدار سرور به مرکز هشدار.
+ *
+ * آستانه‌ها روی خود سرور ذخیره می‌شوند تا هر Supermicro آستانهٔ عملیاتی
+ * خودش را داشته باشد. ستون `server_id` در جدول alerts اجازه می‌دهد هشدارهای
+ * دما/CPU/RAM در همان مرکز هشدار و همان کانال SSE ثبت و نمایش داده شوند.
+ */
+function applyServerAlertThresholdsMigration() {
+  if (!hasColumn('servers', 'alert_enabled')) {
+    db.exec('ALTER TABLE servers ADD COLUMN alert_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!hasColumn('servers', 'alert_cpu_pct')) {
+    db.exec('ALTER TABLE servers ADD COLUMN alert_cpu_pct REAL NOT NULL DEFAULT 90');
+  }
+  if (!hasColumn('servers', 'alert_mem_pct')) {
+    db.exec('ALTER TABLE servers ADD COLUMN alert_mem_pct REAL NOT NULL DEFAULT 90');
+  }
+  if (!hasColumn('servers', 'alert_temp_c')) {
+    db.exec('ALTER TABLE servers ADD COLUMN alert_temp_c REAL NOT NULL DEFAULT 80');
+  }
+  if (!hasColumn('alerts', 'server_id')) {
+    db.exec('ALTER TABLE alerts ADD COLUMN server_id INTEGER REFERENCES servers(id) ON DELETE CASCADE');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_alerts_server_status ON alerts(server_id, status)');
+}
+
+function applyServerMonitoringMigration() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS servers (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      name                TEXT NOT NULL,
+      os_hostname         TEXT NOT NULL DEFAULT '',
+      os_ip               TEXT NOT NULL DEFAULT '',
+      vendor              TEXT NOT NULL DEFAULT 'Supermicro',
+      model               TEXT NOT NULL DEFAULT '',
+      serial              TEXT NOT NULL DEFAULT '',
+      location            TEXT NOT NULL DEFAULT '',
+      rack                TEXT NOT NULL DEFAULT '',
+      enabled             INTEGER NOT NULL DEFAULT 1,
+      agent_key_hash      TEXT,
+      agent_key_prefix    TEXT NOT NULL DEFAULT '',
+      agent_registered_at INTEGER,
+      bmc_ip              TEXT NOT NULL DEFAULT '',
+      bmc_protocol        TEXT NOT NULL DEFAULT 'redfish', -- redfish | ipmi | demo | none
+      bmc_username_enc    TEXT NOT NULL DEFAULT '',
+      bmc_password_enc    TEXT NOT NULL DEFAULT '',
+      bmc_verify_tls      INTEGER NOT NULL DEFAULT 1,
+      bmc_ca_pem          TEXT NOT NULL DEFAULT '',
+      bmc_system_id       TEXT NOT NULL DEFAULT '1',
+      bmc_chassis_id      TEXT NOT NULL DEFAULT '1',
+      poll_interval_sec   INTEGER NOT NULL DEFAULT 60,
+      last_poll_at        INTEGER,
+      last_poll_ok        INTEGER,
+      last_poll_error     TEXT NOT NULL DEFAULT '',
+      last_agent_at       INTEGER,
+      last_agent_error    TEXT NOT NULL DEFAULT '',
+      created_at          INTEGER NOT NULL,
+      updated_at          INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_servers_agent_key ON servers(agent_key_hash) WHERE agent_key_hash IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_servers_enabled ON servers(enabled);
+
+    CREATE TABLE IF NOT EXISTS server_metrics (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id      INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      ts             INTEGER NOT NULL,
+      source         TEXT NOT NULL DEFAULT 'agent', -- agent | redfish | ipmi | demo
+      cpu_pct        REAL,
+      mem_total_bytes INTEGER,
+      mem_used_bytes INTEGER,
+      mem_pct        REAL,
+      disk_total_bytes INTEGER,
+      disk_used_bytes  INTEGER,
+      disk_max_pct   REAL,
+      net_rx_bps     REAL,
+      net_tx_bps     REAL,
+      net_rx_errors  INTEGER,
+      net_tx_errors  INTEGER,
+      max_temp_c     REAL,
+      power_watts    REAL,
+      uptime_sec     INTEGER,
+      health         TEXT NOT NULL DEFAULT 'unknown', -- ok | warning | critical | unknown
+      raw_json       TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_server_metrics_server_ts ON server_metrics(server_id, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_server_metrics_ts ON server_metrics(ts);
+    CREATE INDEX IF NOT EXISTS idx_server_metrics_source_ts ON server_metrics(server_id, source, ts DESC);
+
+    CREATE TABLE IF NOT EXISTS server_inventory (
+      server_id        INTEGER PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+      manufacturer     TEXT NOT NULL DEFAULT '',
+      model            TEXT NOT NULL DEFAULT '',
+      serial           TEXT NOT NULL DEFAULT '',
+      bios_version     TEXT NOT NULL DEFAULT '',
+      bmc_firmware     TEXT NOT NULL DEFAULT '',
+      cpu_model        TEXT NOT NULL DEFAULT '',
+      cpu_cores        INTEGER,
+      cpu_threads      INTEGER,
+      memory_total_bytes INTEGER,
+      dimm_count       INTEGER,
+      psu_count        INTEGER,
+      os_name          TEXT NOT NULL DEFAULT '',
+      os_version       TEXT NOT NULL DEFAULT '',
+      raw_json         TEXT NOT NULL DEFAULT '{}',
+      updated_at       INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS server_disks (
+      server_id      INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      disk_key       TEXT NOT NULL,
+      source         TEXT NOT NULL DEFAULT 'agent',
+      kind           TEXT NOT NULL DEFAULT 'volume', -- volume | physical
+      name           TEXT NOT NULL DEFAULT '',
+      mount          TEXT NOT NULL DEFAULT '',
+      filesystem     TEXT NOT NULL DEFAULT '',
+      total_bytes    INTEGER,
+      free_bytes     INTEGER,
+      used_pct       REAL,
+      health         TEXT NOT NULL DEFAULT 'unknown',
+      temperature_c  REAL,
+      wear_pct       REAL,
+      read_errors    INTEGER,
+      write_errors   INTEGER,
+      power_on_hours INTEGER,
+      updated_at     INTEGER NOT NULL,
+      PRIMARY KEY (server_id, disk_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_server_disks_server ON server_disks(server_id);
+
+    CREATE TABLE IF NOT EXISTS server_nics (
+      server_id   INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      nic_key     TEXT NOT NULL,
+      source      TEXT NOT NULL DEFAULT 'agent',
+      name        TEXT NOT NULL DEFAULT '',
+      mac         TEXT NOT NULL DEFAULT '',
+      speed_bps   REAL,
+      rx_bps      REAL,
+      tx_bps      REAL,
+      rx_errors   INTEGER,
+      tx_errors   INTEGER,
+      link_status TEXT NOT NULL DEFAULT 'unknown',
+      updated_at  INTEGER NOT NULL,
+      PRIMARY KEY (server_id, nic_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_server_nics_server ON server_nics(server_id);
+
+    CREATE TABLE IF NOT EXISTS server_sensors (
+      server_id      INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      sensor_key     TEXT NOT NULL,
+      source         TEXT NOT NULL DEFAULT 'redfish', -- redfish | ipmi
+      name           TEXT NOT NULL DEFAULT '',
+      sensor_type    TEXT NOT NULL DEFAULT 'other', -- temperature | fan | voltage | power | other
+      reading        REAL,
+      unit           TEXT NOT NULL DEFAULT '',
+      status         TEXT NOT NULL DEFAULT 'unknown',
+      upper_critical REAL,
+      upper_caution  REAL,
+      lower_caution  REAL,
+      lower_critical REAL,
+      updated_at     INTEGER NOT NULL,
+      PRIMARY KEY (server_id, sensor_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_server_sensors_server ON server_sensors(server_id);
+  `);
 }
 
 /**

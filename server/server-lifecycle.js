@@ -17,6 +17,7 @@ import { DB_PATH, getSettings, log } from './db.js';
 import { engine } from './engine.js';
 import { logEvent } from './logger.mjs';
 import { startBackupScheduler } from './backup.js';
+import { startServerPoller } from './server-monitoring/poller.js';
 import { startRetentionScheduler } from './retention.js';
 import { startSessionSweeper } from './auth.js';
 import { startSampling } from './metrics.js';
@@ -135,6 +136,9 @@ export function createServerRuntime({ app, tlsState = { enabled: false, files: n
     startRetentionScheduler({ isLeader: () => engine.getStatus().leader || !config.engine.enabled });
     // پشتیبان‌گیری خودکار + Checkpoint دوره‌ای WAL (فقط نمونهٔ رهبر موتور)
     startBackupScheduler({ isLeader: () => engine.getStatus().leader || !config.engine.enabled });
+    // سرورها را همهٔ نمونه‌ها می‌توانند Poll کنند؛ last_poll_at در DB از
+    // Poll دوباره در همان بازه جلوگیری می‌کند. Agent مستقل از این زمان‌بند است.
+    startServerPoller();
     if (config.host !== '127.0.0.1' && config.host !== 'localhost') {
       console.log(`  توجه: این سرویس روی ${config.host} منتشر شده است؛`);
       console.log('        ورود الزامی است و مجوزها بر اساس نقش (Administrator/Operator/Viewer) اعمال می‌شوند.');

@@ -28,6 +28,8 @@ export const ALL_PERMISSIONS = Object.freeze([
   'dashboard:read',
   'devices:read',
   'devices:write',
+  'servers:read',
+  'servers:write',
   'credentials:read',
   'credentials:write',
   'credentials:reveal',
@@ -58,6 +60,7 @@ export const ALL_PERMISSIONS = Object.freeze([
 const VIEWER_PERMISSIONS = Object.freeze([
   'dashboard:read',
   'devices:read',
+  'servers:read',
   'reports:read',
   'alerts:read',
   'maintenance:read',
@@ -72,6 +75,7 @@ const VIEWER_PERMISSIONS = Object.freeze([
 const OPERATOR_PERMISSIONS = Object.freeze([
   ...VIEWER_PERMISSIONS,
   'devices:write',
+  'servers:write',
   // اپراتور فهرست و مدیریت اعتبارنامه‌ها را دارد، اما نمایش/خروجی رمز خام
   // پیش‌فرض نیست؛ این مجوز فقط با اعطای صریح مدیر به یک کاربر داده می‌شود.
   'credentials:read',

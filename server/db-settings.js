@@ -84,6 +84,7 @@ const BOOLEAN_KEYS = [
   'alerting_enabled',
   'suppression_enabled',
   'notify_browser',
+  'notify_sound',
   'map_show_labels',
   'backup_enabled',
   'backup_prune_enabled',

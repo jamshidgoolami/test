@@ -659,7 +659,11 @@ function AlertRow({
               <Clock size={11} />
               {fmtDateTime(alert.createdAt, tzOffset)} ({fmtRelative(alert.createdAt)})
             </span>
-            {alert.deviceId ? (
+            {alert.serverId ? (
+              <Link to={`/servers/${alert.serverId}`} className="num text-accent hover:underline">
+                سرور: {alert.serverName ?? `#${alert.serverId}`}
+              </Link>
+            ) : alert.deviceId ? (
               <Link to={`/devices/${alert.deviceId}`} className="num text-accent hover:underline">
                 {alert.deviceName} — {alert.deviceIp}
               </Link>

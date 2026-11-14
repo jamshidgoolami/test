@@ -39,6 +39,12 @@ const RAW_NAV_GROUPS: { id: NavGroupId; label: string; items: Omit<NavItem, 'gro
         keywords: ['device', 'تجهیز', 'ip', 'سرور', 'سوئیچ'],
       },
       {
+        to: '/servers',
+        label: 'پایش سرورها',
+        description: 'CPU، رم، هارد، شبکه، دما و BMC سرورهای ویندوزی Supermicro',
+        keywords: ['server', 'سرور', 'supermicro', 'redfish', 'ipmi', 'bmc', 'cpu', 'ram', 'دما'],
+      },
+      {
         to: '/map',
         label: 'نقشه شبکه',
         description: 'موقعیت جغرافیایی و وضعیت تجهیزات روی نقشه',
@@ -125,6 +131,7 @@ export const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 export const NAV_ACTIONS: { label: string; to: string; keywords: string[] }[] = [
   { label: 'افزودن تجهیز جدید', to: '/devices?new=1', keywords: ['add', 'device', 'تجهیز', 'جدید'] },
   { label: 'مشاهدهٔ تجهیزات قطع‌شده', to: '/devices?status=offline', keywords: ['offline', 'قطع', 'down'] },
+  { label: 'افزودن سرور پایش', to: '/servers?new=1', keywords: ['server', 'سرور', 'supermicro', 'افزودن'] },
   { label: 'مشاهدهٔ هشدارهای فعال', to: '/alerts', keywords: ['alert', 'هشدار', 'فعال'] },
   { label: 'تنظیمات موتور پایش', to: '/settings?tab=engine', keywords: ['engine', 'موتور', 'پایش'] },
   { label: 'گزارش دسترس‌پذیری', to: '/reports', keywords: ['report', 'گزارش', 'دسترس‌پذیری'] },

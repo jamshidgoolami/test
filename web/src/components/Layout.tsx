@@ -11,6 +11,7 @@ import {
   Search,
   Waypoints,
   Server,
+  ServerCog,
   Settings as SettingsIcon,
   Wrench,
   X,
@@ -35,6 +36,7 @@ import { ThemeIconButton } from './ThemeToggle';
 const NAV_ICONS: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {
   '/dashboard': LayoutDashboard,
   '/devices': Server,
+  '/servers': ServerCog,
   '/map': MapIcon,
   '/diagrams': Waypoints,
   '/alerts': Bell,
@@ -268,7 +270,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       alertsApi.items.slice(0, 6).map((a) => (
                         <Link
                           key={a.id}
-                          to={a.deviceId ? `/devices/${a.deviceId}` : '/alerts'}
+                          to={a.serverId ? `/servers/${a.serverId}` : a.deviceId ? `/devices/${a.deviceId}` : '/alerts'}
                           className="block rounded-soft border border-ink-100 bg-ink-50/50 p-2.5 transition hover:border-brand-200"
                         >
                           <p className="truncate text-[12px] font-medium text-ink-700">{a.title}</p>
@@ -340,7 +342,15 @@ export const MODE_LABEL: Record<string, string> = {
 
 interface AlertSummary {
   active: number;
-  items: { id: number; title: string; message: string; createdAt: number; deviceId: number | null; severity: string }[];
+  items: {
+    id: number;
+    title: string;
+    message: string;
+    createdAt: number;
+    deviceId: number | null;
+    serverId: number | null;
+    severity: string;
+  }[];
 }
 
 function useAlertSummary(refreshKey: number): AlertSummary {
@@ -353,7 +363,15 @@ function useAlertSummary(refreshKey: number): AlertSummary {
         if (alive)
           setData({
             active: res.stats.active,
-            items: res.items.map((a) => ({ id: a.id, title: a.title, message: a.message, createdAt: a.createdAt, deviceId: a.deviceId, severity: a.severity })),
+            items: res.items.map((a) => ({
+              id: a.id,
+              title: a.title,
+              message: a.message,
+              createdAt: a.createdAt,
+              deviceId: a.deviceId,
+              serverId: a.serverId ?? null,
+              severity: a.severity,
+            })),
           });
       } catch {
         /* بی‌اثر */

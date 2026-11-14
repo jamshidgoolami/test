@@ -44,7 +44,7 @@ WAL یعنی خواندن و نوشتن هم‌زمان بهتر کار می‌�
 
 ```js
 // server/db-constants.js (بازصادرشده از server/db.js)
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 25;
 ```
 
 قاعده: هر تغییر ساختاری، `SCHEMA_VERSION` را یک واحد بالا می‌برد و یک گام

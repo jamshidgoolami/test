@@ -7,12 +7,12 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | مورد | مقدار واقعی |
 | --- | --- |
 | فایل پیش‌فرض | `<NETWATCH_DATA_DIR>/netwatch.db` → `data/netwatch.db` |
-| نسخهٔ ساختار | `SCHEMA_VERSION = 23` در `server/db-constants.js` (بازصادرشده از `server/db.js`) |
+| نسخهٔ ساختار | `SCHEMA_VERSION = 25` در `server/db-constants.js` (بازصادرشده از `server/db.js`) |
 | Journal | `WAL` |
 | `synchronous` | `FULL` (قابل تغییر با `NETWATCH_SQLITE_SYNC`) |
 | `foreign_keys` | `ON` |
 | `busy_timeout` | `NETWATCH_BUSY_TIMEOUT_MS` (پیش‌فرض `5000`) |
-| تعداد جدول | **۳۳** جدول پایه |
+| تعداد جدول | **۳۹** جدول پایه |
 | Migration | `schema_migrations` + `PRAGMA user_version` |
 | زمان | epoch میلی‌ثانیه، UTC |
 
@@ -41,7 +41,7 @@ NetWatch از **SQLite داخلی Node.js** (`node:sqlite`) روی یک فایل
 | `devices` | تجهیز و آخرین وضعیت | `next_check_at` صف بررسی؛ ایندکس `idx_devices_due` |
 | `samples` | نتیجهٔ هر Probe | یکتایی `(device_id, started_at)`؛ ایندکس `(device_id, ts)` |
 | `outages` | بازهٔ قطعی | `open`, `started_at`, `ended_at`, `duration_sec` |
-| `alerts` | هشدار | وضعیت `active/acknowledged/resolved/suppressed` |
+| `alerts` | هشدار | وضعیت `active/acknowledged/resolved/suppressed`؛ `server_id` برای هشدارهای آستانه‌ای سرور |
 | `alert_rules` | قانون هشدار | `metric`, `threshold`, `duration_sec`, `cooldown_sec` |
 | `daily_stats` | تجمیع روزانه | مبنای گزارش بلندمدت پس از هرس نمونه‌ها |
 | `maintenance_records` | سوابق تعمیر | متصل به تجهیز و در صورت وجود `outage_id` |
@@ -119,6 +119,8 @@ erDiagram
 | ۲۱ | `credentials-vault` | جدول `credentials` |
 | ۲۲ | `user-extra-permissions` | `users.extra_permissions` برای مجوز اختصاصی |
 | ۲۳ | `device-tags-reverse-index` | ایندکس `idx_device_tags_tag(tag_id, device_id)` برای پرس‌وجوی تجهیزات یک تگ |
+| ۲۴ | `server-monitoring` | جدول‌های `servers`، `server_metrics`، `server_inventory`، `server_disks`، `server_nics` و `server_sensors` |
+| ۲۵ | `server-alert-thresholds` | آستانه‌های `alert_*` روی `servers` و ستون `alerts.server_id` |
 
 قواعد:
 

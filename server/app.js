@@ -26,6 +26,7 @@ import { retentionStatus } from './retention.js';
 import { apiStats, historySnapshot, metricsSnapshot, queryStats, recordApi } from './metrics.js';
 import { validateRequestUrl, validateJsonBody } from './validation.js';
 import { mountApiRoutes } from './routes/index.js';
+import agentRouter from './routes/agent.js';
 
 /**
  * ساخت Application با همان ترتیب Middleware و Routeهای قبلی.
@@ -195,6 +196,10 @@ export function createApplication({ appVersion = 'unknown', tlsState = { enabled
     accountKey: (req) => req.user?.id ?? null,
   });
   app.use('/api', generalLimiter);
+
+  // Agent ویندوز با توکن اختصاصی هر سرور احراز هویت می‌شود؛ عمداً پیش از
+  // requireAuth سوار می‌شود تا به نشست مرورگر/CSRF نیاز نداشته باشد.
+  app.use('/api/agent', agentRouter);
 
   /* --------------------------- احراز هویت --------------------------- */
   // ترتیب مهم است: ابتدا کاربر از کوکی نشست خوانده می‌شود، سپس حسابرسی (تا

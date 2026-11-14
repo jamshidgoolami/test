@@ -43,6 +43,11 @@ import type {
   ReportData,
   RetentionStatus,
   Series,
+  ServerDetail,
+  ServerInput,
+  ServerList,
+  ServerMutationResult,
+  ServerSeries,
   Site,
   SimultaneousData,
   StatusData,
@@ -245,6 +250,26 @@ export const api = {
 
   /** سنجه‌های منابع خود برنامه (CPU/RAM/Heap/ELD/DB/SSE/صف) + تاریخچهٔ نمودار */
   appHealth: (signal?: AbortSignal) => request<AppHealthData>('/system/app-health', { signal }),
+
+  /* ---------------- پایش سرورها ---------------- */
+  servers: (signal?: AbortSignal) => request<ServerList>('/servers', { signal }),
+  server: (id: number, signal?: AbortSignal) => request<ServerDetail>(`/servers/${id}`, { signal }),
+  createServer: (body: ServerInput) =>
+    request<ServerMutationResult>('/servers', { method: 'POST', body: JSON.stringify(body) }),
+  updateServer: (id: number, body: ServerInput) =>
+    request<ServerMutationResult>(`/servers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteServer: (id: number) => request<void>(`/servers/${id}`, { method: 'DELETE' }),
+  rotateServerAgentToken: (id: number) =>
+    request<ServerMutationResult>(`/servers/${id}/rotate-agent-token`, { method: 'POST', body: '{}' }),
+  collectServer: (id: number) =>
+    request<{ ok: boolean; source: string; collectedAt: number; health: string; sensors: number; disks: number }>(
+      `/servers/${id}/collect`,
+      { method: 'POST', body: '{}', timeoutMs: LONG_TIMEOUT_MS }
+    ),
+  createDemoServer: (body: { name?: string } = {}) =>
+    request<ServerMutationResult>('/servers/demo', { method: 'POST', body: JSON.stringify(body) }),
+  serverMetrics: (id: number, range: string, signal?: AbortSignal) =>
+    request<ServerSeries>(`/servers/${id}/metrics${qs({ range })}`, { signal }),
 
   /* ---------------- تجهیزات ---------------- */
   devices: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>

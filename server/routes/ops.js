@@ -20,7 +20,9 @@ function serializeAlert(a) {
   return {
     id: a.id,
     deviceId: a.device_id,
+    serverId: a.server_id ?? null,
     deviceName: a.deviceName,
+    serverName: a.serverName ?? null,
     deviceIp: a.deviceIp,
     ruleId: a.rule_id,
     ruleName: a.ruleName,
@@ -58,10 +60,14 @@ router.get('/alerts', (req, res) => {
     where.push('a.device_id = ?');
     params.push(Number(req.query.deviceId));
   }
+  if (req.query.serverId) {
+    where.push('a.server_id = ?');
+    params.push(Number(req.query.serverId));
+  }
   if (req.query.search) {
-    where.push('(a.title LIKE ? OR a.message LIKE ? OR d.name LIKE ? OR d.ip LIKE ?)');
+    where.push('(a.title LIKE ? OR a.message LIKE ? OR d.name LIKE ? OR d.ip LIKE ? OR s.name LIKE ?)');
     const s = `%${req.query.search}%`;
-    params.push(s, s, s, s);
+    params.push(s, s, s, s, s);
   }
   if (req.query.from) {
     where.push('a.created_at >= ?');
@@ -69,12 +75,13 @@ router.get('/alerts', (req, res) => {
   }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db
-    .prepare(`SELECT COUNT(*) AS c FROM alerts a LEFT JOIN devices d ON d.id=a.device_id ${clause}`)
+    .prepare(`SELECT COUNT(*) AS c FROM alerts a LEFT JOIN devices d ON d.id=a.device_id LEFT JOIN servers s ON s.id=a.server_id ${clause}`)
     .get(...params).c;
   const rows = db
     .prepare(
-      `SELECT a.*, d.name AS deviceName, d.ip AS deviceIp, r.name AS ruleName
-       FROM alerts a LEFT JOIN devices d ON d.id=a.device_id LEFT JOIN alert_rules r ON r.id=a.rule_id
+      `SELECT a.*, d.name AS deviceName, d.ip AS deviceIp, s.name AS serverName, r.name AS ruleName
+       FROM alerts a LEFT JOIN devices d ON d.id=a.device_id LEFT JOIN servers s ON s.id=a.server_id
+       LEFT JOIN alert_rules r ON r.id=a.rule_id
        ${clause} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`
     )
     .all(...params, pageSize, (page - 1) * pageSize);

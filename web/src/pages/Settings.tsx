@@ -257,6 +257,7 @@ export default function Settings() {
               </Field>
               <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
                 <Toggle checked={local.notify_browser} onChange={(v) => set('notify_browser', v)} label="نمایش اعلان هشدارها در رابط کاربری" hint="هشدارهای جدید به‌صورت پیام کوتاه نمایش داده می‌شوند" />
+                <Toggle checked={local.notify_sound} onChange={(v) => set('notify_sound', v)} label="پخش صدای اژیر برای هشدار سرورها" hint="با اولین کلیک/کلید در صفحه فعال می‌شود؛ صدای اژیر فقط برای عبور از آستانه‌های سرور پخش می‌شود." />
                 <Toggle checked={local.engine_enabled} onChange={(v) => set('engine_enabled', v)} label="موتور مانیتورینگ فعال باشد" hint="غیرفعال کردن، بررسی خودکار تجهیزات را متوقف می‌کند" />
               </div>
             </div>

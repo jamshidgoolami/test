@@ -17,6 +17,7 @@ import credentialsRouter from './credentials.js';
 import auditRouter from './audit.js';
 import systemRouter from './system.js';
 import docsRouter from './docs.js';
+import serversRouter from './servers.js';
 
 /** مسیرها را روی app سوار می‌کند؛ فراخوانی دوباره مجاز نیست. */
 export function mountApiRoutes(app) {
@@ -35,4 +36,5 @@ export function mountApiRoutes(app) {
   app.use('/api/audit', auditRouter);
   app.use('/api/system', systemRouter);
   app.use('/api/docs', docsRouter);
+  app.use('/api/servers', serversRouter);
 }

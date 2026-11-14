@@ -5,6 +5,7 @@ import { PageLoader } from './components/ui';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useApp, useLiveState, useToast } from './lib/store';
 import { setFormatCalendar } from './lib/format';
+import { playSiren, primeAlarmOnInteraction } from './lib/alarm';
 
 // هر صفحه در بستهٔ خودش بارگذاری می‌شود: نمودارها (recharts) فقط با داشبورد/
 // گزارش‌ها، نقشه (Leaflet/MapLibre) فقط با نقشه، و صفحهٔ سلامت فقط با مراجعه به
@@ -12,6 +13,8 @@ import { setFormatCalendar } from './lib/format';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Devices = lazy(() => import('./pages/Devices'));
 const DeviceDetail = lazy(() => import('./pages/DeviceDetail'));
+const Servers = lazy(() => import('./pages/Servers'));
+const ServerDetail = lazy(() => import('./pages/ServerDetail'));
 const MapPage = lazy(() => import('./pages/MapPage'));
 const Diagrams = lazy(() => import('./pages/Diagrams'));
 const Alerts = lazy(() => import('./pages/Alerts'));
@@ -32,16 +35,32 @@ export default function App() {
   const { push } = useToast();
   const location = useLocation();
   const seen = useRef(new Set<number>());
+  const soundNoticeShown = useRef(false);
+
+  // Autoplay مرورگر تا اولین تعامل کاربر اجازهٔ صدا نمی‌دهد؛ یک‌بار فعالش می‌کنیم.
+  useEffect(() => primeAlarmOnInteraction(), []);
 
   useEffect(() => {
     const fresh = live.alerts.filter((a) => !seen.current.has(a.id));
     if (!fresh.length) return;
     fresh.forEach((a) => seen.current.add(a.id));
+
+    // فقط هشدارهای سرور اژیر دارند؛ هشدارهای شبکه با Toast/Sidebar نمایش داده
+    // می‌شوند تا صدای اژیر برای قطعی‌های معمولی مزاحم نشود.
+    const serverAlert = fresh.find((a) => a.serverId != null);
+    if (serverAlert && settings?.notify_sound) {
+      const played = playSiren(serverAlert.severity);
+      if (!played && settings?.notify_browser && !soundNoticeShown.current) {
+        soundNoticeShown.current = true;
+        push('برای فعال‌شدن صدای اژیر، یک‌بار روی صفحه کلیک کنید.', 'info');
+      }
+    }
+
     if (!settings?.notify_browser) return;
     for (const a of fresh.slice(0, 3)) {
       push(a.title, a.severity === 'critical' ? 'error' : a.severity === 'warning' ? 'warning' : 'info');
     }
-  }, [live.alerts, settings?.notify_browser, push]);
+  }, [live.alerts, settings?.notify_browser, settings?.notify_sound, push]);
 
   return (
     <Layout>
@@ -53,6 +72,8 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/devices" element={<Devices />} />
             <Route path="/devices/:id" element={<DeviceDetail />} />
+            <Route path="/servers" element={<Servers />} />
+            <Route path="/servers/:id" element={<ServerDetail />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/diagrams" element={<Diagrams />} />
             <Route path="/diagrams/:id" element={<Diagrams />} />

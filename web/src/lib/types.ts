@@ -174,7 +174,9 @@ export interface Outage {
 export interface Alert {
   id: number;
   deviceId: number | null;
+  serverId?: number | null;
   deviceName?: string | null;
+  serverName?: string | null;
   deviceIp?: string | null;
   ruleId: number | null;
   ruleName?: string | null;
@@ -301,6 +303,7 @@ export interface AppSettings {
   suppression_start: string;
   suppression_end: string;
   notify_browser: boolean;
+  notify_sound: boolean;
   repair_causes: string[];
   repair_actions: string[];
   map_default_center: [number, number];
@@ -1265,3 +1268,191 @@ export interface CredentialInput {
   tags?: string[];
   rotateEveryDays?: number | null;
 }
+
+/* ------------------------- پایش سرورها ------------------------- */
+
+export type ServerHealth = 'unknown' | 'ok' | 'warning' | 'critical';
+
+export interface ServerMetric {
+  id: number;
+  ts: number;
+  source: 'agent' | 'redfish' | 'ipmi' | 'demo';
+  cpuPct: number | null;
+  memTotalBytes: number | null;
+  memUsedBytes: number | null;
+  memPct: number | null;
+  diskTotalBytes: number | null;
+  diskUsedBytes: number | null;
+  diskMaxPct: number | null;
+  netRxBps: number | null;
+  netTxBps: number | null;
+  netRxErrors: number | null;
+  netTxErrors: number | null;
+  maxTempC: number | null;
+  powerWatts: number | null;
+  uptimeSec: number | null;
+  health: ServerHealth;
+}
+
+export interface ServerLatest {
+  agent: ServerMetric | null;
+  redfish: ServerMetric | null;
+  ipmi: ServerMetric | null;
+  demo: ServerMetric | null;
+  health: ServerHealth;
+}
+
+export interface ServerInventory {
+  manufacturer: string;
+  model: string;
+  serial: string;
+  biosVersion: string;
+  bmcFirmware: string;
+  cpuModel: string;
+  cpuCores: number | null;
+  cpuThreads: number | null;
+  memoryTotalBytes: number | null;
+  dimmCount: number | null;
+  psuCount: number | null;
+  osName: string;
+  osVersion: string;
+  updatedAt: number;
+}
+
+export interface ServerDisk {
+  key: string;
+  source: string;
+  kind: 'volume' | 'physical' | string;
+  name: string;
+  mount: string;
+  filesystem: string;
+  totalBytes: number | null;
+  freeBytes: number | null;
+  usedPct: number | null;
+  health: ServerHealth;
+  temperatureC: number | null;
+  wearPct: number | null;
+  readErrors: number | null;
+  writeErrors: number | null;
+  powerOnHours: number | null;
+  updatedAt: number;
+}
+
+export interface ServerNic {
+  key: string;
+  source: string;
+  name: string;
+  mac: string;
+  speedBps: number | null;
+  rxBps: number | null;
+  txBps: number | null;
+  rxErrors: number | null;
+  txErrors: number | null;
+  linkStatus: string;
+  updatedAt: number;
+}
+
+export interface ServerSensor {
+  key: string;
+  source: string;
+  name: string;
+  type: 'temperature' | 'fan' | 'voltage' | 'power' | 'other' | string;
+  reading: number | null;
+  unit: string;
+  status: ServerHealth;
+  upperCritical: number | null;
+  upperCaution: number | null;
+  lowerCaution: number | null;
+  lowerCritical: number | null;
+  updatedAt: number;
+}
+
+export interface ServerSummary {
+  id: number;
+  name: string;
+  osHostname: string;
+  osIp: string;
+  vendor: string;
+  model: string;
+  serial: string;
+  location: string;
+  rack: string;
+  enabled: boolean;
+  agentConfigured: boolean;
+  agentKeyPrefix: string;
+  agentRegisteredAt: number | null;
+  bmcIp: string;
+  bmcProtocol: 'redfish' | 'ipmi' | 'demo' | 'none';
+  bmcUsername: string;
+  hasBmcPassword: boolean;
+  bmcVerifyTls: boolean;
+  bmcHasCa: boolean;
+  bmcSystemId: string;
+  bmcChassisId: string;
+  pollIntervalSec: number;
+  alertEnabled: boolean;
+  alertCpuPct: number;
+  alertMemPct: number;
+  alertTempC: number;
+  lastPollAt: number | null;
+  lastPollOk: boolean | null;
+  lastPollError: string;
+  lastAgentAt: number | null;
+  lastAgentError: string;
+  lastSeenAt: number | null;
+  stale: boolean;
+  createdAt: number;
+  updatedAt: number;
+  openAlerts: number;
+  latest: ServerLatest;
+}
+
+export interface ServerDetail extends ServerSummary {
+  inventory: ServerInventory | null;
+  disks: ServerDisk[];
+  nics: ServerNic[];
+  sensors: ServerSensor[];
+}
+
+export interface ServerList {
+  items: ServerSummary[];
+  summary: {
+    total: number;
+    enabled: number;
+    online: number;
+    stale: number;
+    healthy: number;
+    warning: number;
+    critical: number;
+    unknown: number;
+    avgCpuPct: number | null;
+    maxTempC: number | null;
+  };
+}
+
+export interface ServerSeriesPoint {
+  t: number;
+  cpuPct: number | null;
+  memPct: number | null;
+  diskMaxPct: number | null;
+  netRxBps: number | null;
+  netTxBps: number | null;
+  maxTempC: number | null;
+  powerWatts: number | null;
+  health: ServerHealth;
+}
+
+export interface ServerSeries {
+  range: string;
+  bucketMs: number;
+  from: number;
+  to: number;
+  points: ServerSeriesPoint[];
+}
+
+export interface ServerMutationResult {
+  server: ServerSummary;
+  agentToken: string | null;
+}
+
+export type ServerInput = Record<string, unknown>;

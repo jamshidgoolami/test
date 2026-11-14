@@ -16,7 +16,7 @@ export const DB_EXISTED = (() => {
   }
 })();
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 25;
 
 const VALID_SYNC = new Set(['OFF', 'NORMAL', 'FULL', 'EXTRA']);
 /**
@@ -89,6 +89,7 @@ export const DEFAULT_SETTINGS = {
   suppression_start: '23:00',
   suppression_end: '06:00',
   notify_browser: true,
+  notify_sound: true,
   repair_causes: [
     'مشکلات زیرساخت فیبر نوری',
     'مشکلات شبکه',

@@ -234,6 +234,9 @@ export const ALERT_KIND_LABEL: Record<string, string> = {
   maintenance: 'تعمیرات',
   discovery: 'کشف تجهیز جدید',
   conflict: 'تعارض IP مشکوک',
+  server_cpu: 'CPU سرور',
+  server_mem: 'RAM سرور',
+  server_temp: 'دمای سرور',
 };
 
 export const DEVICE_TYPES = [
