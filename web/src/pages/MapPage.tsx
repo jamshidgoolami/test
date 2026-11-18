@@ -32,6 +32,7 @@ export default function MapPage() {
   const { params, setParam } = useUrlParams();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayers = useRef<Record<number, L.Layer>>({});
   const markers = useRef<Map<number, L.Marker>>(new Map());
@@ -82,6 +83,11 @@ export default function MapPage() {
   const [siteFormOpen, setSiteFormOpen] = useState(false);
   const [hiddenTypeIds, setHiddenTypeIds] = useState<number[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
+  // ارتفاع نقشه از ارتفاع واقعی پنجره (نه یک عدد ثابت) کم می‌شود تا در
+  // نمایشگرهای بلند، فضای خالی زیر نقشه نماند و در نمایشگر کوتاه هم صفحه
+  // بی‌دلیل اسکرول نخورد. مقدار اولیه همان ارتفاع رایج دسکتاپ است تا پیش از
+  // اندازه‌گیری، چیدمان نپرد.
+  const [mapHeight, setMapHeight] = useState(820);
   // سطح زوم فعلی: نمایش خوشه‌ای/تکی نشانگرها و برچسب نام به آن وابسته است.
   // پیش‌تر تغییر زوم باعث بازسازی لایهٔ نشانگرها نمی‌شد و خوشه‌ها با زوم باز
   // نمی‌شدند؛ این وضعیت با رویداد zoomend هم‌گام می‌شود.
@@ -695,12 +701,42 @@ export default function MapPage() {
     window.addEventListener('pointerup', onUp);
   };
 
-  // تغییر عرض فهرست، عرض نقشه را عوض می‌کند؛ Leaflet باید اندازهٔ تازه را بگیرد.
+  /**
+   * ارتفاع نقشه = ارتفاع پنجره منهای چیزی که بالای نقشه و زیر آن (هدر، کارت
+   * فیلترها، پدینگ صفحه و فوتر) جا می‌گیرد. با تغییر اندازهٔ پنجره، جمع شدن
+   * منوی کناری یا تازه‌شدن داده‌ها دوباره اندازه‌گیری می‌شود تا در نمایشگرهای
+   * بلند فضای خالی زیر نقشه نماند و کارت فهرست هم‌ارتفاع نقشه بماند.
+   */
+  useEffect(() => {
+    if (fullscreen) return;
+    const measure = () => {
+      const row = rowRef.current;
+      if (!row) return;
+      const main = row.closest('main');
+      const footer = document.querySelector('footer');
+      const bottomPad = main ? Number.parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+      const footerHeight = footer?.getBoundingClientRect().height ?? 0;
+      const top = row.getBoundingClientRect().top;
+      const next = Math.max(460, Math.floor(window.innerHeight - top - bottomPad - footerHeight - 2));
+      setMapHeight((current) => (Math.abs(current - next) > 1 ? next : current));
+    };
+    measure();
+    // فونت/کارت فیلترها پس از اولین رنگ‌آمیزی ممکن است یک سطر بلندتر شوند.
+    const settle = window.setTimeout(measure, 150);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener('resize', measure);
+    };
+  }, [fullscreen, ready, mapData, sideOpen]);
+
+  // تغییر عرض فهرست، ارتفاع نقشه یا رفتن به تمام‌صفحه، اندازهٔ نقشه را عوض
+  // می‌کند؛ Leaflet باید اندازهٔ تازه را بگیرد وگرنه کاشی‌ها جابه‌جا می‌مانند.
   useEffect(() => {
     if (!ready) return;
     const timer = window.setTimeout(() => mapRef.current?.invalidateSize(), 120);
     return () => window.clearTimeout(timer);
-  }, [sideWidth, ready]);
+  }, [sideWidth, ready, mapHeight, fullscreen]);
 
   useEffect(() => {
     const target = params.get('device');
@@ -710,7 +746,7 @@ export default function MapPage() {
 
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" style={{ '--map-h': `${mapHeight}px` } as React.CSSProperties}>
       <Card padded={false} className="p-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
@@ -795,7 +831,7 @@ export default function MapPage() {
       ) : null}
 
       {/* چیدمان: نقشه (مرکز) · فهرست تک‌پنلی تجهیزات/علامت‌ها (چپ) */}
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div ref={rowRef} className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
         <div className={fullscreen ? 'contents' : 'min-w-0 flex-1'}>
           <div
             className={
@@ -806,7 +842,7 @@ export default function MapPage() {
           >
             <div
               ref={containerRef}
-              className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[calc(100dvh-215px)] min-h-[460px] max-h-[820px] w-full'}
+              className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[var(--map-h)] min-h-[460px] w-full'}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
             />
@@ -1016,7 +1052,7 @@ export default function MapPage() {
             className={
               fullscreen
                 ? 'flex h-full min-h-0 flex-col overflow-hidden shadow-pop'
-                : 'flex h-[460px] flex-col overflow-hidden xl:h-[582px]'
+                : 'flex h-[460px] flex-col overflow-hidden xl:h-[var(--map-h)]'
             }
           >
             <div className="flex items-start justify-between gap-2">

@@ -124,7 +124,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-dvh flex-col">
       {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 right-0 z-[900] shrink-0 border-l border-ink-200/70 bg-surface transition-all duration-300 lg:translate-x-0 ${
@@ -188,7 +188,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {open ? <div className="fixed inset-0 z-[890] bg-scrim/20 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} /> : null}
 
       {/* Main */}
-      <div className={`transition-[margin] duration-300 ${collapsed ? 'lg:mr-[76px]' : 'lg:mr-[264px]'}`}>
+      <div className={`flex min-h-dvh flex-1 flex-col transition-[margin] duration-300 ${collapsed ? 'lg:mr-[76px]' : 'lg:mr-[264px]'}`}>
         <header className="sticky top-0 z-[800] border-b border-ink-200/70 bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 sm:flex-nowrap sm:gap-2 sm:px-4 sm:py-1.5">
             <button type="button" className="btn-ghost btn-xs lg:hidden" onClick={() => setOpen(true)} aria-label="منو">
@@ -312,7 +312,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-4 sm:py-4">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-3 py-3 sm:px-4 sm:py-4">{children}</main>
 
         <footer className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-2 px-3 pb-3 text-[10.5px] text-ink-400 sm:px-4">
           <span className="inline-flex items-center gap-1.5">
