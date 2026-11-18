@@ -14,6 +14,7 @@ import { Card, CardHeader, ErrorState, PageLoader, Progress, StatCard } from '..
 import { TrendLineChart } from '../components/charts';
 import { useApp, useAsync } from '../lib/store';
 import { api } from '../lib/api';
+import { useChartHeight } from '../lib/useChartHeight';
 import { faDigits, fmtClock, fmtDateTime, fmtDuration, fmtMs, fmtNumber, fmtRelative, fmtPct } from '../lib/format';
 
 function fmtBytes(bytes: number | null | undefined): string {
@@ -38,6 +39,7 @@ function tone(value: number, warn: number, down: number): 'ok' | 'warn' | 'down'
 const TONE_TEXT = { ok: 'text-success', warn: 'text-warning', down: 'text-danger' } as const;
 
 export default function AppHealth() {
+  const chartHeight = useChartHeight(180, 0.22, 320);
   const { tzOffset } = useApp();
   const { data, loading, error, refresh, updatedAt } = useAsync((signal) => api.appHealth(signal), [], { interval: 5000 });
 
@@ -161,7 +163,7 @@ export default function AppHealth() {
             {points.length >= 2 ? (
               <TrendLineChart
                 points={points}
-                height={200}
+                height={chartHeight}
                 suffix=""
                 tzOffset={tzOffset}
                 series={[
@@ -196,7 +198,7 @@ export default function AppHealth() {
             {points.length >= 2 ? (
               <TrendLineChart
                 points={points}
-                height={200}
+                height={chartHeight}
                 suffix=" ms"
                 tzOffset={tzOffset}
                 series={[
@@ -228,7 +230,7 @@ export default function AppHealth() {
         <Card>
           <CardHeader title="تأخیر API به تفکیک مسیر" subtitle="p50 / p95 / p99 از آخرین درخواست‌ها" icon={<Server size={16} />} />
           <div className="table-wrap mt-3">
-            <table className="table">
+            <table className="table table--sticky-first">
               <thead>
                 <tr>
                   <th>مسیر</th>
@@ -272,7 +274,7 @@ export default function AppHealth() {
             icon={<Database size={16} />}
           />
           <div className="table-wrap mt-3">
-            <table className="table">
+            <table className="table table--sticky-first">
               <thead>
                 <tr>
                   <th>Query (نرمال‌شده)</th>

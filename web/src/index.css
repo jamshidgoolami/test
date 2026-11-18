@@ -183,7 +183,7 @@
   body {
     @apply bg-ink-50 text-ink-800 font-sans;
     margin: 0;
-    min-height: 100vh;
+    min-height: 100dvh;
     background-color: rgb(var(--nw-page));
     /* تغییر تم نرم باشد، نه پرش ناگهانی رنگ‌ها */
     transition: background-color 0.25s ease, color 0.25s ease;
@@ -1821,5 +1821,166 @@
   }
   .docs-content .docs-code pre {
     white-space: pre-wrap;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* چگالی نمایش — همان سه پله‌ای که در منوی «اندازه و حالت نمایش» است   */
+/* ------------------------------------------------------------------ */
+/* بیشتر فاصله‌ها و اندازه‌های Tailwind بر پایهٔ rem هستند، پس تغییر اندازهٔ
+   فونت ریشه کل چیدمان را با هم بزرگ یا کوچک می‌کند. متن‌های پیکسلی (۱۰ تا
+   ۱۲٫۵) هم که در جدول‌ها و زیرنویس‌ها زیادند جداگانه تنظیم می‌شوند. */
+html[data-density='compact'] {
+  font-size: 15px;
+}
+html[data-density='large'] {
+  font-size: 17.5px;
+}
+html[data-density='large'] .text-\[10px\],
+html[data-density='large'] .text-\[10\.5px\] {
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+html[data-density='large'] .text-\[11px\],
+html[data-density='large'] .text-\[11\.5px\] {
+  font-size: 12.2px;
+}
+html[data-density='large'] .text-\[12px\],
+html[data-density='large'] .text-\[12\.5px\] {
+  font-size: 13.2px;
+}
+html[data-density='compact'] .text-\[12\.5px\] {
+  font-size: 11.9px;
+}
+
+/* پیوند پرش به محتوا: تا وقتی فوکوس نگیرد دیده نمی‌شود. با کلاس مستقل
+   نوشته شده تا به تولید کلاس‌های focus: توسط Tailwind وابسته نباشد. */
+.nw-skip {
+  position: absolute;
+  inset-inline-start: -9999px;
+  top: 0;
+  z-index: 1200;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgb(var(--nw-brand-200));
+  border-radius: 0.6rem;
+  background: rgb(var(--nw-surface));
+  color: rgb(var(--nw-brand-600));
+  font-size: 0.78rem;
+  box-shadow: 0 12px 30px -18px rgb(15 23 42 / 0.4);
+}
+.nw-skip:focus {
+  inset-inline-start: 0.75rem;
+  top: 0.75rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* حالت نمایش/NOC — کروم برنامه کنار می‌رود و صفحه تمام نما می‌شود      */
+/* ------------------------------------------------------------------ */
+html[data-present='on'] aside,
+html[data-present='on'] header,
+html[data-present='on'] footer {
+  display: none !important;
+}
+html[data-present='on'] main {
+  max-width: none !important;
+  padding: 0.75rem 1rem 1rem !important;
+}
+/* حاشیهٔ چپ/راست پوسته برای منوی ثابت است؛ با مخفی شدن منو باید صفر شود. */
+html[data-present='on'] .nw-shell {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
+html[data-present='on'] body {
+  background-color: rgb(var(--nw-page));
+}
+.nw-present-tools {
+  display: none;
+}
+html[data-present='on'] .nw-present-tools {
+  display: flex;
+}
+
+/* هدف رها کردن ویجت در حالت چیدمان */
+[data-nw-drop='1'] {
+  outline: 2px solid rgb(var(--nw-brand-400));
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* جدول‌های عملیاتی: ستون اول چسبان و ارتفاع لمسی                      */
+/* ------------------------------------------------------------------ */
+.table--sticky-first thead th:first-child,
+.table--sticky-first tbody td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: rgb(var(--nw-surface));
+}
+.table--sticky-first thead th:first-child {
+  z-index: 3;
+  background: rgb(var(--nw-ink-50));
+}
+.table--sticky-first tbody tr:hover td:first-child {
+  background: rgb(var(--nw-ink-50) / 0.9);
+}
+.table--sticky-first tbody td:first-child::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 100%;
+  width: 10px;
+  background: linear-gradient(to left, rgb(15 23 42 / 0.06), transparent);
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .table thead th,
+  .table tbody td {
+    padding-block: 0.7rem;
+  }
+  .btn-xs {
+    min-height: 2.25rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* چاپ صفحه‌های عملیاتی (نه فقط مستندات)                             */
+/* ------------------------------------------------------------------ */
+@media print {
+  aside,
+  header,
+  footer,
+  .no-print,
+  .nw-present-tools {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .table-wrap {
+    max-height: none !important;
+    overflow: visible !important;
+    border-color: #d8dee9 !important;
+  }
+  .table thead th {
+    position: static !important;
+    background: #f4f6fa !important;
+    color: #1f2430 !important;
+  }
+  .table tr,
+  .card {
+    break-inside: avoid;
+  }
+  .card {
+    box-shadow: none !important;
+    border-color: #d8dee9 !important;
+  }
+  @page {
+    margin: 12mm;
   }
 }

@@ -396,7 +396,7 @@ export default function DeviceDetail() {
                 <EmptyState title="اختلالی ثبت نشده است" description="برای این تجهیز در بازه نگهداری داده‌ها هیچ قطعی ثبت نشده است." icon={<CircleCheck size={22} />} />
               ) : (
                 <div className="table-wrap h-full max-h-full">
-                  <table className="table">
+                  <table className="table table--sticky-first">
                     <thead>
                       <tr>
                         <th>زمان شروع</th>
@@ -716,8 +716,8 @@ export default function DeviceDetail() {
                 dragId.current = null;
                 setDragging(null);
               }}
-              onDropOn={() => {
-                if (dragId.current) layoutHook.move(dragId.current, w.id);
+              onMoveTo={(targetId) => {
+                if (dragId.current) layoutHook.move(dragId.current, targetId);
                 dragId.current = null;
                 setDragging(null);
               }}
@@ -947,7 +947,7 @@ function DeviceAttachments({ deviceId, canWrite }: { deviceId: number; canWrite:
                   <img
                     src={preview.downloadUrl}
                     alt={preview.fileName}
-                    className="max-h-[calc(100vh-9rem)] max-w-full rounded-xl bg-ink-950/60 object-contain"
+                    className="max-h-[calc(100dvh-9rem)] max-w-full rounded-xl bg-ink-950/60 object-contain"
                   />
                   <figcaption className="mt-1.5 flex items-center justify-between gap-3 px-1 text-[10.5px] text-white/70">
                     <span className="truncate">{preview.fileName}</span>

@@ -3,6 +3,7 @@ import { Fan, Thermometer } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardHeader, EmptyState } from '../../components/ui';
 import { faDigits, fmtNumber, fmtRangeLabel } from '../../lib/format';
+import { useChartHeight } from '../../lib/useChartHeight';
 import type { ServerSensorSeries, ServerSensorSeriesItem } from '../../lib/types';
 
 export type SensorKind = 'temperature' | 'fan';
@@ -73,6 +74,7 @@ export default function SensorSeriesCard({
 }) {
   const key = storageKey(serverId, kind);
   const [hidden, setHidden] = useState<string[]>(() => readHidden(key));
+  const chartHeight = useChartHeight(220, 0.26, 380);
 
   const meta =
     kind === 'temperature'
@@ -209,7 +211,7 @@ export default function SensorSeriesCard({
           </div>
 
           {visible.length ? (
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={rows} margin={{ top: 8, right: 14, left: 0, bottom: 0 }} syncId={`server-sensors-${serverId}`}>
                 <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
                 <XAxis
@@ -292,6 +294,9 @@ export default function SensorSeriesCard({
                       name={sensor.name}
                       stroke={colorOf(index)}
                       strokeWidth={1.8}
+                      // الگوی خط، جدا از رنگ: روی چاپ سیاه‌وسفید و برای کوررنگی
+                      // هم خطوط قابل تفکیک می‌مانند.
+                      strokeDasharray={index % 4 === 0 ? undefined : index % 4 === 1 ? '7 4' : index % 4 === 2 ? '2 3' : '10 3 2 3'}
                       dot={false}
                       activeDot={{ r: 3.5, strokeWidth: 1.5, stroke: 'var(--chart-dot-ring)' }}
                       connectNulls

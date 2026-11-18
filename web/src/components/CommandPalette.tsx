@@ -128,6 +128,24 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       event.preventDefault();
       go(results[active]);
     }
+    // فوکوس تا زمانی که پالت باز است داخل آن می‌ماند؛ بدون این کار Tab کاربر
+    // را به فرم‌ها و لینک‌های پشت پالت می‌برد.
+    if (event.key === 'Tab') {
+      const dialog = event.currentTarget as HTMLElement;
+      const focusables = Array.from(
+        dialog.querySelectorAll<HTMLElement>('input, button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')
+      ).filter((element) => element.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    }
   };
 
   return createPortal(
@@ -161,7 +179,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           <kbd className="hidden rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] text-ink-400 sm:inline">Esc</kbd>
         </div>
 
-        <div id="command-results" role="listbox" aria-label="نتایج جست‌وجو" className="max-h-[55vh] overflow-y-auto p-2">
+        <div id="command-results" role="listbox" aria-label="نتایج جست‌وجو" className="max-h-[55dvh] overflow-y-auto p-2">
           {results.length === 0 ? (
             <p className="px-3 py-8 text-center text-xs text-ink-400">
               {loadingDevices ? 'در حال جست‌وجوی تجهیزات…' : 'نتیجه‌ای پیدا نشد. نام صفحه، تجهیز یا IP را وارد کنید.'}

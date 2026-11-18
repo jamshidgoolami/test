@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useApp, useAsync, useSubmitGuard, useToast } from '../lib/store';
 import { faDigits, fmtRelative, statusMeta } from '../lib/format';
 import { useUrlParams } from '../lib/params';
+import { useDisplay } from '../lib/display';
 import { Card, ErrorState } from '../components/ui';
 import type { MapLayer, MapMarker } from '../lib/types';
 
@@ -27,6 +28,9 @@ import type { ArmedMarkerType, MapDevice, MapSite, PendingMapPosition, SitePopup
 
 export default function MapPage() {
   const { settings, meta, refreshMeta } = useApp();
+  // چگالی و حالت نمایش، ارتفاع هدر/فوتر را عوض می‌کنند؛ اندازه‌گیری نقشه
+  // باید با آن‌ها هم دوباره اجرا شود.
+  const { density, present } = useDisplay();
   const { push } = useToast();
   const { busy: saving, run: runGuarded } = useSubmitGuard();
   const { params, setParam } = useUrlParams();
@@ -62,7 +66,9 @@ export default function MapPage() {
   const [sideWidth, setSideWidth] = useState(() => {
     try {
       const saved = Number(window.localStorage.getItem('nw-map-side-width'));
-      return Number.isFinite(saved) && saved >= 240 ? Math.min(560, saved) : 324;
+      if (Number.isFinite(saved) && saved >= 240) return Math.min(560, saved);
+      // بدون مقدار ذخیره‌شده، عرض فهرست با نمایشگر بزرگ می‌شود تا فضای کنار نقشه هدر نرود.
+      return Math.round(Math.min(460, Math.max(324, window.innerWidth * 0.18)));
     } catch {
       return 324;
     }
@@ -728,7 +734,7 @@ export default function MapPage() {
       window.clearTimeout(settle);
       window.removeEventListener('resize', measure);
     };
-  }, [fullscreen, ready, mapData, sideOpen]);
+  }, [fullscreen, ready, mapData, sideOpen, density, present]);
 
   // تغییر عرض فهرست، ارتفاع نقشه یا رفتن به تمام‌صفحه، اندازهٔ نقشه را عوض
   // می‌کند؛ Leaflet باید اندازهٔ تازه را بگیرد وگرنه کاشی‌ها جابه‌جا می‌مانند.
@@ -831,7 +837,7 @@ export default function MapPage() {
       ) : null}
 
       {/* چیدمان: نقشه (مرکز) · فهرست تک‌پنلی تجهیزات/علامت‌ها (چپ) */}
-      <div ref={rowRef} className="flex flex-col gap-4 xl:flex-row xl:items-stretch">
+      <div ref={rowRef} className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
         <div className={fullscreen ? 'contents' : 'min-w-0 flex-1'}>
           <div
             className={
@@ -840,12 +846,13 @@ export default function MapPage() {
                 : 'relative overflow-hidden rounded-card border border-ink-200/70 bg-surface shadow-card'
             }
           >
-            <div
-              ref={containerRef}
-              className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[var(--map-h)] min-h-[460px] w-full'}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-            />
+            {/* کلاس‌های اندازه روی لایهٔ بیرونی می‌مانند؛ Leaflet به همین div
+                کلاس‌های خودش (leaflet-container و…) را اضافه می‌کند و اگر React
+                هنگام تغییر تمام‌صفحه آن‌ها را بازنویسی کند، نقشه بخشی از
+                اندازه/پیکربندی خود را از دست می‌دهد. */}
+            <div className={fullscreen ? 'min-h-0 w-full flex-1' : 'h-[var(--map-h)] min-h-[460px] w-full'}>
+              <div ref={containerRef} className="h-full w-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} />
+            </div>
             {fullscreen && !sideOpen ? (
               <div className="absolute left-3 top-3 z-[500] flex items-center gap-2">
                 <button
@@ -1014,7 +1021,7 @@ export default function MapPage() {
               ? `fixed inset-y-0 left-0 z-[1200] flex w-[330px] max-w-[88vw] flex-col gap-2 p-3 transition-transform duration-300 ${
                   sideOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
                 }`
-              : `relative flex shrink-0 flex-col gap-2 ${sideOpen ? 'xl:w-[var(--nw-side-w)]' : 'xl:w-auto'}`
+              : `relative flex shrink-0 flex-col gap-2 ${sideOpen ? 'lg:w-[var(--nw-side-w)]' : 'lg:w-auto'}`
           }
           style={fullscreen ? undefined : ({ '--nw-side-w': `${sideWidth}px` } as React.CSSProperties)}
           aria-hidden={fullscreen && !sideOpen ? true : undefined}
@@ -1027,8 +1034,27 @@ export default function MapPage() {
               aria-orientation="vertical"
               aria-label="تغییر عرض فهرست نقشه"
               title="برای بزرگ یا کوچک کردن فهرست، لبهٔ آن را بکشید"
+              aria-valuemin={240}
+              aria-valuemax={560}
+              aria-valuenow={sideWidth}
+              tabIndex={0}
               onPointerDown={startSideResize}
-              className="absolute inset-y-0 -right-2 z-10 hidden w-4 cursor-col-resize xl:block"
+              onKeyDown={(event) => {
+                // برای کاربر کیبورد، کشیدن لبه ممکن نیست؛ کلیدهای جهت عرض را
+                // ۱۶ پیکسل تغییر می‌دهند و همان مقدار ذخیره می‌شود.
+                const step = event.key === 'ArrowLeft' ? 16 : event.key === 'ArrowRight' ? -16 : 0;
+                if (!step) return;
+                event.preventDefault();
+                const next = Math.min(560, Math.max(240, sideWidthRef.current + step));
+                sideWidthRef.current = next;
+                setSideWidth(next);
+                try {
+                  window.localStorage.setItem('nw-map-side-width', String(next));
+                } catch {
+                  /* ذخیرهٔ محلی اختیاری است */
+                }
+              }}
+              className="absolute inset-y-0 -right-2 z-10 hidden w-4 cursor-col-resize rounded-pill outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 lg:block"
               style={{ touchAction: 'none' }}
             />
           ) : null}
@@ -1052,7 +1078,7 @@ export default function MapPage() {
             className={
               fullscreen
                 ? 'flex h-full min-h-0 flex-col overflow-hidden shadow-pop'
-                : 'flex h-[460px] flex-col overflow-hidden xl:h-[var(--map-h)]'
+                : 'flex h-[460px] flex-col overflow-hidden lg:h-[var(--map-h)]'
             }
           >
             <div className="flex items-start justify-between gap-2">

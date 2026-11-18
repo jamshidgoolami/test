@@ -18,6 +18,7 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApp, useAsync, useToast } from '../lib/store';
 import { faDigits } from '../lib/format';
+import { useDisplay } from '../lib/display';
 import type { Device, DiagramGraph, DiagramShape, DiagramSummary } from '../lib/types';
 import { EmptyState, PageLoader } from '../components/ui';
 import { useLivePing } from '../components/LivePing';
@@ -47,6 +48,32 @@ export default function Diagrams() {
   const { settings } = useApp();
   const livePing = useLivePing();
   const canWrite = can('diagrams:write');
+  // ارتفاع بوم از اندازه‌گیری واقعی صفحه می‌آید، نه از عدد ثابت ۱۷۰px؛
+  // هدر/فوتر/پدینگ با چگالی و حالت نمایش تغییر می‌کنند.
+  const { density, present } = useDisplay();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspaceHeight, setWorkspaceHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const measure = () => {
+      const element = workspaceRef.current;
+      if (!element) return;
+      const main = element.closest('main');
+      const footer = document.querySelector('footer');
+      const bottomPad = main ? Number.parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+      const footerHeight = footer?.getBoundingClientRect().height ?? 0;
+      const top = element.getBoundingClientRect().top;
+      const next = Math.max(420, Math.floor(window.innerHeight - top - bottomPad - footerHeight - 2));
+      setWorkspaceHeight((current) => (current === next ? current : next));
+    };
+    measure();
+    const settle = window.setTimeout(measure, 150);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener('resize', measure);
+    };
+  }, [density, present]);
 
   const idParam = Number(params.id);
   const currentId = Number.isInteger(idParam) && idParam > 0 ? idParam : null;
@@ -562,7 +589,7 @@ export default function Diagrams() {
         onSave={() => void save()}
       />
 
-      <div className="diagram-workspace relative flex gap-2">
+      <div ref={workspaceRef} className="diagram-workspace relative flex gap-2" style={workspaceHeight ? { height: workspaceHeight } : undefined}>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {detail ? (
             <nav

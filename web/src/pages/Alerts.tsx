@@ -467,7 +467,7 @@ export default function Alerts() {
                 <EmptyState title="قطعی‌ای ثبت نشده است" description="در ۷ روز گذشته هیچ قطعی‌ای برای تجهیزات ثبت نشده." icon={<ShieldCheck size={22} />} />
               ) : (
                 <div className="table-wrap">
-                  <table className="table">
+                  <table className="table table--sticky-first">
                     <thead>
                       <tr>
                         <th>تجهیز</th>

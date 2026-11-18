@@ -18,6 +18,7 @@ import { api } from '../lib/api';
 import { useAsync, useToast } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { faDigits, fmtClock, fmtDateTime, fmtRelative } from '../lib/format';
+import { useChartHeight } from '../lib/useChartHeight';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageLoader, Tabs } from '../components/ui';
 import { TrendLineChart } from '../components/charts';
 import SensorSeriesCard from '../features/servers/SensorCharts';
@@ -47,6 +48,8 @@ const RANGES: { value: Range; label: string }[] = [
 ];
 
 export default function ServerDetail() {
+  // نمودارها روی نمایشگر بلند ارتفاع بیشتری می‌گیرند تا جزئیات روند دیده شود.
+  const chartHeight = useChartHeight(210, 0.25, 380);
   const { id: rawId } = useParams();
   const id = Number(rawId);
   const navigate = useNavigate();
@@ -287,7 +290,7 @@ export default function ServerDetail() {
                 {chartPoints.length ? (
                   <TrendLineChart
                     points={chartPoints}
-                    height={230}
+                    height={chartHeight}
                     yDomain={[0, 100]}
                     suffix="٪"
                     series={[
@@ -306,7 +309,7 @@ export default function ServerDetail() {
                 {chartPoints.length ? (
                   <TrendLineChart
                     points={chartPoints}
-                    height={230}
+                    height={chartHeight}
                     suffix=" Mbps"
                     series={[
                       { key: 'rxMbps', label: 'ورودی', color: '#16a34a' },
@@ -420,7 +423,7 @@ export default function ServerDetail() {
               {chartPoints.length ? (
                 <TrendLineChart
                   points={chartPoints}
-                  height={260}
+                  height={chartHeight}
                   suffix=" Mbps"
                   series={[
                     { key: 'rxMbps', label: 'ورودی', color: '#16a34a' },

@@ -160,8 +160,8 @@ export default function Settings() {
   const visibleTabs = tabs.filter((item) => !tabSearch.trim() || item.label.includes(tabSearch.trim()));
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)] xl:items-start">
-      <Card padded={false} className="xl:sticky xl:top-4">
+    <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)] xl:items-start 2xl:grid-cols-[272px_minmax(0,1fr)]">
+      <Card padded={false} className="xl:sticky xl:top-4 xl:flex xl:max-h-[calc(100dvh-4.5rem)] xl:flex-col">
         <div className="border-b border-ink-100 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[13px] font-semibold text-ink-800">تنظیمات</p>
@@ -178,7 +178,9 @@ export default function Settings() {
             aria-label="جست‌وجوی بخش تنظیمات"
           />
         </div>
-        <nav className="max-h-[calc(100dvh-18rem)] space-y-3 overflow-y-auto p-2" aria-label="بخش‌های تنظیمات">
+        {/* ارتفاع نوار از خود کادر می‌آید (flex) نه از یک عدد جادویی که با
+            بلند شدن هدر یا تغییر چگالی غلط می‌شد. */}
+        <nav className="max-h-[70dvh] space-y-3 overflow-y-auto p-2 xl:min-h-0 xl:max-h-none xl:flex-1" aria-label="بخش‌های تنظیمات">
           {SETTINGS_GROUPS.map((group) => {
             const groupTabs = visibleTabs.filter((item) => group.tabs.includes(item.key));
             if (!groupTabs.length) return null;

@@ -203,7 +203,7 @@ export default function Maintenance() {
               />
             ) : (
               <div className="table-wrap max-h-[640px]">
-                <table className="table">
+                <table className="table table--sticky-first">
                   <thead>
                     <tr>
                       <th>تجهیز</th>

@@ -527,8 +527,8 @@ export default function Dashboard() {
                 dragId.current = null;
                 setDragging(null);
               }}
-              onDropOn={() => {
-                if (dragId.current) layoutHook.move(dragId.current, w.id);
+              onMoveTo={(targetId) => {
+                if (dragId.current) layoutHook.move(dragId.current, targetId);
                 dragId.current = null;
                 setDragging(null);
               }}

@@ -279,7 +279,7 @@ export default function Reports() {
               }
             />
             <div className="mt-4 table-wrap max-h-[720px]">
-              <table className="table">
+              <table className="table table--sticky-first">
                 <thead>
                   <tr>
                     <th>نام تجهیز</th>
@@ -374,7 +374,7 @@ export default function Reports() {
             </div>
             {(data.mttr?.events ?? []).length ? (
               <div className="mt-3 table-wrap max-h-[340px]">
-                <table className="table">
+                <table className="table table--sticky-first">
                   <thead>
                     <tr>
                       <th>تجهیز</th>
@@ -456,7 +456,7 @@ export default function Reports() {
             </div>
             {(installations.data?.items ?? []).length ? (
               <div className="mt-3 table-wrap max-h-[360px]">
-                <table className="table">
+                <table className="table table--sticky-first">
                   <thead>
                     <tr>
                       <th>تجهیز</th>
@@ -622,7 +622,7 @@ function InventoryStatsCard({ group, tag, deviceId }: { group: string; tag: stri
         <EmptyState title="موردی در این بُعد یافت نشد" description="فیلترها یا عبارت جست‌وجو را تغییر دهید." />
       ) : (
         <div className="mt-3 table-wrap max-h-[420px]">
-          <table className="table">
+          <table className="table table--sticky-first">
             <thead>
               <tr>
                 <th>{INVENTORY_DIMENSIONS.find((d) => d.key === dim)?.label ?? 'مقدار'}</th>

@@ -189,7 +189,7 @@ export function WidgetShell({
   dragging,
   onDragStart,
   onDragEnd,
-  onDropOn,
+  onMoveTo,
   onSize,
   onHeight,
   onHide,
@@ -201,16 +201,64 @@ export function WidgetShell({
   dragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
-  onDropOn: () => void;
+  /** جابه‌جایی به جایگاه ویجتی که کاربر روی آن رها کرده است */
+  onMoveTo?: (targetId: string) => void;
   onSize: (s: WidgetSize) => void;
   onHeight: (heightPx: number) => void;
   onHide: () => void;
   children: React.ReactNode;
 }) {
-  const [over, setOver] = useState(false);
   const [resizing, setResizing] = useState(false);
+  const [grabbing, setGrabbing] = useState(false);
   const [liveHeight, setLiveHeight] = useState(() => clampWidgetHeight(item.heightPx));
   const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number; lastHeight: number; moved: boolean } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
+
+  /**
+   * جابه‌جایی با Pointer Events (موس، قلم و لمس) انجام می‌شود.
+   *
+   * dragstart/drop مرورگر روی صفحه‌های لمسی اجرا نمی‌شود و در صفحه‌های لمسی
+   * ویجت‌ها عملاً جابه‌جا نمی‌شدند؛ Pointer Events هر دو را پوشش می‌دهد.
+   */
+  const moveDrag = (event: PointerEvent) => {
+    const state = dragRef.current;
+    if (!state) return;
+    if (!state.moved && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 5) return;
+    state.moved = true;
+    document.querySelectorAll('[data-nw-drop]').forEach((node) => node.removeAttribute('data-nw-drop'));
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-widget-id]');
+    if (target && target.dataset.widgetId !== item.id) target.setAttribute('data-nw-drop', '1');
+  };
+
+  const finishDrag = (event: PointerEvent | null) => {
+    const state = dragRef.current;
+    dragRef.current = null;
+    document.removeEventListener('pointermove', moveDrag);
+    document.removeEventListener('pointerup', endDrag);
+    document.removeEventListener('pointercancel', cancelDrag);
+    document.querySelectorAll('[data-nw-drop]').forEach((node) => node.removeAttribute('data-nw-drop'));
+    setGrabbing(false);
+    if (state?.moved && event && onMoveTo) {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-widget-id]');
+      const targetId = target?.dataset.widgetId;
+      if (targetId && targetId !== item.id) onMoveTo(targetId);
+    }
+    onDragEnd();
+  };
+
+  const endDrag = (event: PointerEvent) => finishDrag(event);
+  const cancelDrag = () => finishDrag(null);
+
+  const startDrag = (event: React.PointerEvent<HTMLElement>) => {
+    if (!editMode || resizing || event.button !== 0) return;
+    event.preventDefault();
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    onDragStart();
+    setGrabbing(true);
+    document.addEventListener('pointermove', moveDrag);
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', cancelDrag);
+  };
 
   // پس از ذخیره یا بازنشانی چیدمان، ارتفاع نمایشی با مقدار ذخیره‌شده هم‌گام می‌شود.
   useEffect(() => {
@@ -264,36 +312,22 @@ export function WidgetShell({
   return (
     <div
       data-widget-id={item.id}
-      className={`relative min-w-0 ${SIZE_CLASS[item.size]} ${dragging ? 'opacity-40' : ''} ${
+      className={`relative min-w-0 ${SIZE_CLASS[item.size]} ${dragging || grabbing ? 'opacity-60' : ''} ${
         resizing ? 'z-20' : ''
-      } ${over && editMode ? 'ring-2 ring-brand-400/70 rounded-card' : ''}`}
-      draggable={editMode && !resizing}
-      onDragStart={(e) => {
-        if (!editMode || resizeRef.current) {
-          e.preventDefault();
-          return;
-        }
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/nw-widget', item.id);
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onDragOver={(e) => {
-        if (!editMode) return;
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        if (!editMode) return;
-        e.preventDefault();
-        setOver(false);
-        onDropOn();
-      }}
+      }`}
     >
       {editMode ? (
         <div className="mb-1 flex flex-wrap items-center gap-1.5 rounded-soft border border-dashed border-brand-300 bg-brand-50/70 px-2 py-1.5">
-          <GripVertical size={14} className="cursor-grab text-brand-500" />
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`جابه‌جایی ${def.title}`}
+            title="برای جابه‌جایی، این دستگیره را بکشید"
+            onPointerDown={startDrag}
+            className={`inline-flex cursor-grab touch-none items-center rounded p-0.5 text-brand-500 hover:bg-brand-100/70 ${grabbing ? 'cursor-grabbing' : ''}`}
+          >
+            <GripVertical size={14} />
+          </span>
           <span className="text-[11.5px] font-medium text-accent">{def.title}</span>
           <span className="ms-auto flex items-center gap-1">
             {SIZES.map((s) => (
@@ -343,6 +377,16 @@ export function WidgetShell({
           onPointerMove={moveResize}
           onPointerUp={(e) => endResize(e, true)}
           onPointerCancel={(e) => endResize(e, false)}
+          tabIndex={0}
+          onKeyDown={(event) => {
+            // تغییر ارتفاع با صفحه‌کلید؛ ۲۴ پیکسل در هر فشار.
+            const delta = event.key === 'ArrowUp' ? -24 : event.key === 'ArrowDown' ? 24 : 0;
+            if (!delta) return;
+            event.preventDefault();
+            const next = clampWidgetHeight(liveHeight + delta);
+            setLiveHeight(next);
+            onHeight(next);
+          }}
           className={`group absolute inset-x-0 -bottom-2 z-20 flex h-6 touch-none cursor-ns-resize items-center justify-center ${
             resizing ? 'select-none' : ''
           }`}

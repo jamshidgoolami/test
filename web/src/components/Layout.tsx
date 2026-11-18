@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
   Bell,
@@ -32,6 +32,12 @@ import StatusPanel from './StatusPanel';
 import { LiveBadge } from './Freshness';
 import CommandPalette from './CommandPalette';
 import { ThemeIconButton } from './ThemeToggle';
+import DisplayMenu from './DisplayMenu';
+import { setDisplay, useDisplay } from '../lib/display';
+
+/** صفحه‌هایی که در حالت نمایش/NOC به‌ترتیب چرخانده می‌شوند. */
+const PRESENT_ROUTES = ['/dashboard', '/map', '/servers', '/alerts'];
+const PRESENT_INTERVAL_MS = 45000;
 
 const NAV_ICONS: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {
   '/dashboard': LayoutDashboard,
@@ -71,9 +77,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const navigate = useNavigate();
   const { settings } = useApp();
   const live = useLiveState();
   const { user, logout } = useAuth();
+  const { present } = useDisplay();
+
+  // در حالت نمایش، صفحه‌های کلیدی خودکار می‌چرخند تا نمایشگر دیواری بدون
+  // دخالت انسان به‌روز بماند؛ هر ناوبری دستی هم چرخه را از همان صفحه ادامه می‌دهد.
+  useEffect(() => {
+    if (!present) return;
+    const timer = window.setInterval(() => {
+      const index = PRESENT_ROUTES.findIndex((route) => location.pathname.startsWith(route));
+      navigate(PRESENT_ROUTES[(index + 1) % PRESENT_ROUTES.length]);
+    }, PRESENT_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [present, location.pathname, navigate]);
 
   useEffect(() => {
     setOpen(false);
@@ -125,6 +144,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh flex-col">
+      <a
+        href="#main-content"
+        className="nw-skip"
+      >
+        پرش به محتوای اصلی
+      </a>
+
+      {/* در حالت نمایش/NOC، هدر مخفی است؛ این نوار کوچک تنها راه خروج است. */}
+      <div className="nw-present-tools fixed bottom-3 left-3 z-[1150] items-center gap-2 rounded-pill border border-ink-200 bg-surface/95 px-2 py-1.5 shadow-pop backdrop-blur">
+        <span className="text-[10.5px] text-ink-400">حالت نمایش</span>
+        <button type="button" className="btn-ghost btn-xs" onClick={() => navigate('/dashboard')}>
+          داشبورد
+        </button>
+        <button type="button" className="btn-ghost btn-xs" onClick={() => setDisplay({ present: false })}>
+          خروج
+        </button>
+      </div>
+
       {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 right-0 z-[900] shrink-0 border-l border-ink-200/70 bg-surface transition-all duration-300 lg:translate-x-0 ${
@@ -188,7 +225,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {open ? <div className="fixed inset-0 z-[890] bg-scrim/20 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} /> : null}
 
       {/* Main */}
-      <div className={`flex min-h-dvh flex-1 flex-col transition-[margin] duration-300 ${collapsed ? 'lg:mr-[76px]' : 'lg:mr-[264px]'}`}>
+      <div className={`nw-shell flex min-h-dvh flex-1 flex-col transition-[margin] duration-300 ${collapsed ? 'lg:mr-[76px]' : 'lg:mr-[264px]'}`}>
         <header className="sticky top-0 z-[800] border-b border-ink-200/70 bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 sm:flex-nowrap sm:gap-2 sm:px-4 sm:py-1.5">
             <button type="button" className="btn-ghost btn-xs lg:hidden" onClick={() => setOpen(true)} aria-label="منو">
@@ -233,6 +270,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <LiveBadge compact />
             </div>
 
+            <DisplayMenu />
             <ThemeIconButton />
 
             <div className="relative" ref={notifRef}>
@@ -312,9 +350,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1600px] flex-1 px-3 py-3 sm:px-4 sm:py-4">{children}</main>
+        <main id="main-content" tabIndex={-1} className="w-full max-w-none flex-1 px-3 py-3 sm:px-4 sm:py-4 2xl:px-6">
+          {children}
+        </main>
 
-        <footer className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-2 px-3 pb-3 text-[10.5px] text-ink-400 sm:px-4">
+        <footer className="flex w-full flex-wrap items-center justify-between gap-2 px-3 pb-3 text-[10.5px] text-ink-400 sm:px-4 2xl:px-6">
           <span className="inline-flex items-center gap-1.5">
             <Radio size={12} />
             اجرای کاملاً آفلاین — بدون وابستگی به سرویس‌های ابری

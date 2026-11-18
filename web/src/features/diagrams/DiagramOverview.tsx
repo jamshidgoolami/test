@@ -692,7 +692,7 @@ function OverviewBoard({
         onClick={onClose}
       >
         <div
-          className="flex h-full max-h-[95vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-surface shadow-pop"
+          className="flex h-full max-h-[95dvh] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-ink-200/70 bg-surface shadow-pop"
           onClick={(event) => event.stopPropagation()}
         >
           <OverviewHeader
