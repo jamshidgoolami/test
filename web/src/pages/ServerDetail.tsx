@@ -20,6 +20,7 @@ import { useAuth } from '../lib/auth';
 import { faDigits, fmtClock, fmtDateTime, fmtRelative } from '../lib/format';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageLoader, Tabs } from '../components/ui';
 import { TrendLineChart } from '../components/charts';
+import SensorSeriesCard from '../features/servers/SensorCharts';
 import ServerForm from '../features/servers/ServerForm';
 import AgentTokenDialog from '../features/servers/AgentTokenDialog';
 import {
@@ -32,7 +33,7 @@ import {
   formatUptime,
   sourceLabel,
 } from '../features/servers/shared';
-import type { ServerDetail as ServerDetailData, ServerSeries, ServerSensor } from '../lib/types';
+import type { ServerDetail as ServerDetailData, ServerSensorSeries, ServerSeries, ServerSensor } from '../lib/types';
 
 type Range = '1h' | '6h' | '24h' | '7d' | '30d';
 type Tab = 'overview' | 'storage' | 'network' | 'bmc';
@@ -66,11 +67,16 @@ export default function ServerDetail() {
     interval: 30000,
     enabled: Number.isInteger(id) && id > 0,
   });
+  const sensorSeries = useAsync<ServerSensorSeries>((signal) => api.serverSensorSeries(id, range, signal), [id, range], {
+    interval: 30000,
+    enabled: Number.isInteger(id) && id > 0,
+  });
 
   const data = detail.data;
   const refreshAll = () => {
     void detail.refresh();
     void series.refresh();
+    void sensorSeries.refresh();
   };
 
   const collect = async () => {
@@ -367,21 +373,25 @@ export default function ServerDetail() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader title="روند دما" subtitle="بیشترین دمای سنسور در هر بازه" icon={<Thermometer size={16} />} />
-            <div className="mt-3">
-              {chartPoints.length ? (
-                <TrendLineChart
-                  points={chartPoints}
-                  height={210}
-                  suffix="°C"
-                  series={[{ key: 'maxTempC', label: 'بیشترین دما', color: '#dc2626' }]}
-                />
-              ) : (
-                <EmptyState title="دادهٔ دمایی نیست" description="برای دما به BMC متصل شوید یا سرور نمایشی بسازید." />
-              )}
-            </div>
-          </Card>
+          <SensorSeriesCard
+            key={`${data.id}-temperature`}
+            kind="temperature"
+            range={range}
+            serverId={data.id}
+            data={sensorSeries.data}
+            loading={sensorSeries.loading}
+            error={sensorSeries.error}
+          />
+
+          <SensorSeriesCard
+            key={`${data.id}-fan`}
+            kind="fan"
+            range={range}
+            serverId={data.id}
+            data={sensorSeries.data}
+            loading={sensorSeries.loading}
+            error={sensorSeries.error}
+          />
         </div>
       ) : null}
 

@@ -47,6 +47,7 @@ import type {
   ServerInput,
   ServerList,
   ServerMutationResult,
+  ServerSensorSeries,
   ServerSeries,
   Site,
   SimultaneousData,
@@ -270,6 +271,8 @@ export const api = {
     request<ServerMutationResult>('/servers/demo', { method: 'POST', body: JSON.stringify(body) }),
   serverMetrics: (id: number, range: string, signal?: AbortSignal) =>
     request<ServerSeries>(`/servers/${id}/metrics${qs({ range })}`, { signal }),
+  serverSensorSeries: (id: number, range: string, signal?: AbortSignal) =>
+    request<ServerSensorSeries>(`/servers/${id}/sensor-series${qs({ range })}`, { signal }),
 
   /* ---------------- تجهیزات ---------------- */
   devices: (params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) =>

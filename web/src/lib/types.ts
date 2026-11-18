@@ -1451,6 +1451,32 @@ export interface ServerSeries {
   points: ServerSeriesPoint[];
 }
 
+export interface ServerSensorSeriesPoint {
+  t: number;
+  reading: number;
+}
+
+export interface ServerSensorSeriesItem {
+  key: string;
+  name: string;
+  type: string;
+  unit: string;
+  status: ServerHealth;
+  upperCaution: number | null;
+  upperCritical: number | null;
+  points: ServerSensorSeriesPoint[];
+}
+
+export interface ServerSensorSeries {
+  range: string;
+  bucketMs: number;
+  from: number;
+  to: number;
+  /** شمار سنسورهای ثبت‌شده در snapshot فعلی، تفکیک‌شده بر اساس نوع */
+  available: { temperature: number; fan: number };
+  sensors: ServerSensorSeriesItem[];
+}
+
 export interface ServerMutationResult {
   server: ServerSummary;
   agentToken: string | null;

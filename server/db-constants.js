@@ -16,7 +16,7 @@ export const DB_EXISTED = (() => {
   }
 })();
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 const VALID_SYNC = new Set(['OFF', 'NORMAL', 'FULL', 'EXTRA']);
 /**

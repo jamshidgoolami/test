@@ -13,6 +13,7 @@ import {
   listServers,
   markPollFailure,
   rotateAgentToken,
+  sensorSeriesFor,
   seriesFor,
   updateServer,
 } from '../server-monitoring/store.js';
@@ -58,6 +59,13 @@ router.get('/:id/metrics', (req, res) => {
   if (!getServer(req.params.id)) return res.status(404).json({ error: 'سرور یافت نشد' });
   const range = String(req.query.range || '1h');
   return res.json(seriesFor(req.params.id, range));
+});
+
+router.get('/:id/sensor-series', (req, res) => {
+  if (!getServer(req.params.id)) return res.status(404).json({ error: 'سرور یافت نشد' });
+  const range = String(req.query.range || '1h');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(sensorSeriesFor(req.params.id, range));
 });
 
 router.get('/:id', (req, res) => {

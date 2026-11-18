@@ -455,6 +455,7 @@ const MIGRATIONS = [
   { version: 23, name: 'device-tags-reverse-index', up: applyDeviceTagReverseIndexMigration },
   { version: 24, name: 'server-monitoring', up: applyServerMonitoringMigration },
   { version: 25, name: 'server-alert-thresholds', up: applyServerAlertThresholdsMigration },
+  { version: 26, name: 'server-sensor-history', up: applyServerSensorHistoryMigration },
 ];
 
 /**
@@ -502,6 +503,29 @@ function applyServerAlertThresholdsMigration() {
     db.exec('ALTER TABLE alerts ADD COLUMN server_id INTEGER REFERENCES servers(id) ON DELETE CASCADE');
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_alerts_server_status ON alerts(server_id, status)');
+}
+
+/**
+ * گام ۲۶: تاریخچهٔ سنسورهای دما و فن سرور.
+ *
+ * مقادیر لحظه‌ای در server_sensors می‌مانند؛ برای نمودار روند، هر Poll یک نمونه
+ * در این جدول ثبت می‌شود و همان بازه‌بندی متریک سرور (۵ دقیقه در یک ساعت،
+ * ۱ ساعت در ۲۴ ساعت و…) روی آن اعمال می‌شود. کلید اصلی ترکیبی از ثبت رکورد
+ * تکراری در Poll دوباره (مثلاً تلاش مجدد همان دقیقه) جلوگیری می‌کند.
+ */
+function applyServerSensorHistoryMigration() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS server_sensor_samples (
+      server_id   INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      sensor_key  TEXT NOT NULL,
+      ts          INTEGER NOT NULL,
+      reading     REAL,
+      status      TEXT NOT NULL DEFAULT 'unknown',
+      PRIMARY KEY (server_id, sensor_key, ts)
+    );
+    CREATE INDEX IF NOT EXISTS idx_server_sensor_samples_server_ts ON server_sensor_samples(server_id, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_server_sensor_samples_ts ON server_sensor_samples(ts);
+  `);
 }
 
 function applyServerMonitoringMigration() {

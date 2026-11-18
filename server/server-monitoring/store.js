@@ -593,6 +593,28 @@ function replaceSensors(serverId, source, sensors, now) {
   }
 }
 
+/** فقط دما و فن در تاریخچه نگه داشته می‌شوند؛ ولتاژ/توان در جدول لحظه‌ای می‌مانند. */
+const SENSOR_HISTORY_TYPES = new Set(['temperature', 'fan']);
+
+/**
+ * نمونهٔ تاریخی سنسورهای دما/فن را ثبت می‌کند (حداکثر یک نمونه در دقیقه برای
+ * هر سنسور). زمان روی مرز دقیقه گرد می‌شود تا Pollهای تکراری همان دقیقه، رکورد
+ * جدید نسازند و نمودار یک ساعت با نمونه‌های یک‌دقیقه‌ای خوانا بماند.
+ */
+function recordSensorSamples(serverId, sensors, ts) {
+  const stamp = Math.floor((Number(ts) || Date.now()) / 60000) * 60000;
+  const insert = db.prepare(
+    `INSERT OR REPLACE INTO server_sensor_samples (server_id, sensor_key, ts, reading, status)
+     VALUES (?,?,?,?,?)`
+  );
+  for (const sensor of sensors.slice(0, 256)) {
+    if (!SENSOR_HISTORY_TYPES.has(sensor.type)) continue;
+    const reading = Number(sensor.reading);
+    if (sensor.reading == null || !Number.isFinite(reading)) continue;
+    insert.run(serverId, sensor.sensorKey, stamp, reading, health(sensor.status));
+  }
+}
+
 /**
  * یک snapshot را اتمیک ذخیره می‌کند. source تعیین می‌کند کدام کانال
  * (agent/redfish/demo) به‌روز شده است تا دادهٔ کانال دیگر پاک نشود.
@@ -633,6 +655,7 @@ export function ingestSnapshot(serverId, snapshot, source) {
     replaceDisks(serverId, source, snapshot.disks || [], now);
     replaceNics(serverId, source, snapshot.nics || [], now);
     replaceSensors(serverId, source, snapshot.sensors || [], now);
+    recordSensorSamples(serverId, snapshot.sensors || [], ts);
     if (source === 'agent') {
       db.prepare(
         "UPDATE servers SET last_agent_at = ?, last_agent_error = '', agent_registered_at = COALESCE(agent_registered_at, ?), updated_at = ? WHERE id = ?"
@@ -699,8 +722,69 @@ export function seriesFor(serverId, range = '1h') {
   };
 }
 
+/**
+ * تاریخچهٔ سنسورهای دما و فن یک سرور در بازهٔ خواسته‌شده.
+ *
+ * هر سنسور فقط وقتی برگردانده می‌شود که در این بازه نمونه داشته باشد؛
+ * `available` شمار سنسورهای ثبت‌شده در snapshot فعلی است تا رابط بتواند
+ * «سنسور وجود ندارد» را از «تاریخچه در این بازه خالی است» جدا کند.
+ */
+export function sensorSeriesFor(serverId, range = '1h') {
+  const spec = RANGE[range] || RANGE['1h'];
+  const from = Date.now() - spec.ms;
+  const meta = db
+    .prepare("SELECT * FROM server_sensors WHERE server_id = ? AND sensor_type IN ('temperature','fan')")
+    .all(Number(serverId));
+  const available = { temperature: 0, fan: 0 };
+  for (const row of meta) {
+    if (row.sensor_type === 'temperature') available.temperature += 1;
+    else if (row.sensor_type === 'fan') available.fan += 1;
+  }
+  const rows = db
+    .prepare(
+      `SELECT sensor_key,
+              (ts / CAST(? AS INTEGER)) * CAST(? AS INTEGER) AS t,
+              AVG(reading) AS reading
+       FROM server_sensor_samples
+       WHERE server_id = ? AND ts >= ? AND reading IS NOT NULL
+       GROUP BY sensor_key, t
+       ORDER BY t`
+    )
+    .all(spec.bucket, spec.bucket, Number(serverId), from);
+  const byKey = new Map(
+    meta.map((row) => [
+      row.sensor_key,
+      {
+        key: row.sensor_key,
+        name: row.name,
+        type: row.sensor_type,
+        unit: row.unit,
+        status: health(row.status),
+        upperCaution: row.upper_caution ?? null,
+        upperCritical: row.upper_critical ?? null,
+        points: [],
+      },
+    ])
+  );
+  for (const row of rows) {
+    const sensor = byKey.get(row.sensor_key);
+    if (sensor) sensor.points.push({ t: row.t, reading: row.reading });
+  }
+  const sensors = [...byKey.values()]
+    .filter((sensor) => sensor.points.length)
+    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name, 'en', { numeric: true }));
+  return { range, bucketMs: spec.bucket, from, to: Date.now(), available, sensors };
+}
+
 /** حذف تاریخچهٔ قدیمی؛ در poller روزی یک‌بار صدا زده می‌شود. */
 export function pruneServerMetrics(days = 30) {
   const keep = Math.max(1, Math.min(3650, Number(days) || 30));
-  return db.prepare('DELETE FROM server_metrics WHERE ts < ?').run(Date.now() - keep * 86400 * 1000).changes;
+  const from = Date.now() - keep * 86400 * 1000;
+  const removed = db.prepare('DELETE FROM server_metrics WHERE ts < ?').run(from).changes;
+  try {
+    db.prepare('DELETE FROM server_sensor_samples WHERE ts < ?').run(from);
+  } catch {
+    /* پایگاه‌داده‌ای که هنوز Migration ۲۶ را نگرفته است */
+  }
+  return removed;
 }
