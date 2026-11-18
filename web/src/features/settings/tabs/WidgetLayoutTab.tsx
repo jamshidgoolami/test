@@ -2,7 +2,7 @@ import { LayoutGrid, RotateCcw } from 'lucide-react';
 
 import { useToast } from '../../../lib/store';
 
-import { Card, CardHeader } from '../../../components/ui';
+import { Card, CardHeader, HelpTip } from '../../../components/ui';
 
 import { WidgetVisibilityRow, useWidgetLayout } from '../../../components/widgets';
 import { DETAIL_WIDGETS, DASHBOARD_WIDGETS } from '../../../lib/widgetdefs';
@@ -60,17 +60,23 @@ export function WidgetLayoutTab() {
           subtitle="ترتیب، عرض، ارتفاع دقیق و نمایش/مخفی بودن ویجت‌های داشبورد را تعیین کنید"
           icon={<LayoutGrid size={18} />}
           action={
-            <button
-              type="button"
-              className="btn-ghost btn-xs"
-              onClick={() => {
-                dash.reset();
-                push('چیدمان پیش‌فرض بازنشانی شد', 'success');
-              }}
-            >
-              <RotateCcw size={13} />
-              بازنشانی
-            </button>
+            <div className="flex items-center gap-1.5">
+              <HelpTip
+                label="راهنمای چیدمان ویجت‌ها"
+                text="تغییرات بلافاصله ذخیره می‌شوند. برای تغییر اولویت نمایش، نام یا دستگیرهٔ کنار هر ویجت را بگیرید و بالا یا پایین بکشید. در صفحه داشبورد و جزئیات تجهیز می‌توانید با دکمهٔ «شخصی‌سازی» ویجت‌ها را روی خود صفحه هم جابه‌جا، تغییر عرض، حذف یا اضافه کنید؛ برای ارتفاع دلخواه، لبهٔ پایین ویجت را به بالا یا پایین بکشید."
+              />
+              <button
+                type="button"
+                className="btn-ghost btn-xs"
+                onClick={() => {
+                  dash.reset();
+                  push('چیدمان پیش‌فرض بازنشانی شد', 'success');
+                }}
+              >
+                <RotateCcw size={13} />
+                بازنشانی
+              </button>
+            </div>
           }
         />
         <div className="mt-4 space-y-2">
@@ -94,11 +100,6 @@ export function WidgetLayoutTab() {
         </div>
       </Card>
 
-      <p className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
-        تغییرات بلافاصله ذخیره می‌شوند. برای تغییر اولویت نمایش، نام یا دستگیرهٔ کنار هر ویجت را بگیرید و بالا یا پایین
-        بکشید. در صفحه داشبورد و جزئیات تجهیز می‌توانید با دکمهٔ «شخصی‌سازی» ویجت‌ها را روی خود صفحه هم جابه‌جا، تغییر
-        عرض، حذف یا اضافه کنید؛ برای ارتفاع دلخواه، لبهٔ پایین ویجت را به بالا یا پایین بکشید.
-      </p>
     </div>
   );
 }

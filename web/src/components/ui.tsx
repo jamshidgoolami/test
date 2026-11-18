@@ -1,6 +1,6 @@
-import React, { useEffect, useId, useMemo, useRef } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2, Inbox, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { X, Loader2, Inbox, ChevronRight, ChevronLeft, AlertTriangle, HelpCircle } from 'lucide-react';
 import { STATUS_META, statusMeta } from '../lib/format';
 import type { DeviceStatus } from '../lib/types';
 
@@ -153,6 +153,104 @@ export function Badge({
   return <span className={`chip ${tones[tone]} ${className}`}>{children}</span>;
 }
 
+/* ------------------------------- HelpTip ------------------------------ */
+/**
+ * متن راهنمای هر بخش پشت یک دکمهٔ «؟» نگه داشته می‌شود و با کلیک، در کادری
+ * شناور بالای بقیهٔ لایه‌ها باز می‌شود؛ بدنهٔ صفحه از متن‌های بلند خالی می‌ماند.
+ */
+export function HelpTip({
+  text,
+  label = 'راهنما',
+  className = '',
+}: {
+  text: React.ReactNode;
+  label?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const id = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = Math.min(320, window.innerWidth - 24);
+      const left = Math.min(Math.max(12, rect.right - width), Math.max(12, window.innerWidth - width - 12));
+      const height = panelRef.current?.offsetHeight ?? 150;
+      const below = rect.bottom + 8;
+      const top = below + height <= window.innerHeight - 8 ? below : Math.max(12, rect.top - height - 8);
+      setPos({ top, left, width });
+    };
+    place();
+    const frame = window.requestAnimationFrame(place);
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`help-tip ${className}`}
+        aria-label={label}
+        title={label}
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <HelpCircle size={13} />
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              id={id}
+              role="dialog"
+              aria-label={label}
+              className="help-tip-panel"
+              style={{
+                top: pos?.top ?? 0,
+                left: pos?.left ?? 0,
+                width: pos?.width ?? 320,
+                visibility: pos ? 'visible' : 'hidden',
+              }}
+            >
+              {text}
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
 /* -------------------------------- Modal ------------------------------- */
 export function Modal({
   open,
@@ -297,17 +395,23 @@ export function Field({
     : children;
   return (
     <div className={className}>
-      {label ? (
-        <label className="label" htmlFor={inputId}>
-          {label} {required ? <span className="text-danger" aria-hidden>*</span> : null}
-          {required ? <span className="sr-only"> (الزامی)</span> : null}
-        </label>
+      {label || hint ? (
+        <span className="mb-1.5 flex items-center gap-1.5">
+          {label ? (
+            <label className="text-xs font-medium text-ink-500" htmlFor={inputId}>
+              {label} {required ? <span className="text-danger" aria-hidden>*</span> : null}
+              {required ? <span className="sr-only"> (الزامی)</span> : null}
+            </label>
+          ) : null}
+          {hint ? <HelpTip text={hint} /> : null}
+        </span>
       ) : null}
       {child}
       {error ? (
         <p id={errorId} className="mt-1 text-[12px] text-danger" role="alert">{error}</p>
-      ) : hint ? (
-        <p id={hintId} className="mt-1 text-[12px] text-ink-400">{hint}</p>
+      ) : null}
+      {hint && !error ? (
+        <span id={hintId} className="sr-only">{hint}</span>
       ) : null}
     </div>
   );
@@ -345,9 +449,9 @@ export function Toggle({
         />
       </button>
       {label ? (
-        <span className="min-w-0">
-          <span className="block text-sm text-ink-700">{label}</span>
-          {hint ? <span className="block text-[11px] text-ink-400 mt-0.5">{hint}</span> : null}
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="text-sm text-ink-700">{label}</span>
+          {hint ? <HelpTip text={hint} /> : null}
         </span>
       ) : null}
     </label>

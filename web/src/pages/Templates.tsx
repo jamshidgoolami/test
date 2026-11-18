@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Edit3, LayoutTemplate, Plus, RefreshCw, Search, Server, Trash2, Wand2 } from 'lucide-react';
+import { Check, Edit3, LayoutTemplate, Plus, RefreshCw, Search, Server, Trash2, Wand2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAsync, useApp, useToast } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { faDigits } from '../lib/format';
-import { Badge, Card, CardHeader, EmptyState, ErrorState, Field, Modal, PageLoader, Toggle } from '../components/ui';
+import { Badge, Card, CardHeader, EmptyState, ErrorState, Field, HelpTip, Modal, PageLoader, Toggle } from '../components/ui';
 import type { Device, DeviceTemplate, TemplateField } from '../lib/types';
 
 const NUMERIC_FIELDS = new Set(['ping_interval', 'timeout_ms', 'packet_count', 'retries', 'latency_threshold', 'loss_threshold']);
@@ -150,7 +150,11 @@ export default function Templates() {
             <p className="text-[13px] font-semibold text-ink-800">قالب‌های تجهیز</p>
             <p className="text-[10.5px] text-ink-400">تنظیمات مشترک را یک‌بار تعریف و روی تجهیزات هم‌نوع اعمال کنید.</p>
           </div>
-          <div className="ms-auto flex gap-2">
+          <div className="ms-auto flex items-center gap-2">
+            <HelpTip
+              label="راهنمای اعمال قالب"
+              text="اعمال قالب به‌صورت پیش‌فرض فقط فیلدهای خالی را پر می‌کند. بازنویسی تنظیمات اختصاصی فقط با فعال‌کردن صریح «بازنویسی» و تأیید دوباره انجام می‌شود."
+            />
             <button type="button" className="btn-ghost btn-xs" onClick={() => templates.refresh()} disabled={templates.refreshing}>
               <RefreshCw size={14} className={templates.refreshing ? 'animate-spin' : ''} />
               به‌روزرسانی
@@ -163,9 +167,6 @@ export default function Templates() {
             ) : null}
           </div>
         </div>
-        <p className="mt-3 rounded-soft border border-sun-200 bg-sun-50/50 p-3 text-[10.5px] leading-relaxed text-warning">
-          <AlertTriangle size={12} className="inline" /> اعمال قالب به‌صورت پیش‌فرض فقط فیلدهای خالی را پر می‌کند. بازنویسی تنظیمات اختصاصی فقط با فعال‌کردن صریح «بازنویسی» و تأیید دوباره انجام می‌شود.
-        </p>
       </Card>
 
       {list.length === 0 ? (

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Save, ServerCog, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { ServerMutationResult, ServerSummary } from '../../lib/types';
-import { Field, Modal, Toggle } from '../../components/ui';
+import { Field, HelpTip, Modal, Toggle } from '../../components/ui';
 
 type FormState = {
   name: string;
@@ -194,9 +194,7 @@ export default function ServerForm({
         <section className="space-y-3 rounded-soft border border-amber-100 bg-amber-50/40 p-3">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-600">
             <AlertTriangle size={14} className="text-warning" /> آستانه‌های هشدار و اژیر
-          </p>
-          <p className="text-[11px] leading-relaxed text-ink-500">
-            وقتی هر مقدار از آستانهٔ تعیین‌شده عبور کند، هشدار به همهٔ کلاینت‌های متصل فرستاده می‌شود و در صورت فعال بودن صدا، اژیر پخش می‌شود. با بازگشت مقدار به محدودهٔ مجاز، هشدار خودکار رفع می‌شود.
+            <HelpTip text="وقتی هر مقدار از آستانهٔ تعیین‌شده عبور کند، هشدار به همهٔ کلاینت‌های متصل فرستاده می‌شود و در صورت فعال بودن صدا، اژیر پخش می‌شود. با بازگشت مقدار به محدودهٔ مجاز، هشدار خودکار رفع می‌شود." />
           </p>
           <Toggle
             checked={form.alertEnabled}

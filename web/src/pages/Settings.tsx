@@ -7,7 +7,7 @@ import { useApp, useAsync, useToast } from '../lib/store';
 import { useUrlParams } from '../lib/params';
 import { useAuth } from '../lib/auth';
 import { faDigits, fmtDateTime, fmtNumber, fmtRelative } from '../lib/format';
-import { Badge, Card, CardHeader, EmptyState, Field, PageLoader, Toggle } from '../components/ui';
+import { Badge, Card, CardHeader, EmptyState, Field, HelpTip, PageLoader, Toggle } from '../components/ui';
 
 import { ThemeSegmented } from '../components/ThemeToggle';
 
@@ -280,14 +280,15 @@ export default function Settings() {
                 <InfoCell label="رد شده" value={fmtNumber(engineData?.skipped ?? 0)} />
                 <InfoCell label="خطاها" value={fmtNumber(engineData?.errors ?? 0)} />
               </div>
-              <div className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11px] text-ink-500">
-                <p className="flex items-center justify-between">
-                  <span>دسترسی ICMP</span>
-                  <Badge tone={engineData?.icmpAvailable ? 'emerald' : 'sun'}>{engineData?.icmpAvailable ? 'فعال' : 'در دسترس نیست'}</Badge>
-                </p>
-                <p className="mt-2 leading-relaxed">
-                  در صورت در دسترس نبودن ICMP (نبود مجوز RAW socket)، بررسی‌ها روی TCP انجام می‌شود. برای ICMP واقعی، برنامه را با دسترسی مناسب اجرا کنید.
-                </p>
+              <div className="flex items-center justify-between gap-2 rounded-soft border border-ink-200 bg-surface/70 px-3 py-2 text-[11px] text-ink-500">
+                <span className="flex items-center gap-1.5">
+                  دسترسی ICMP
+                  <HelpTip
+                    label="راهنمای دسترسی ICMP"
+                    text="در صورت در دسترس نبودن ICMP (نبود مجوز RAW socket)، بررسی‌ها روی TCP انجام می‌شود. برای ICMP واقعی، برنامه را با دسترسی مناسب اجرا کنید."
+                  />
+                </span>
+                <Badge tone={engineData?.icmpAvailable ? 'emerald' : 'sun'}>{engineData?.icmpAvailable ? 'فعال' : 'در دسترس نیست'}</Badge>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn-soft btn-xs" onClick={async () => { await api.engineControl('restart'); push('موتور بازراه‌اندازی شد', 'success'); refreshEngine(); }}>
@@ -315,7 +316,17 @@ export default function Settings() {
       {tab === 'engine' ? (
         <div className="grid gap-5 xl:grid-cols-3">
           <Card className="xl:col-span-2">
-            <CardHeader title="تنظیمات موتور مانیتورینگ" subtitle="کنترل بازه‌ها، آستانه‌ها و تشخیص وضعیت" icon={<Activity size={18} />} />
+            <CardHeader
+              title="تنظیمات موتور مانیتورینگ"
+              subtitle="کنترل بازه‌ها، آستانه‌ها و تشخیص وضعیت"
+              icon={<Activity size={18} />}
+              action={
+                <HelpTip
+                  label="راهنمای بازهٔ بررسی"
+                  text="بازه بررسی را می‌توان برای هر گروه یا هر تجهیز به‌صورت مستقل تعیین کرد (از صفحه ویرایش تجهیز یا ویرایش گروهی). مقدار تعریف‌شده در تجهیز، بر مقدار عمومی اولویت دارد."
+                />
+              }
+            />
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="حالت بررسی" hint="auto: ICMP و در صورت نبود مجوز TCP؛ simulate: داده نمونه">
                 <select className="field" value={local.engine_mode} onChange={(e) => set('engine_mode', e.target.value as AppSettings['engine_mode'])}>
@@ -374,9 +385,6 @@ export default function Settings() {
                 </Field>
               </div>
             </div>
-            <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
-              بازه بررسی را می‌توان برای هر گروه یا هر تجهیز به‌صورت مستقل تعیین کرد (از صفحه ویرایش تجهیز یا ویرایش گروهی). مقدار تعریف‌شده در تجهیز، بر مقدار عمومی اولویت دارد.
-            </p>
           </Card>
 
           <Card>
@@ -401,11 +409,9 @@ export default function Settings() {
           <CardHeader title="نمایش، نقشه و تجربه کاربری" subtitle="تنظیمات ظاهری و پیش‌فرض‌های نقشه" icon={<Palette size={18} />} />
           {/* تم فقط روی همین مرورگر ذخیره می‌شود (localStorage) و به سرور نمی‌رود. */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-soft border border-ink-200 bg-ink-50/60 px-3 py-2.5">
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
               <p className="text-[12.5px] font-medium text-ink-700">تم رابط کاربری</p>
-              <p className="mt-0.5 text-[11px] text-ink-400">
-                تم تاریک برای اتاق مانیتورینگ و استفادهٔ شبانه؛ گزینهٔ هم‌سیستم ترجیح سیستم‌عامل را دنبال می‌کند.
-              </p>
+              <HelpTip text="تم تاریک برای اتاق مانیتورینگ و استفادهٔ شبانه؛ گزینهٔ هم‌سیستم ترجیح سیستم‌عامل را دنبال می‌کند." />
             </div>
             <ThemeSegmented />
           </div>
@@ -484,7 +490,15 @@ export default function Settings() {
               title="وضعیت Retention Engine"
               subtitle={`آخرین اجرا: ${retentionData?.lastRun ? fmtDateTime(retentionData.lastRun.startedAt, local.timezone_offset_minutes) : '—'}`}
               icon={<Activity size={18} />}
-              action={<button type="button" className="btn-ghost btn-xs" onClick={refreshRetention}><RefreshCw size={13} /></button>}
+              action={
+                <div className="flex items-center gap-1.5">
+                  <HelpTip
+                    label="راهنمای Retention"
+                    text="هر Batch در تراکنش مستقل اجرا می‌شود؛ پیش از حذف نمونه‌ها، آمار روزانه تثبیت می‌شود و داده‌های دارای قطعی باز یا هشدار حل‌نشده حفظ می‌شوند."
+                  />
+                  <button type="button" className="btn-ghost btn-xs" onClick={refreshRetention}><RefreshCw size={13} /></button>
+                </div>
+              }
             />
             <div className="mt-4 space-y-3">
               <div className="flex items-center justify-between rounded-soft bg-ink-50 px-3 py-2.5">
@@ -554,14 +568,25 @@ export default function Settings() {
                   توقف
                 </button>
               </div>
-              <div className="rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11px] leading-relaxed text-ink-500">
-                هر Batch در تراکنش مستقل اجرا می‌شود؛ پیش از حذف نمونه‌ها، آمار روزانه تثبیت می‌شود و داده‌های دارای قطعی باز یا هشدار حل‌نشده حفظ می‌شوند.
-              </div>
             </div>
           </Card>
 
           <Card>
-            <CardHeader title="پشتیبان‌گیری" subtitle="نسخه‌های معتبر با Manifest و Checksum" icon={<Server size={18} />} />
+            <CardHeader
+              title="پشتیبان‌گیری"
+              subtitle="نسخه‌های معتبر با Manifest و Checksum"
+              icon={<Server size={18} />}
+              action={
+                <HelpTip
+                  label="راهنمای مسیر داده‌ها"
+                  text={
+                    <>
+                      مسیر داده‌ها: <span className="num" dir="ltr">data/netwatch.db</span> — هر مجموعهٔ پشتیبان شامل Manifest با زمان، نسخهٔ برنامه، نسخهٔ Schema، اندازه و SHA-256 است. پیش از بازیابی، Checksum و Integrity بررسی و از نسخهٔ فعلی یک نسخهٔ ایمنی ساخته می‌شود.
+                    </>
+                  }
+                />
+              }
+            />
             <div className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-2 text-[11.5px]">
                 <InfoCell label="تعداد نسخه‌ها" value={fmtNumber(backupData?.status?.count ?? 0)} />
@@ -602,9 +627,6 @@ export default function Settings() {
                 <Database size={13} />
                 ساخت پشتیبان اکنون
               </button>
-              <p className="text-[11px] leading-relaxed text-ink-400">
-                مسیر داده‌ها: <span className="num" dir="ltr">data/netwatch.db</span> — هر مجموعهٔ پشتیبان شامل Manifest با زمان، نسخهٔ برنامه، نسخهٔ Schema، اندازه و SHA-256 است. پیش از بازیابی، Checksum و Integrity بررسی و از نسخهٔ فعلی یک نسخهٔ ایمنی ساخته می‌شود.
-              </p>
             </div>
           </Card>
 

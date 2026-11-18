@@ -17,7 +17,7 @@ import { useApp, useAsync, useToast } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { useUrlParams } from '../lib/params';
 import { faDigits, fmtDateTime, fmtDuration, fmtNumber } from '../lib/format';
-import { Badge, Card, CardHeader, EmptyState, ErrorState, PageLoader, Pagination, StatCard, Tabs } from '../components/ui';
+import { Badge, Card, CardHeader, EmptyState, ErrorState, HelpTip, PageLoader, Pagination, StatCard, Tabs } from '../components/ui';
 import { TopBarList } from '../components/charts';
 import MaintenanceForm from '../features/MaintenanceForm';
 import type { MaintenanceRecord } from '../lib/types';
@@ -163,7 +163,26 @@ export default function Maintenance() {
 
       <div className="grid gap-5 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="سوابق تعمیرات و خرابی‌ها" subtitle="علت خرابی، اقدام انجام‌شده و مدت قطعی هر رویداد" icon={<Wrench size={18} />} />
+          <CardHeader
+            title="سوابق تعمیرات و خرابی‌ها"
+            subtitle="علت خرابی، اقدام انجام‌شده و مدت قطعی هر رویداد"
+            icon={<Wrench size={18} />}
+            action={
+              <HelpTip
+                label="راهنمای ثبت سوابق"
+                text={
+                  <>
+                    <strong className="block text-ink-700">علت خرابی</strong>
+                    مشکلات زیرساخت فیبر نوری، مشکلات شبکه، قطعی برق، هنگ کردن سوئیچ، سوختن یا خرابی تجهیز و سایر دلایل قابل تعریف توسط کاربر.
+                    <strong className="mt-2 block text-ink-700">اقدام انجام‌شده</strong>
+                    تعویض تجهیز، تعمیر تجهیز، تعویض قطعه، اصلاح زیرساخت، رفع مشکل شبکه و سایر اقدامات قابل ثبت.
+                    <strong className="mt-2 block text-ink-700">اطلاعات تکمیلی</strong>
+                    تاریخ و زمان شروع و پایان، مدت قطعی، تکنسین مسئول، هزینه و توضیحات تکمیلی برای هر سابقه.
+                  </>
+                }
+              />
+            }
+          />
           <div className="mt-4">
             {loading && !data ? (
               <PageLoader label="در حال دریافت سوابق…" />
@@ -352,28 +371,11 @@ export default function Maintenance() {
         </div>
       </Card>
 
-      <Card>
-        <CardHeader title="راهنمای ثبت صحیح سوابق" subtitle="الزامات سند برای سوابق نگهداری" icon={<Wrench size={18} />} />
-        <div className="mt-3 grid gap-3 md:grid-cols-3 text-[11.5px] leading-relaxed text-ink-600">
-          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
-            <p className="mb-1 font-semibold text-ink-700">علت خرابی</p>
-            <p>مشکلات زیرساخت فیبر نوری، مشکلات شبکه، قطعی برق، هنگ کردن سوئیچ، سوختن یا خرابی تجهیز و سایر دلایل قابل تعریف توسط کاربر.</p>
-          </div>
-          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
-            <p className="mb-1 font-semibold text-ink-700">اقدام انجام‌شده</p>
-            <p>تعویض تجهیز، تعمیر تجهیز، تعویض قطعه، اصلاح زیرساخت، رفع مشکل شبکه و سایر اقدامات قابل ثبت.</p>
-          </div>
-          <div className="rounded-soft border border-ink-200 bg-surface/70 p-3">
-            <p className="mb-1 font-semibold text-ink-700">اطلاعات تکمیلی</p>
-            <p>تاریخ و زمان شروع و پایان، مدت قطعی، تکنسین مسئول، هزینه و توضیحات تکمیلی برای هر سابقه.</p>
-          </div>
-        </div>
-        <p className="mt-3 text-[11px] text-ink-400">
+      <p className="px-1 text-[11px] text-ink-400">
           در این بخش فقط سوابقی نمایش داده می‌شود که کاربر ثبت کرده است؛ قطعی‌های شناسایی‌شده توسط موتور به‌صورت خودکار سابقه تعمیرات نمی‌سازند.
           {ruleMeta ? ` · تعداد قوانین هشدار فعال: ${faDigits((ruleMeta.items ?? []).filter((r) => r.enabled).length)}` : ''}
           {meta ? ` · تعداد گروه‌های تجهیزات: ${faDigits(meta.groups.length)}` : ''}
         </p>
-      </Card>
 
       <MaintenanceForm
         open={formOpen}

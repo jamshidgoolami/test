@@ -4,7 +4,7 @@ import { api } from '../../../lib/api';
 import { useApp, useAsync, useToast } from '../../../lib/store';
 import { useAuth } from '../../../lib/auth';
 import { faDigits } from '../../../lib/format';
-import { Card, CardHeader, EmptyState, Field, Modal } from '../../../components/ui';
+import { Card, CardHeader, EmptyState, Field, HelpTip, Modal } from '../../../components/ui';
 import { ColorField } from '../../../components/ColorField';
 
 import type { DeviceType } from '../../../lib/types';
@@ -44,19 +44,22 @@ export function DeviceTypesTab() {
         subtitle="فهرست نوع‌هایی که در فیلد «نوع تجهیز» انتخاب می‌شوند؛ انواع ناشناخته در ورود گروهی هم خودکار افزوده می‌شوند"
         icon={<Server size={18} />}
         action={
-          canWrite ? (
-            <button
-              type="button"
-              className="btn-soft btn-xs"
-              onClick={() => {
-                setEditing({ id: 0, name: '', color: '#2563eb' });
-                setOpen(true);
-              }}
-            >
-              <Plus size={13} />
-              نوع جدید
-            </button>
-          ) : null
+          <div className="flex items-center gap-1.5">
+            <HelpTip text="تغییر نام یک نوع، نوع همهٔ تجهیزات همان نوع را هم به‌روزرسانی می‌کند. حذف نوعی که تجهیز دارد تا زمانی که نوع آن تجهیزات تغییر نکند ممکن نیست." />
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn-soft btn-xs"
+                onClick={() => {
+                  setEditing({ id: 0, name: '', color: '#2563eb' });
+                  setOpen(true);
+                }}
+              >
+                <Plus size={13} />
+                نوع جدید
+              </button>
+            ) : null}
+          </div>
         }
       />
       <div className="mt-4 flex flex-wrap gap-2">
@@ -102,10 +105,6 @@ export function DeviceTypesTab() {
         ))}
         {(data?.items ?? []).length === 0 ? <EmptyState title="نوع تجهیزی تعریف نشده است" /> : null}
       </div>
-      <p className="mt-4 rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
-        تغییر نام یک نوع، نوع همهٔ تجهیزات همان نوع را هم به‌روزرسانی می‌کند. حذف نوعی که تجهیز دارد تا زمانی که نوع آن
-        تجهیزات تغییر نکند ممکن نیست.
-      </p>
 
       <Modal
         open={open}

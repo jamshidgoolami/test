@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useApp, useToast } from '../lib/store';
 import { DEVICE_TYPES, PRIORITY_META, faDigits, fmtIsoDate } from '../lib/format';
 import JalaliDateInput from '../components/JalaliDateInput';
-import { Field, Modal, Tabs, Toggle } from '../components/ui';
+import { Field, HelpTip, Modal, Tabs, Toggle } from '../components/ui';
 import type { Device, Priority } from '../lib/types';
 
 interface FormState {
@@ -375,11 +375,12 @@ export default function DeviceForm({
 
       {tab === 'access' ? (
         <div className="space-y-4">
-          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
-            نام کاربری و رمز عبور با AES-256-GCM رمزنگاری می‌شوند و در فهرست تجهیزات، خروجی فایل یا لاگ نمایش داده نمی‌شوند.
-            همین اطلاعات هنگام ذخیره، در «خزانهٔ رمز عبور» هم ثبت می‌شود تا در یک جا قابل مدیریت باشد.
-            رمز فعلی برای ویرایش خوانده نمی‌شود؛ برای تغییر، رمز تازه را وارد کنید و برای حذف، گزینهٔ حذف رمز را بزنید.
-          </p>
+          <div className="flex items-center justify-end">
+            <HelpTip
+              label="راهنمای رمزنگاری دسترسی"
+              text="نام کاربری و رمز عبور با AES-256-GCM رمزنگاری می‌شوند و در فهرست تجهیزات، خروجی فایل یا لاگ نمایش داده نمی‌شوند. همین اطلاعات هنگام ذخیره، در «خزانهٔ رمز عبور» هم ثبت می‌شود تا در یک جا قابل مدیریت باشد. رمز فعلی برای ویرایش خوانده نمی‌شود؛ برای تغییر، رمز تازه را وارد کنید و برای حذف، گزینهٔ حذف رمز را بزنید."
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="نام کاربری" hint="در پایگاه‌داده رمزنگاری‌شده ذخیره می‌شود">
               <input
@@ -428,13 +429,20 @@ export default function DeviceForm({
 
       {tab === 'monitoring' ? (
         <div className="space-y-4">
-          <p className="rounded-soft border border-brand-100 bg-brand-50/60 p-3 text-[11.5px] leading-relaxed text-accent">
-            در صورت خالی گذاشتن هر فیلد، مقدار عمومی تنظیمات برنامه استفاده می‌شود. مقادیر فعلی عمومی: بازه{' '}
-            <span className="num font-semibold">{settings?.ping_interval ?? 30}</span> ثانیه، زمان انتظار{' '}
-            <span className="num font-semibold">{settings?.timeout_ms ?? 1200}</span> میلی‌ثانیه، Packet{' '}
-            <span className="num font-semibold">{settings?.packet_count ?? 3}</span>، تلاش مجدد{' '}
-            <span className="num font-semibold">{settings?.retries ?? 1}</span>.
-          </p>
+          <div className="flex items-center justify-end">
+            <HelpTip
+              label="راهنمای مقادیر عمومی"
+              text={
+                <>
+                  در صورت خالی گذاشتن هر فیلد، مقدار عمومی تنظیمات برنامه استفاده می‌شود. مقادیر فعلی عمومی: بازه{' '}
+                  <span className="num font-semibold">{settings?.ping_interval ?? 30}</span> ثانیه، زمان انتظار{' '}
+                  <span className="num font-semibold">{settings?.timeout_ms ?? 1200}</span> میلی‌ثانیه، Packet{' '}
+                  <span className="num font-semibold">{settings?.packet_count ?? 3}</span>، تلاش مجدد{' '}
+                  <span className="num font-semibold">{settings?.retries ?? 1}</span>.
+                </>
+              }
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="بازه ارسال Ping (ثانیه)" hint="اولویت در موتور مانیتورینگ">
               <input type="number" min={5} dir="ltr" className="field num" value={form.ping_interval} onChange={(e) => set('ping_interval', e.target.value)} />

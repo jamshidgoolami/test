@@ -436,6 +436,20 @@
   .section-title {
     @apply text-base font-semibold text-ink-800 flex items-center gap-2;
   }
+
+  /* دکمهٔ «؟» و کادر متن راهنما: متن‌های بلند راهنما فقط با کلیک باز می‌شوند */
+  .help-tip {
+    @apply inline-grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border border-ink-200 bg-surface/80 text-ink-400 transition-colors;
+    vertical-align: middle;
+  }
+  .help-tip:hover,
+  .help-tip[aria-expanded='true'] {
+    @apply border-brand-300 bg-brand-50 text-accent;
+  }
+  .help-tip-panel {
+    @apply fixed max-h-[60vh] overflow-y-auto rounded-soft border border-ink-200 bg-surface p-3 text-[11.5px] leading-relaxed text-ink-600 shadow-pop;
+    z-index: 1400;
+  }
 }
 
 @layer utilities {

@@ -18,7 +18,7 @@ import { api } from '../lib/api';
 import { useAsync, useToast } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { faDigits, fmtRelative } from '../lib/format';
-import { Badge, Card, EmptyState, ErrorState, PageLoader, Progress, StatCard } from '../components/ui';
+import { Badge, Card, EmptyState, ErrorState, HelpTip, PageLoader, Progress, StatCard } from '../components/ui';
 import ServerForm from '../features/servers/ServerForm';
 import AgentTokenDialog from '../features/servers/AgentTokenDialog';
 import { HEALTH_META, HealthBadge, formatBitrate, formatPct, formatTemp } from '../features/servers/shared';
@@ -122,10 +122,8 @@ export default function Servers() {
         <div>
           <h2 className="flex items-center gap-2 text-lg font-bold text-ink-800">
             <ServerCog size={21} className="text-accent" /> پایش سرورها
+            <HelpTip text="Agent ویندوز برای CPU، رم، هارد و شبکه — Redfish برای دما، فن، توان و سلامت سخت‌افزار Supermicro" />
           </h2>
-          <p className="mt-0.5 text-xs text-ink-500">
-            Agent ویندوز برای CPU، رم، هارد و شبکه — Redfish برای دما، فن، توان و سلامت سخت‌افزار Supermicro
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-ghost btn-xs" onClick={() => void refresh()} disabled={refreshing}>

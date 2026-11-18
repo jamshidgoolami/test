@@ -4,7 +4,7 @@ import { api } from '../../../lib/api';
 import { useApp, useAsync, useToast } from '../../../lib/store';
 
 import { faDigits } from '../../../lib/format';
-import { Badge, Card, CardHeader, EmptyState } from '../../../components/ui';
+import { Badge, Card, CardHeader, EmptyState, HelpTip } from '../../../components/ui';
 
 export function LayersTab() {
   const { push } = useToast();
@@ -51,19 +51,28 @@ export function LayersTab() {
         subtitle="نقشه‌های آفلاین MBTiles — بارگذاری، انتخاب نقشهٔ فعال و حذف"
         icon={<MapIcon size={18} />}
         action={
-          <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
-            <RefreshCw size={13} />
-            به‌روزرسانی
-          </button>
+          <div className="flex items-center gap-1.5">
+            <HelpTip
+              label="راهنمای مسیر کاشی‌ها"
+              text={
+                <>
+                  فایل‌های <span className="num" dir="ltr">.mbtiles</span> در پوشهٔ <span className="num" dir="ltr">data/mbtiles</span> نگهداری و کاشی‌ها از طریق مسیر <span className="num" dir="ltr">/api/tiles/&lt;layerId&gt;/z/x/y</span> سرو می‌شوند؛ بدون نیاز به هیچ سرویس نقشه آنلاین.
+                </>
+              }
+            />
+            <button type="button" className="btn-ghost btn-xs" onClick={refresh}>
+              <RefreshCw size={13} />
+              به‌روزرسانی
+            </button>
+          </div>
         }
       />
 
       <div className="mt-4 rounded-soft border border-brand-100 bg-brand-50/50 p-4">
-        <p className="text-[12.5px] font-medium text-accent">بارگذاری نقشهٔ جدید (.mbtiles)</p>
-        <p className="mt-1 text-[11px] text-accent/80">
-          کاشی‌های تصویری (PNG/JPEG) با Leaflet و کاشی‌های برداری (PBF/MVT) با MapLibre نمایش داده می‌شوند؛ نیازی به
-          اینترنت نیست.
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-[12.5px] font-medium text-accent">بارگذاری نقشهٔ جدید (.mbtiles)</p>
+          <HelpTip text="کاشی‌های تصویری (PNG/JPEG) با Leaflet و کاشی‌های برداری (PBF/MVT) با MapLibre نمایش داده می‌شوند؛ نیازی به اینترنت نیست." />
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             className="field !w-auto flex-1"
@@ -164,21 +173,6 @@ export function LayersTab() {
         })}
       </div>
 
-      <p className="mt-4 rounded-soft border border-ink-200 bg-surface/70 p-3 text-[11.5px] leading-relaxed text-ink-500">
-        فایل‌های{' '}
-        <span className="num" dir="ltr">
-          .mbtiles
-        </span>{' '}
-        در پوشه{' '}
-        <span className="num" dir="ltr">
-          data/mbtiles
-        </span>{' '}
-        نگهداری و کاشی‌ها از طریق مسیر{' '}
-        <span className="num" dir="ltr">
-          /api/tiles/&lt;layerId&gt;/z/x/y
-        </span>{' '}
-        سرو می‌شوند؛ بدون نیاز به هیچ سرویس نقشه آنلاین.
-      </p>
     </Card>
   );
 }
