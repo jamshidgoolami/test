@@ -4,6 +4,7 @@ import { api } from '../../../lib/api';
 import { useApp, useAsync, useToast } from '../../../lib/store';
 
 import { faDigits } from '../../../lib/format';
+import { formatBytes } from '../../servers/shared';
 import { Badge, Card, CardHeader, EmptyState, HelpTip } from '../../../components/ui';
 
 export function LayersTab() {
@@ -12,6 +13,8 @@ export function LayersTab() {
   const { data, refresh } = useAsync((signal) => api.layers(signal), []);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  // پیشرفت انتقال فایل؛ برای نقشه‌های چند گیگابایتی تنها نشانهٔ زنده‌بودن کار است.
+  const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // فقط نقشه‌های بارگذاری‌شدهٔ کاربر (MBTiles) در این بخش مدیریت می‌شوند؛
   // لایه‌های داخلی و لایه‌های خالی دسته‌بندی در این فهرست نمی‌آیند.
@@ -20,8 +23,11 @@ export function LayersTab() {
   const upload = async (file: File) => {
     if (busy) return;
     setBusy(true);
+    setProgress({ loaded: 0, total: file.size });
     try {
-      const res = await api.uploadLayer(file, name || undefined);
+      const res = await api.uploadLayer(file, name || undefined, {
+        onProgress: (loaded, total) => setProgress({ loaded, total: total || file.size }),
+      });
       push(`نقشهٔ «${res.layer.name}» با ${faDigits(res.info.tileCount ?? 0)} کاشی بارگذاری شد`, 'success');
       setName('');
       refresh();
@@ -29,9 +35,12 @@ export function LayersTab() {
     } catch (e) {
       push((e as Error).message, 'error');
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   };
+
+  const percent = progress && progress.total > 0 ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 0;
 
   /** انتخاب نقشهٔ پایه: در هر لحظه فقط یک نقشه فعال می‌شود. */
   const selectMap = async (id: number) => {
@@ -93,9 +102,19 @@ export function LayersTab() {
           />
           <button type="button" className="btn-primary btn-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
             <Upload size={14} />
-            {busy ? 'در حال بارگذاری…' : 'انتخاب فایل MBTiles'}
+            {busy ? (progress && progress.total > 0 ? `در حال بارگذاری ${faDigits(percent)}٪` : 'در حال بارگذاری…') : 'انتخاب فایل MBTiles'}
           </button>
         </div>
+        {progress ? (
+          <div className="mt-3" role="status" aria-live="polite">
+            <div className="h-1.5 overflow-hidden rounded-pill bg-brand-100">
+              <div className="h-full rounded-pill bg-brand-500 transition-[width] duration-200" style={{ width: `${percent}%` }} />
+            </div>
+            <p className="num mt-1 text-[10.5px] text-ink-400">
+              {formatBytes(progress.loaded)} از {formatBytes(progress.total)}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-3 space-y-2">

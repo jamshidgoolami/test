@@ -64,6 +64,19 @@ export const DEFAULT_TIMEOUT_MS = 30000;
 /** بارگذاری/ورود فایل و تولید خروجی حجیم مهلت بیشتری دارد، اما باز هم محدود است. */
 export const UPLOAD_TIMEOUT_MS = 120000;
 /**
+ * بارگذاری MBTiles سقف زمانی کل ندارد (فایل چند گیگابایتی روی شبکهٔ کند ساعت‌ها
+ * طول می‌کشد)؛ فقط اگر جریان داده این مدت بی‌حرکت بماند، انتقال لغو می‌شود.
+ */
+export const UPLOAD_STALL_TIMEOUT_MS = 120000;
+/** مهلت پردازش سمت سرور پس از پایان انتقال (باز کردن فایل و شمارش کاشی). */
+export const UPLOAD_PROCESS_TIMEOUT_MS = 300000;
+
+export interface UploadOptions {
+  /** پیشرفت انتقال؛ total اگر مرورگر حجم را نداند صفر است. */
+  onProgress?: (loaded: number, total: number) => void;
+  signal?: AbortSignal;
+}
+/**
  * عملیات سنگین و قابل‌پیشگیری (گزارش، پشتیبان، ذخیرهٔ دیاگرام بزرگ) که
  * ممکن است روی پایگاه‌دادهٔ بزرگ ده‌ها ثانیه طول بکشند. مهلت ۱۵ ثانیه‌ای
  * پیشین باعث می‌شد کلاینت درخواست را لغو کند و کاربر دوباره عملیات را شروع
@@ -151,10 +164,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     externalSignal.addEventListener('abort', onExternalAbort, { once: true });
   }
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, Math.max(1, limit));
+  // مهلت ۰ یعنی «بدون سقف کل»؛ فقط برای انتقال‌هایی به کار می‌رود که خودشان
+  // نگهبان بی‌فعالیتی دارند.
+  const timer =
+    limit > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, Math.max(1, limit))
+      : null;
 
   try {
     const res = await fetch(`${BASE}${path}`, { ...init, method, headers, signal: controller.signal });
@@ -195,9 +213,101 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     throw new ApiError('ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.', 0, { code: 'NETWORK' });
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     externalSignal?.removeEventListener('abort', onExternalAbort);
   }
+}
+
+/**
+ * بارگذاری فایل با نمایش پیشرفت.
+ *
+ * از XMLHttpRequest استفاده می‌شود چون fetch پیشرفت آپلود را گزارش نمی‌کند.
+ * مهلت کل ندارد: نقشهٔ MBTiles چهل گیگابایتی روی شبکهٔ کند ساعت‌ها طول می‌کشد و
+ * همان مهلت ۱۲۰ ثانیه‌ای، بارگذاری را وسط کار قطع می‌کرد. در عوض دو نگهبان
+ * دارد: بی‌فعالیتی انتقال و مهلت پردازش سرور. خطاها همان ApiError بقیهٔ
+ * درخواست‌ها هستند تا صفحه‌ها یک نوع خطا ببینند.
+ */
+function uploadFile<T>(path: string, body: FormData, { onProgress, signal }: UploadOptions = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abortError = () => reject(new ApiError('درخواست لغو شد.', 0, { code: 'ABORTED', aborted: true }));
+    if (signal?.aborted) {
+      abortError();
+      return;
+    }
+    const xhr = new XMLHttpRequest();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
+    let phase: 'upload' | 'process' = 'upload';
+    const stop = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const arm = (ms: number) => {
+      stop();
+      timer = setTimeout(() => {
+        timedOut = true;
+        xhr.abort();
+      }, ms);
+    };
+    const onAbort = () => xhr.abort();
+    const detach = () => {
+      stop();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const fail = (message: string, code: ApiError['code'], status = 0, details: Record<string, unknown> | null = null) =>
+      reject(new ApiError(message, status, { code, details }));
+
+    xhr.open('POST', `${BASE}${path}`);
+    xhr.setRequestHeader('X-CSRF-Token', csrfToken());
+    // تا وقتی بایت تازه می‌رسد انتقال ادامه دارد؛ پس از پایان انتقال، سرور فایل
+    // را باز و اعتبارسنجی می‌کند و همان‌جا مهلت پردازش اعمال می‌شود.
+    xhr.upload.onprogress = (event) => {
+      arm(UPLOAD_STALL_TIMEOUT_MS);
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.upload.onload = () => {
+      phase = 'process';
+      arm(UPLOAD_PROCESS_TIMEOUT_MS);
+    };
+    xhr.onload = () => {
+      detach();
+      if (xhr.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('nw:unauthorized'));
+      const data = parseJson(xhr.responseText || '');
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (data === undefined) {
+          fail('پاسخ سرور JSON معتبر نبود. دوباره تلاش کنید.', 'INVALID_RESPONSE', xhr.status);
+          return;
+        }
+        resolve(data as T);
+        return;
+      }
+      const message =
+        data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string'
+          ? (data as { error: string }).error
+          : `خطای ${xhr.status}`;
+      fail(message, 'HTTP', xhr.status, data && typeof data === 'object' ? (data as Record<string, unknown>) : null);
+    };
+    xhr.onerror = () => {
+      detach();
+      fail('ارتباط با سرور برقرار نشد. اتصال شبکه را بررسی کنید.', 'NETWORK');
+    };
+    xhr.onabort = () => {
+      detach();
+      if (timedOut) {
+        fail(
+          phase === 'upload'
+            ? `انتقال فایل بیش از ${Math.round(UPLOAD_STALL_TIMEOUT_MS / 1000)} ثانیه بی‌حرکت ماند. اتصال شبکه را بررسی کنید.`
+            : 'پردازش فایل در سرور بیش از حد طول کشید. دوباره تلاش کنید.',
+          'TIMEOUT'
+        );
+        return;
+      }
+      abortError();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    arm(UPLOAD_STALL_TIMEOUT_MS);
+    xhr.send(body);
+  });
 }
 
 export function qs(params: Record<string, string | number | boolean | undefined | null> = {}): string {
@@ -486,11 +596,11 @@ export const api = {
   createLayer: (body: Record<string, unknown>) => request<MapLayer>('/layers', { method: 'POST', body: JSON.stringify(body) }),
   updateLayer: (id: number, body: Record<string, unknown>) => request<{ updated: number }>(`/layers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteLayer: (id: number, removeFile = false) => request<{ deleted: number }>(`/layers/${id}${removeFile ? '?removeFile=1' : ''}`, { method: 'DELETE' }),
-  uploadLayer: (file: File, name?: string) => {
+  uploadLayer: (file: File, name?: string, options: UploadOptions = {}) => {
     const fd = new FormData();
     fd.append('file', file);
     if (name) fd.append('name', name);
-    return request<{ layer: MapLayer; info: { tileCount: number | null; format: string } }>('/layers/upload', { method: 'POST', body: fd });
+    return uploadFile<{ layer: MapLayer; info: { tileCount: number | null; format: string } }>('/layers/upload', fd, options);
   },
   layerInfo: (id: number) => request<{ layer: MapLayer; info: unknown }>(`/layers/${id}/info`),
 

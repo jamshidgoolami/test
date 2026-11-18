@@ -229,7 +229,10 @@ export function createConfig(env = process.env, { dev = false } = {}) {
   // بالا می‌آید و تنها حساب مدیر ساخته می‌شود.
   const seedDemo = bool(env.NETWATCH_SEED_DEMO, true);
 
-  // ---- محدودیت‌های HTTP (ضد Slowloris و درخواست‌های طولانی) ----
+  // ---- محدودیت‌های HTTP (ضد Slowloris و بدنهٔ بی‌حرکت) ----
+  // این مقدار بی‌فعالیتیِ بدنهٔ درخواست را محدود می‌کند، نه کل زمان انتقال؛
+  // آپلود چند گیگابایتی MBTiles تا وقتی داده جریان دارد ادامه می‌یابد
+  // (منطق در app.js: bodyIdleGuard).
   const requestTimeoutMs = intSetting(env, 'NETWATCH_REQUEST_TIMEOUT_MS', 120000, { min: 5000, max: 600000, errors });
   const headersTimeoutMs = intSetting(env, 'NETWATCH_HEADERS_TIMEOUT_MS', 30000, { min: 1000, max: 120000, errors });
   const keepAliveTimeoutMs = intSetting(env, 'NETWATCH_KEEPALIVE_TIMEOUT_MS', 5000, { min: 500, max: 120000, errors });

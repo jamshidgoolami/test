@@ -76,7 +76,11 @@ export function createServerRuntime({ app, tlsState = { enabled: false, files: n
   // محدودیت‌های HTTP: درخواست نیمه‌کاره/کند (Slowloris) و هدرهای حجیم نمی‌توانند
   // اتصال را بی‌پایان باز نگه دارند. keep-alive کوتاه است تا سوکت‌های idle سریع
   // آزاد شوند و خاموشی سرویس معطل نماند.
-  server.requestTimeout = config.http.requestTimeoutMs;
+  // سقف «کل درخواست» در Node برای آپلود چند گیگابایتی MBTiles نامناسب است: حتی
+  // وقتی داده جریان داشت، در دقیقهٔ دوم با ۴۰۸ قطع می‌شد. به‌جای آن، بی‌فعالیتی
+  // بدنه در app.js (bodyIdleGuard) سنجیده می‌شود؛ هدرها همان headersTimeout را
+  // دارند و keep-alive هم دست‌نخورده مانده است.
+  server.requestTimeout = 0;
   server.headersTimeout = config.http.headersTimeoutMs;
   server.keepAliveTimeout = config.http.keepAliveTimeoutMs;
   server.maxHeadersCount = config.http.maxHeadersCount;

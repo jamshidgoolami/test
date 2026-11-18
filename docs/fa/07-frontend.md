@@ -89,7 +89,7 @@ flowchart LR
 | --- | --- |
 | پیشوند | `/api` (نسبی؛ همان Origin) |
 | مهلت پیش‌فرض | `DEFAULT_TIMEOUT_MS = 15000` |
-| مهلت آپلود/خروجی | `UPLOAD_TIMEOUT_MS = 120000` |
+| مهلت آپلود/خروجی | `UPLOAD_TIMEOUT_MS = 120000` (بارگذاری MBTiles مهلت کل ندارد: بی‌فعالیتی `UPLOAD_STALL_TIMEOUT_MS` و مهلت پردازش `UPLOAD_PROCESS_TIMEOUT_MS`) |
 | CSRF | خواندن کوکی `nw_csrf` و ارسال در هدر `X-CSRF-Token` |
 | خطا | کلاس `ApiError` با `status` و `code` (`HTTP`/`TIMEOUT`/`NETWORK`/`ABORTED`/`INVALID_RESPONSE`) |
 | لغو | پشتیبانی `AbortSignal`؛ خطای لغو با `isAbortError` نادیده گرفته می‌شود |

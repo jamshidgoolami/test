@@ -50,6 +50,42 @@ export function createApplication({ appVersion = 'unknown', tlsState = { enabled
   // config.js اعتبارسنجی شده است.
   if (config.trustProxy !== null) app.set('trust proxy', config.trustProxy);
   app.use('/api', validateRequestUrl);
+
+  /**
+   * نگهبان بدنهٔ درخواست (Slow body).
+   *
+   * سقف `requestTimeout` در Node برای «کل درخواست» است و آپلود چند گیگابایتی
+   * MBTiles را وسط انتقال با ۴۰۸ قطع می‌کرد؛ پس در server-lifecycle.js خاموش
+   * شده و بی‌فعالیتی بدنه همین‌جا سنجیده می‌شود: تا وقتی بایت تازه می‌رسد انتقال
+   * ادامه دارد، اما بدنهٔ بی‌حرکت با ۴۰۸ بسته می‌شود. هدرها هنوز همان
+   * headersTimeout را دارند.
+   */
+  function bodyIdleGuard(req, res, next) {
+    const method = String(req.method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+    const idleMs = Math.max(1000, config.http.requestTimeoutMs);
+    let timer = null;
+    const stop = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const arm = () => {
+      stop();
+      timer = setTimeout(() => {
+        stop();
+        if (res.writableEnded) return;
+        res.status(408).json({ error: 'انتقال بدنهٔ درخواست بیش از حد طولانی شد.' });
+        res.once('finish', () => req.destroy());
+      }, idleMs);
+    };
+    arm();
+    req.on('data', arm);
+    req.on('end', stop);
+    res.on('close', stop);
+    return next();
+  }
+
+  app.use('/api', bodyIdleGuard);
   app.use('/api', validateJsonBody);
 
   /**

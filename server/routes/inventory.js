@@ -435,7 +435,8 @@ router.post('/layers', async (req, res) => {
     try {
       const filePath = path.join(MBTILES_DIR, requestedFile);
       if (fs.existsSync(filePath)) {
-        const info = await runJob('mbtilesInfo', { filePath }, { timeoutMs: 120000 });
+        // شمارش کاشی روی فایل چند گیگابایتی می‌تواند از دو دقیقه بگذرد.
+        const info = await runJob('mbtilesInfo', { filePath }, { timeoutMs: 300000 });
         if (info) {
           db.prepare('UPDATE map_layers SET tile_count=?, min_zoom=?, max_zoom=?, attribution=? WHERE id=?').run(
             info.tileCount || 0,
@@ -586,7 +587,7 @@ router.post('/layers/upload', upload.single('file'), async (req, res) => {
   }
   let info;
   try {
-    info = await runJob('mbtilesInfo', { filePath: tmpPath }, { timeoutMs: 120000 });
+    info = await runJob('mbtilesInfo', { filePath: tmpPath }, { timeoutMs: 300000 });
   } catch (e) {
     cleanup();
     return res.status(mapFileErrorStatus(e)).json({ error: `فایل MBTiles معتبر نیست یا خوانده نشد: ${fileGuardMessage(e)}` });

@@ -156,7 +156,7 @@ sudo ufw enable
 
 | تنظیم | پیش‌فرض | متغیر |
 | --- | ---: | --- |
-| `requestTimeout` | ۱۲۰s | `NETWATCH_REQUEST_TIMEOUT_MS` |
+| بی‌فعالیتی بدنهٔ درخواست | ۱۲۰s | `NETWATCH_REQUEST_TIMEOUT_MS` |
 | `headersTimeout` | ۳۰s | `NETWATCH_HEADERS_TIMEOUT_MS` |
 | `keepAliveTimeout` | ۵s | `NETWATCH_KEEPALIVE_TIMEOUT_MS` |
 | حداکثر هدرها | ۱۰۰ | ثابت |
