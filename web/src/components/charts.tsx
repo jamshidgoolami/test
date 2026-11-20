@@ -14,10 +14,10 @@ import {
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
+import ChartTooltip from './ChartTooltip';
 import { faDigits, fmtClock, fmtDayLabel, fmtDuration, fmtMs, fmtNumber, fmtPct, fmtRangeLabel } from '../lib/format';
 import { WEEKDAY_SHORT } from '../lib/uptime';
 import { calendarTone, dateKeyLocal, type CalendarTone, type ChartCalendar, type DailyMetric, type DailyPoint } from '../lib/chart-daily';
@@ -95,7 +95,7 @@ export function LatencyAreaChart({
             label={{ value: 'آستانه', position: 'insideTopRight', fontSize: 9, fill: '#b45309' }}
           />
         ) : null}
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as {
@@ -188,7 +188,7 @@ export function LossAreaChart({
             label={{ value: 'آستانه', position: 'insideTopRight', fontSize: 9, fill: '#b91c1c' }}
           />
         ) : null}
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; loss: number; availability?: number; samples?: number };
@@ -231,7 +231,7 @@ export function AvailabilityBars({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis domain={[Math.max(0, threshold - 12), 100]} tick={tickStyle} tickLine={false} axisLine={false} width={46} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; availability: number; samples?: number };
@@ -275,7 +275,7 @@ export function StatusTimeline({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; ok: number; down: number };
@@ -317,7 +317,7 @@ export function StatusDonut({
               <Cell key={d.key} fill={d.color} />
             ))}
           </Pie>
-          <Tooltip
+          <ChartTooltip
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const p = payload[0].payload as { label: string; value: number; color: string };
@@ -475,7 +475,7 @@ export function LatencySpark({
             دسته‌ای)؛ محورها مخفی‌اند چون این نمودار فقط یک اسپارک‌لاین است. */}
         <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} hide />
         <YAxis hide domain={[0, Math.ceil(peak * 1.12)]} />
-        <Tooltip
+        <ChartTooltip
           cursor={{ stroke: 'var(--chart-guide)', strokeDasharray: '3 3' }}
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
@@ -555,7 +555,7 @@ export function FlapChart({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; down: number; up: number };
@@ -623,7 +623,7 @@ export function SimultaneousChart({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={26} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; concurrent: number };
@@ -718,7 +718,7 @@ export function TrendLineChart({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={20} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} domain={yDomain} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
@@ -763,7 +763,7 @@ export function GroupStatusBar({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" horizontal={false} />
         <XAxis type="number" tick={tickStyle} tickLine={false} axisLine={false} allowDecimals={false} />
         <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} width={112} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { name: string; online: number; warning: number; offline: number; total: number };
@@ -817,7 +817,7 @@ export function OfflineTrendChart({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={24} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { t: number; offline: number; devices: number };
@@ -863,7 +863,7 @@ export function DailyBars({
         <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="label" tick={tickStyle} tickLine={false} axisLine={false} minTickGap={10} />
         <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={46} allowDecimals={false} />
-        <Tooltip
+        <ChartTooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as Record<string, unknown>;

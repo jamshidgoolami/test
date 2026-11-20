@@ -6,13 +6,13 @@ function clampHeight(min: number, ratio: number, max: number) {
 }
 
 /**
- * ارتفاع نمودار متناسب با ارتفاع نمایشگر.
+ * ارتفاع نمودار متناسب با ارتفاع نمایشگر، محدود به ۲۲۰ تا ۳۸۰ پیکسل.
  *
- * ارتفاع ثابت ۲۰۰–۲۶۰ پیکسلی روی نمایشگرهای بلند نازک و کم‌جزئیات دیده می‌شد و
- * روی نمایشگر کوتاه هم فضای گران می‌گرفت؛ این قلاب ارتفاع را با پنجره هم‌گام
+ * ارتفاع ثابت ۲۰۰–۲۶۰ پیکسلی روی نمایشگرهای بلند کم‌جزئیات دیده می‌شد و روی
+ * نمایشگر کوتاه هم فضای گران می‌گرفت؛ این قلاب ارتفاع را با پنجره هم‌گام
  * می‌کند و در هر دو سو مرز دارد تا نمودار از حالت خوانا خارج نشود.
  */
-export function useChartHeight(min = 200, ratio = 0.27, max = 420) {
+export function useChartHeight(min = 220, ratio = 0.26, max = 380) {
   const [height, setHeight] = useState(() => clampHeight(min, ratio, max));
 
   useEffect(() => {
@@ -26,4 +26,25 @@ export function useChartHeight(min = 200, ratio = 0.27, max = 420) {
   }, [min, ratio, max]);
 
   return height;
+}
+
+/**
+ * آیا اشاره‌گر اصلی دستگاه لمسی/قلم است؟
+ *
+ * روی نمایشگر لمسی، Tooltip باید با تپ باز بماند؛ روی موس، hover طبیعی است.
+ */
+export function useCoarsePointer() {
+  const [coarse, setCoarse] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+  );
+
+  useEffect(() => {
+    const query = window.matchMedia('(pointer: coarse)');
+    const update = () => setCoarse(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return coarse;
 }

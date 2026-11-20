@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Fan, Thermometer } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import ChartTooltip from '../../components/ChartTooltip';
 import { Card, CardHeader, EmptyState } from '../../components/ui';
 import { faDigits, fmtNumber, fmtRangeLabel } from '../../lib/format';
 import { useChartHeight } from '../../lib/useChartHeight';
@@ -74,7 +75,7 @@ export default function SensorSeriesCard({
 }) {
   const key = storageKey(serverId, kind);
   const [hidden, setHidden] = useState<string[]>(() => readHidden(key));
-  const chartHeight = useChartHeight(220, 0.26, 380);
+  const chartHeight = useChartHeight();
 
   const meta =
     kind === 'temperature'
@@ -196,11 +197,21 @@ export default function SensorSeriesCard({
                       : 'border-dashed border-ink-200 bg-ink-50/50 text-ink-400'
                   }`}
                 >
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ background: on ? colorOf(index) : 'rgb(var(--nw-ink-300))' }}
-                    aria-hidden
-                  />
+                  {/* نشانگر به‌جای نقطه، خودِ الگوی خط را نشان می‌دهد تا سری‌ها
+                      جدا از رنگ (و روی چاپ سیاه‌وسفید) هم قابل تشخیص باشند. */}
+                  <span className="flex h-2 w-4 shrink-0 items-center" aria-hidden>
+                    <svg viewBox="0 0 16 4" className="h-1 w-4" preserveAspectRatio="none">
+                      <line
+                        x1="0"
+                        y1="2"
+                        x2="16"
+                        y2="2"
+                        stroke={on ? colorOf(index) : 'rgb(var(--nw-ink-300))'}
+                        strokeWidth="2"
+                        strokeDasharray={index % 4 === 0 ? undefined : index % 4 === 1 ? '5 3' : index % 4 === 2 ? '1.5 2' : '6 2 1.5 2'}
+                      />
+                    </svg>
+                  </span>
                   <span className={on ? '' : 'line-through'}>{sensor.name}</span>
                   {latest != null ? (
                     <span className="num text-[10px] text-ink-400">{fmtNumber(latest, meta.digits)}</span>
@@ -246,7 +257,7 @@ export default function SensorSeriesCard({
                     }}
                   />
                 ))}
-                <Tooltip
+                <ChartTooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
                     const entries = payload
@@ -298,7 +309,7 @@ export default function SensorSeriesCard({
                       // هم خطوط قابل تفکیک می‌مانند.
                       strokeDasharray={index % 4 === 0 ? undefined : index % 4 === 1 ? '7 4' : index % 4 === 2 ? '2 3' : '10 3 2 3'}
                       dot={false}
-                      activeDot={{ r: 3.5, strokeWidth: 1.5, stroke: 'var(--chart-dot-ring)' }}
+                      activeDot={{ r: 4.5, strokeWidth: 2, stroke: 'var(--chart-dot-ring)' }}
                       connectNulls
                       isAnimationActive={false}
                     />

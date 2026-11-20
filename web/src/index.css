@@ -485,6 +485,11 @@
 .recharts-surface {
   direction: ltr;
 }
+/* نمودارها: کشیدن افقی روی بوم مقدار را می‌خواند؛ کشیدن عمودی همچنان
+   صفحه را اسکرول می‌کند. */
+.recharts-wrapper {
+  touch-action: pan-y;
+}
 .recharts-cartesian-axis-tick text {
   font-family: Vazirmatn, Tahoma, sans-serif;
 }

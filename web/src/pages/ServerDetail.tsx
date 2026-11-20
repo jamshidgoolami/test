@@ -49,7 +49,7 @@ const RANGES: { value: Range; label: string }[] = [
 
 export default function ServerDetail() {
   // نمودارها روی نمایشگر بلند ارتفاع بیشتری می‌گیرند تا جزئیات روند دیده شود.
-  const chartHeight = useChartHeight(210, 0.25, 380);
+  const chartHeight = useChartHeight();
   const { id: rawId } = useParams();
   const id = Number(rawId);
   const navigate = useNavigate();

@@ -39,7 +39,7 @@ function tone(value: number, warn: number, down: number): 'ok' | 'warn' | 'down'
 const TONE_TEXT = { ok: 'text-success', warn: 'text-warning', down: 'text-danger' } as const;
 
 export default function AppHealth() {
-  const chartHeight = useChartHeight(180, 0.22, 320);
+  const chartHeight = useChartHeight();
   const { tzOffset } = useApp();
   const { data, loading, error, refresh, updatedAt } = useAsync((signal) => api.appHealth(signal), [], { interval: 5000 });
 
